@@ -22,3 +22,13 @@ impl Default for Formatter {
 pub trait Formatable {
   fn format(&self, formatter: &Formatter) -> String;
 }
+
+macro_rules! display_formatable_impl {
+  ($type_name:ty) => {
+    impl std::fmt::Display for $type_name {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.format(&Formatter::default()))
+      }
+    }
+  }
+}

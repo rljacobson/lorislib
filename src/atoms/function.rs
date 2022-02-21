@@ -13,7 +13,6 @@ other boolean data about the function.
 
 use std::{
   cmp::Ordering,
-  fmt::Display,
   rc::Rc
 };
 
@@ -193,18 +192,15 @@ impl Atom for Function {
   }
 }
 
-impl Display for Function {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", self.format(&Formatter::default()))
-  }
-}
-
-
 impl From<Function> for Expression {
   fn from(function: Function) -> Self {
     Expression::Function(function)
   }
 }
+
+
+display_formatable_impl!(Function);
+
 
 
 #[cfg(test)]

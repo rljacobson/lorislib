@@ -1,4 +1,4 @@
-/*!
+/*
 
 Dundua et al describe a formal framework for matching in associative and commutative
 theories. A key component of their system is a normal form for terms. The

@@ -52,12 +52,6 @@ impl Atom for Variable {
     }
 }
 
-impl Display for Variable {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.format(&Formatter::default()))
-    }
-}
-
 
 impl From<&str> for Variable {
     fn from(literal: &str) -> Self {
@@ -78,6 +72,9 @@ impl From<Variable> for Expression {
         Expression::Variable(variable)
     }
 }
+
+
+display_formatable_impl!(Variable);
 
 
 

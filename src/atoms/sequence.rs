@@ -179,18 +179,16 @@ impl Atom for Sequence {
   }
 }
 
-impl Display for Sequence {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", self.format(&Formatter::default()))
-  }
-}
-
 
 impl From<Sequence> for Expression {
   fn from(sequence: Sequence) -> Self {
     Expression::Sequence(sequence)
   }
 }
+
+
+display_formatable_impl!(Sequence);
+
 
 
 #[cfg(test)]

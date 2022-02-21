@@ -11,7 +11,7 @@ the expression, and transform the result back into your native types.
 
 */
 
-use std::{rc::Rc, cmp::Ordering};
+use std::{rc::Rc, cmp::Ordering, fmt::Display};
 
 use strum::EnumDiscriminants;
 use lazy_static::lazy_static;
@@ -133,6 +133,15 @@ impl Expression {
 }
 
 
+/// This is an arbitrary default implementation to satisfy the requirements of
+/// `tinyvec::ArrayVec`.
+impl Default for Expression {
+  fn default() -> Expression {
+    Expression::Symbol(Symbol(EMPTY_STRING.to_string()))
+  }
+}
+
+
 impl Formatable for Expression {
   fn format(&self, formatter: &Formatter) -> String {
     match self {
@@ -199,3 +208,6 @@ impl NormalFormOrder for Expression {
     }
   }
 }
+
+
+display_formatable_impl!(Expression);

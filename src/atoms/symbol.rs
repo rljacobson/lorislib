@@ -5,7 +5,6 @@
 */
 
 use std::{
-  fmt::Display,
   cmp::Ordering
 };
 
@@ -44,12 +43,6 @@ impl Atom for Symbol {
     }
 }
 
-impl Display for Symbol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.format(&Formatter::default()))
-    }
-}
-
 
 impl From<&str> for Symbol {
     fn from(literal: &str) -> Self {
@@ -70,3 +63,6 @@ impl From<Symbol> for Expression {
         Expression::Symbol(symbol)
     }
 }
+
+
+display_formatable_impl!(Symbol);

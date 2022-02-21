@@ -45,12 +45,6 @@ impl Atom for SequenceVariable {
     }
 }
 
-impl Display for SequenceVariable {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.format(&Formatter::default()))
-    }
-}
-
 
 impl From<&str> for SequenceVariable {
     fn from(literal: &str) -> Self {
@@ -71,6 +65,10 @@ impl From<SequenceVariable> for Expression {
         Expression::SequenceVariable(sequence_variable)
     }
 }
+
+
+display_formatable_impl!(SequenceVariable);
+
 
 
 #[cfg(test)]
