@@ -19,7 +19,8 @@ use std::{
 use crate::{
   expression::{
     RcExpression,
-    Expression
+    Expression,
+    ExpressionKind
   },
   attributes::Attributes,
   formatter::{
@@ -29,11 +30,13 @@ use crate::{
   normal_form::NormalFormOrder
 };
 
-use super::Atom;
+use super::{Atom, Symbol, Variable};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Function{
-  pub name: String,
+  /// The head of the function is either a symbol or a variable. It cannot be a
+  /// function, sequence, or sequence variable.
+  pub head: RcExpression,
   pub children: Vec<RcExpression>,
   pub attributes: Attributes
 }
@@ -41,12 +44,40 @@ pub struct Function{
 
 impl Function {
 
-  pub fn new(name: String) -> Function {
-    Function{
-      name,
-      children: Vec::new(),
-      attributes: Attributes::default()
+  /// Creates a new function having a head that is a symbol of the name `name`.
+  pub fn with_symbolic_head(name: &str) -> Function {
+    let head = Rc::new(Symbol(name.to_string()).as_expression());
+    Function::new(head).unwrap()
+  }
+
+  /// Creates a new function having a head that is a variable of the name `name`.
+  pub fn with_variable_head(name: &str) -> Function {
+    let head = Rc::new(Variable(name.to_string()).as_expression());
+    Function::new(head).unwrap()
+  }
+
+  /// Creates a new function or function variable. If an expression other than a
+  /// symbol or variable is given for the head, an error is return.
+  pub fn new(head: RcExpression) -> Result<Function, ()> {
+    match (head.as_ref()).into() {
+
+      | ExpressionKind::Symbol
+      | ExpressionKind::Variable => {
+        Ok(
+          Function{
+            head,
+            children: Vec::new(),
+            attributes: Attributes::default()
+          }
+        )
+      },
+
+      _ => {
+        Err(())
+      }
+
     }
+
   }
 
   pub fn len(&self)  -> usize {
@@ -55,6 +86,10 @@ impl Function {
 
   pub fn part(&self, idx: usize) -> RcExpression {
     self.children[idx].clone()
+  }
+
+  pub fn is_function_variable(&self) -> bool {
+    ExpressionKind::Variable == self.head.as_ref().into()
   }
 
   pub fn commutative(&self) -> bool {
@@ -168,7 +203,7 @@ impl Formatable for Function {
   fn format(&self, formatter: &Formatter) -> String {
     format!(
       "{}({})",
-      self.name,
+      self.head,
       self.children
       .iter()
       .map(|c| c.format(formatter))
@@ -182,7 +217,7 @@ impl NormalFormOrder for Function {
   /// For the purposes of `NormalFormOrder`, two functions are equal if their names are equal.
   fn cmp(&self, other: &Self) -> Ordering {
     // todo: Prohibit distinct expressions with the same name, presumably in the symbol table.
-    self.name.cmp(&other.name)
+    self.head.cmp(&other.head)
   }
 }
 
@@ -229,12 +264,12 @@ mod tests {
     let e = Rc::new(Variable("e".into()).as_expression());
     let h = Rc::new(Variable("h".into()).as_expression());
 
-    let mut g = Function::new("f".into());
+    let mut g = Function::with_symbolic_head("f");
     g.attributes.set(Attribute::Associative);
     g.attributes.set(Attribute::Variadic);
     g.children = vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone(), h.clone()];
 
-    let mut f1 = Function::new("f".into());
+    let mut f1 = Function::with_symbolic_head("f");
     f1.attributes.set(Attribute::Associative);
     f1.attributes.set(Attribute::Variadic);
 
@@ -245,7 +280,7 @@ mod tests {
     sequence_inner.children.push(e);
 
 
-    let mut f2 = Function::new("f".into());
+    let mut f2 = Function::with_symbolic_head("f");
     f2.attributes.set(Attribute::Associative);
     f2.attributes.set(Attribute::Variadic);
 
@@ -270,7 +305,7 @@ mod tests {
   fn formatted_function() {
     let v = Rc::new(Variable("a".into()).as_expression());
     let u = Rc::new(SequenceVariable("b".into()).as_expression());
-    let mut f = Function::new("f".into());
+    let mut f = Function::with_symbolic_head("f");
     f.children = vec![v, u];
     assert_eq!(f.format(&Formatter::default()), "f(‹a›, «b»)");
   }
@@ -279,7 +314,7 @@ mod tests {
   fn function_len() {
     let v = Rc::new(Variable("a".into()).as_expression());
     let u = Rc::new(Variable("b".into()).as_expression());
-    let mut f = Function::new("f".into());
+    let mut f = Function::with_symbolic_head("f");
     f.children = vec![v, u];
     assert_eq!(f.len(), 2);
   }
@@ -288,15 +323,15 @@ mod tests {
   fn function_part() {
     let v = Rc::new(Variable("a".into()).as_expression());
     let u = Rc::new(Variable("b".into()).as_expression());
-    let mut f = Function::new("f".into());
+    let mut f = Function::with_symbolic_head("f");
     f.children = vec![v, u.clone()];
     assert_eq!(f.part(1), u);
   }
 
   #[test]
   fn function_normal_form_ordering(){
-    let mut f: Function = Function::new("f".into());
-    let mut g: Function = Function::new("g".into());
+    let mut f: Function = Function::with_symbolic_head("f");
+    let mut g: Function = Function::with_symbolic_head("g");
 
     f.children = vec![
     Rc::new(Variable("a".into()).as_expression()),

@@ -6,7 +6,6 @@
 */
 
 use std::{
-  fmt::Display,
   cmp::Ordering
 };
 

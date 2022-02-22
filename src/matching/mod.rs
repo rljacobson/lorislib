@@ -66,13 +66,8 @@ SUCCESS: To obtain additional matches, proceed from Step 3.b to Step 1.a.ii.
 
 use std::{collections::HashMap, fmt::Display};
 
-use tinyvec::ArrayVec;
-
 pub use match_state::{MatchState};
 use crate::expression::RcExpression;
-
-
-pub type NewMatchEquations = ArrayVec<[MatchEquation;2]>;
 
 /// A map from a variable / sequence variable to the ground term is it bound to.
 pub type SolutionSet = HashMap<RcExpression, RcExpression>;
@@ -94,7 +89,7 @@ impl Display for MatchEquation {
 
 /// A map from pattern expressions to the expressions they match. This is
 pub struct Substitution{
-  /// Variable or sequence variable
+  /// Variable or sequence variable.
   variable: RcExpression,
   ground  : RcExpression
 }

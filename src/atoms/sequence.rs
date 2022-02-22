@@ -13,7 +13,6 @@ other boolean data about the function.
 
 use std::{
   cmp::Ordering,
-  fmt::Display,
   iter::zip, rc::Rc
 };
 

@@ -20,7 +20,7 @@ use std::{collections::HashMap, fmt::Display, rc::Rc};
 
 use crate::{expression::RcExpression};
 
-use super::{matcher::Matcher, SolutionSet};
+use super::{matcher::Matcher, SolutionSet, MatchEquation};
 
 
 

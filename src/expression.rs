@@ -11,7 +11,7 @@ the expression, and transform the result back into your native types.
 
 */
 
-use std::{rc::Rc, cmp::Ordering, fmt::Display};
+use std::{rc::Rc, cmp::Ordering};
 
 use strum::EnumDiscriminants;
 use lazy_static::lazy_static;
@@ -27,7 +27,8 @@ use crate::{
     Variable,
     Sequence,
     SequenceVariable
-  }, normal_form::NormalFormOrder
+  },
+  normal_form::NormalFormOrder
 };
 
 
@@ -36,7 +37,7 @@ pub type RcExpression = Rc<Expression>;
 #[derive(Clone, PartialEq, Eq, EnumDiscriminants, Debug, Hash)]
 #[strum_discriminants(name(ExpressionKind))]
 pub enum Expression{
-  /// A symbol is an atomic expression.
+  /// A symbol is an atomic nonvariable expression.
   Symbol(Symbol),
 
   /**
@@ -77,13 +78,28 @@ lazy_static!{
 // static EMPTY_STRING: String = String::from("");
 
 impl Expression {
+
+  pub fn kind(&self) -> ExpressionKind {
+    self.into()
+  }
+
   pub fn name(&self) -> &String {
     match self {
-      Expression::Symbol(Symbol(name)) => &name,
-      Expression::Function(Function{ name, .. }) => &name,
+      Expression::Function(Function{ head, .. }) => {
+        match (*head).as_ref() {
+
+          // An argument can be made that we should format a variable function name.
+          | Expression::Symbol(Symbol(name))// => &name,
+          | Expression::Variable(Variable(name)) => &name,
+
+          _ => unreachable!()
+
+        }
+      },
       Expression::Sequence(_) => &EMPTY_STRING,
-      Expression::Variable(Variable(name)) => &name,
       Expression::SequenceVariable(SequenceVariable(name)) => &name,
+      Expression::Symbol(Symbol(name)) => &name,
+      Expression::Variable(Variable(name)) => &name,
     }
   }
 
@@ -91,7 +107,7 @@ impl Expression {
     match self {
 
       // todo: Should non M-expressions have a positive length?
-      Expression::Symbol(_)
+      | Expression::Symbol(_)
       | Expression::Variable(_)
       | Expression::SequenceVariable(_) => 1,
 
@@ -129,15 +145,6 @@ impl Expression {
   pub fn normal_form(&mut self) {
     self.associative_normal_form();
     self.commutative_normal_form();
-  }
-}
-
-
-/// This is an arbitrary default implementation to satisfy the requirements of
-/// `tinyvec::ArrayVec`.
-impl Default for Expression {
-  fn default() -> Expression {
-    Expression::Symbol(Symbol(EMPTY_STRING.to_string()))
   }
 }
 

@@ -30,7 +30,7 @@ Start state: S = Ø, Γ = {pattern ≪ expression}.
 | 1.   |      |      | **Act on the active equation.**                              |      |
 |      | a.   |      | If no rule applies:                                          |      |
 |      |      | i.   | If the matcher stack is empty, halt with **FAILURE**.        |      |
-|      |      | ii.  | If there is an active matcher on top of the matcher stack, undo the actions of the last match generated from this `Matcher`:<br>&nbsp;&nbsp;- pop the top equations in Γ pushed by the last match;<br>&nbsp;&nbsp;- pop the top  substitutions in S pushed by the last match. |      |
+|      |      | ii.  | If there is an active matcher on top of the matcher stack, undo the actions of the last match generated from this `Matcher`:<br>&nbsp;&nbsp;- pop the top equations in Γ pushed by the last match;<br>&nbsp;&nbsp;- pop the top  substitutions in S pushed by the last match. |      |
 |      | b.   |      | If a rule applies, create the `Matcher` for the rule, (provide it the equation), and push it into the `Matcher` stack. It is now the active `Matcher`. |      |
 |      |      |      |                                                              |      |
 | 2.   |      |      | **Request a new match.**                                     |      |
@@ -49,63 +49,88 @@ To obtain additional matches upon success, proceed from Step 3.b to Step 1.a.ii.
 
 # Transformation Rules for Match Equations
 
+| Name      | Description                                          |         Transformed Equation         | Resulting Equations Γ  | Solution Set S |
+| --------- | ---------------------------------------------------- | :----------------------------------: | :--------------------: | :------------: |
+|           |                                                      |                                      |                        |                |
+|           | ***Common Rules***                                   |                                      |                        |                |
+| **T**     | Trivial                                              |                s ≪ᴱs                 |           ∅            |       ∅        |
+| **IVE**   | Individual variable elimination                      |                 x≪ᴱt                 |           ∅            |      x≈t       |
+| **FVE**   | Function variable elimination                        |              X(s̃)≪ᴱƒ(t̃)              |       ƒ(s̃)≪ᴱƒ(t̃)       |      X≈ƒ       |
+|           |                                                      |                                      |                        |                |
+|           | ***Rules for free symbols***                         |                                      |                        |                |
+| **Dec-F** | Decomposition under free head                        |            ƒ(s,s̃)≪ᴱƒ(t,t̃)            |  s≪ᴱt,<br> ƒ(s̃)≪ᴱƒ(t̃)  |       ∅        |
+| **SVE-F** | Sequence variable elimination under free head        |           ƒ(x̅,s̃)≪ᴱƒ(t̃₁,t̃₂)           |      ƒ(s̃)≪ᴱ ƒ(t̃₂)      |      x̅≈t̃₁      |
+|           |                                                      |                                      |                        |                |
+|           | ***Rules for commutative symbols***                  |                                      |                        |                |
+| **Dec-C** | Decomposition under commutative head                 |          ƒ(s,s̃)≪ᴱƒ(t̃₁,t,t̃₂)          | s≪ᴱt<br>ƒ(s̃)≪ᴱƒ(t̃₁,t̃₂) |                |
+| **SVE-C** | Sequence variable elimination under commutative head | ƒ(x̅,,s̃)≪ᴱƒ(t̃₁,t₁,t̃₂,t₂,…,t̃ₙ,tₙ,t̃ₙ₊₁) |  ƒ(s̃)≪ᴱ ƒ(t̃₁,…,t̃ₙ₊₁)   | x̅ ≈ ❴t₁,…,tₙ❵  |
+|           |                                                      |                                      |                        |                |
+|           |                                                      |                                      |                        |                |
+|           |                                                      |                                      |                        |                |
+|           |                                                      |                                      |                        |                |
+
+
+
 ### _Common Rules._
+
 The common rules apply in any theory.
 
-T: Trivial
+**T:** Trivial
 s ≪ᴱs ⇝ᵩ ∅.
 
-IVE: Individual variable elimination
+**IVE:** Individual variable elimination
 x≪ᴱt⇝ₛ∅ where S ={x≈t}.
 
-FVE: Function variable elimination
+**FVE:** Function variable elimination
 X(s̃)≪ᴱƒ(t̃)⇝ₛ{ƒ(s̃)≪ᴱƒ(t̃)}, where S={X≈ƒ}.
 
 ### _Rules for free symbols._
+
 These rules apply when ƒ is free.
 
-Dec-F: Decomposition under free head
+**Dec-F:** Decomposition under free head
 ƒ(s,s̃)≪ᴱƒ(t,t̃) ⇝ᵩ {s≪ᴱt, ƒ(s̃)≪ᴱƒ(t̃)},
 where ƒ is free and s∉Ꮙₛₑ.
 
-SVE-F: Sequence variable elimination under free head
+**SVE-F:** Sequence variable elimination under free head
 ƒ(̅x,s̃)≪ᴱƒ(t̃₁,t̃₂) ⇝ₛ {ƒ(̅s̃)≪ᴱ ƒ(t̃₂)}, where ƒ is free and S={x̅≈t̃₁}.
 An SVE-F matcher must enumerate all possible ways of choosing t̃₁.
 
 ### _Rules for commutative symbols._
+
 These rules apply when ƒ is commutative but not associative.
 
-Dec-C: Decomposition under commutative head
+**Dec-C:** Decomposition under commutative head
 ƒ(s,s̃)≪ᴱƒ(t̃₁,t,t̃₂) ⇝ᵩ {s≪ᴱt, ƒ(s̃)≪ᴱƒ(t̃₁,t̃₂)}
 where ƒ is commutative but non-associative and s∉Ꮙₛₑ.
 A Dec-C matcher must enumerate all possible ways of choosing t.
 
-SVE-C: Sequence variable elimination under commutative head
-ƒ(̅x,s̃)≪ᴱƒ(t̃₁,t₁,t̃₂,t₂,…,t̃ₙ,tₙ,t̃ₙ₊₁) ⇝ₛ {ƒ(̅s̃)≪ᴱ ƒ(t̃₁,…,t̃ₙ₊₁)}
+**SVE-C:** Sequence variable elimination under commutative head
+ƒ(x̅,,s̃)≪ᴱƒ(t̃₁,t₁,t̃₂,t₂,…,t̃ₙ,tₙ,t̃ₙ₊₁) ⇝ₛ {ƒ(s̃)≪ᴱ ƒ(t̃₁,…,t̃ₙ₊₁)}
 where n ≥ 0, ƒ is commutative and non-associative,
 S = {x̅ ≈ ❴t₁,…,tₙ❵ }.
 An SVE-C matcher must enumerate all possible ways of choosing the
 t-sequence. This is equivalent to enumerating all possible
 subsets of a set with n elements, 2^n possibilities.
 
-
 ### _Rules for associative symbols._
+
 These rules apply when ƒ is associative but not commutative.
 
-Dec-A: Decomposition under associative head
+**Dec-A:** Decomposition under associative head
 ƒ(s,s̃)≪ᴱƒ(t,t̃) ⇝ᵩ {s≪ᴱt, ƒ(s̃)≪ᴱƒ(t̃)}
 where ƒ is associative but non-commutative and s∉Ꮙₛₑ.
 
-SVE-A: Sequence variable elimination under associative head
+**SVE-A:** Sequence variable elimination under associative head
 ƒ(̅x,s̃)≪ᴱƒ(t̃₁,t̃₂) ⇝ₛ {ƒ(̅s̃)≪ᴱ ƒ(t̃₂)}, where ƒ is associative
 and non-commutative and S={x≈(t̃₁)[ƒ]}.
 An SVE-A matcher must enumerate all possible ways of choosing t̃₁.
 
-FVE-A-strict: Function variable elimination under associative head
+**FVE-A-strict:** Function variable elimination under associative head
 ƒ(X(s̃₁),s̃₂)≪ᴱƒ(t̃)⇝ₛ{ƒ(s̃₁,s̃₂)≪ᴱƒ(t̃)}, where ƒ is associative
 and non-commutative and S={X≈ƒ}. We require s̃≠().
 
-IVE-A-strict: Individual variable elimination under associative head
+**IVE-A-strict:** Individual variable elimination under associative head
 ƒ(x,s̃)≪ᴱƒ(t̃₁,t̃₂) ⇝ₛ {ƒ(̅s̃)≪ᴱ ƒ(t̃₂)}, where ƒ is associative and
 non-commutative and S = {x≈ƒ(t̃₁)}.  We require t̃₁≠().
 IVE-A must enumerate all possible ways of choosing t̃₁.
@@ -114,13 +139,13 @@ IVE-A must enumerate all possible ways of choosing t̃₁.
 ### _Rules for associative-commutative symbols_.
 These rules apply when ƒ is both associative and commutative.
 
-Dec-AC: Decomposition under AC head
+**Dec-AC:** Decomposition under AC head
 Same as Dec-C.
 ƒ(s,s̃)≪ᴱƒ(t̃₁,t,t̃₂) ⇝ᵩ {s≪ᴱt, ƒ(s̃)≪ᴱƒ(t̃₁,t̃₂)} where ƒ is
 associative-commutative and s∉Ꮙₛₑ.
 Dec-AC must enumerate all possible ways of choosing t.
 
-SVE-AC: Sequence variable elimination under AC head
+**SVE-AC:** Sequence variable elimination under AC head
 Same as SVE-C except for substitutions in S.
 ƒ(̅x,s̃)≪ᴱƒ(t̃₁,t₁,t̃₂,t₂,…,t̃ₙ,tₙ,t̃ₙ₊₁) ⇝ₛ {ƒ(̅s̃)≪ᴱ ƒ(t̃₁,…,t̃ₙ₊₁)}
 where n ≥ 0, ƒ is associative-commutative, and
@@ -129,12 +154,12 @@ SVE-AC must enumerate all possible ways of choosing the
 t-sequence. This is equivalent to enumerating all possible
 subsets of a set with n elements, 2^n possibilities.
 
-FVE-AC-strict: Function variable elimination under AC head
+**FVE-AC-strict:** Function variable elimination under AC head
 Same as FVE-A.
 ƒ(X(s̃₁),s̃₂)≪ᴱƒ(t̃)⇝ₛ{ƒ(s̃₁,s̃₂)≪ᴱƒ(t̃)}, where ƒ is associative-
 commutative and S={X≈ƒ}. We require s̃≠().
 
-IVE-AC: Individual variable elimination under AC head
+**IVE-AC:** Individual variable elimination under AC head
 ƒ(x,s̃)≪ᴱƒ(t̃₁,t₁,t̃₂,t₂,…,t̃ₙ,tₙ,t̃ₙ₊₁) ⇝ₛ {ƒ(̅s̃)≪ᴱ ƒ(t̃₁,…,t̃ₙ₊₁)}
 where n ≥ 0, ƒ is associative-commutative, and
 S = {x ≈ ƒ(t₁,…,tₙ) }. We require n>0.

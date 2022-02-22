@@ -21,4 +21,4 @@ fnv = { version = "1"}
 strange = {path = "../strange"}
 permutations = "0.1.1"
 lazy_static = "1.4.0"
-tinyvec = "1.5.1"
+smallvec = {version = "1.8.0", features = ["union"]}

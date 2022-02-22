@@ -106,13 +106,6 @@ subsets of a set with n elements, 2^n possibilities.
 */
 
 
-use expression::RcExpression;
-
-
-// This is a concrete instance of the Solved Set in Dundua.
-// struct PatternBindings{}
-
-
 
 #[cfg(test)]
 mod tests {

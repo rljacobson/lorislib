@@ -5,10 +5,7 @@
 
 */
 
-use std::{
-  fmt::Display,
-  cmp::Ordering
-};
+use std::cmp::Ordering;
 
 use crate::{
   formatter::{
