@@ -179,16 +179,16 @@ impl Iterator for Matcher {
       }
 
       // loop {
-        let me = self.equation_stack.last().unwrap();
+        let me: MatchEquation = self.equation_stack.last().unwrap().clone();
 
         // Common Rules
-        if let Some(rule) = RuleT::try_rule(me) {
+        if let Some(rule) = RuleT::try_rule(&me) {
           self.push_rule(Rc::new(rule));
 
-        } else if let Some(rule) = RuleIVE::try_rule(me) {
+        } else if let Some(rule) = RuleIVE::try_rule(&me) {
           self.push_rule(Rc::new(rule));
 
-        } else if let Some(rule) = RuleFVE::try_rule(me) {
+        } else if let Some(rule) = RuleFVE::try_rule(&me) {
           self.push_rule(Rc::new(rule));
         }
 
@@ -197,7 +197,7 @@ impl Iterator for Matcher {
         // A prerequisite for creating a `DestructuredFunctionEquation` and good
         // place to bail early.
         if me.pattern.kind()!=ExpressionKind::Function
-            || me.grouped.kind()!=ExpressionKind::Function
+            || me.ground.kind()!=ExpressionKind::Function
         {
           return None;
         }
@@ -205,7 +205,7 @@ impl Iterator for Matcher {
         let dfe = DestructuredFunctionEquation::new(me);
 
         // Another opportunity to bail early.
-        if dfe.pattern_function.head() != dfe.ground_function.head(){
+        if dfe.pattern_function.head != dfe.ground_function.head {
           return None;
         }
 
@@ -215,11 +215,11 @@ impl Iterator for Matcher {
           (false, false) => {
             // Dec-F
             if let Some(rule) = RuleDecF::try_rule(&dfe){
-              self.push_rule(rule);
+              self.push_rule(Rc::new(rule));
             }
             // SVE-F
             else if let Some(rule) = RuleSVEF::try_rule(&dfe){
-              self.push_rule(rule);
+              self.push_rule(Rc::new(rule));
             }
           }
 
@@ -228,11 +228,11 @@ impl Iterator for Matcher {
 
             // Dec-C
             if let Some(rule) = RuleDecC::try_rule(&dfe) {
-              self.push_rule(rule);
+              self.push_rule(Rc::new(rule));
             }
             // SVE-C
             else if let Some(rule) = RuleSVEC::try_rule(&dfe) {
-              self.push_rule(rule);
+              self.push_rule(Rc::new(rule));
             }
 
           },

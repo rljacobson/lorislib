@@ -57,7 +57,7 @@ pub type RuleDecA = RuleDecF;
 // Sequence variable elimination under associative head
 //    ƒ(x̅,s̃)≪ᴱƒ(t̃₁,t̃₂) ⇝ₛ {ƒ(s̃)≪ᴱ ƒ(t̃₂)},
 // where ƒ is associative and non-commutative and S={x̅≈(t̃₁)[ƒ]}.
-pub type RuleSVEA<'a> = RuleSVE<'a, AFAGenerator<EnumerateAll>>;
+pub type RuleSVEA = RuleSVE<AFAGenerator<EnumerateAll>>;
 
 /// Function variable elimination under associative head
 /// ƒ(X(s̃₁),s̃₁)≪ᴱƒ(t̃)⇝ₛ{ƒ(s̃₁,s̃₂)≪ᴱƒ(t̃)}, where ƒ is associative and non-commutative and S={X≈ƒ}.
@@ -146,17 +146,17 @@ impl Iterator for RuleFVEA {
 /// where ƒ is associative and non-commutative and S = {x≈ƒ(t̃₁)}.
 /// Since this is almost identical to `RuleSVEF`, we just use
 /// RuleSVEF behind the scenes.
-pub struct RuleIVEA<'a> {
-  rule_svef: RuleSVEF<'a>,
+pub struct RuleIVEA {
+  rule_svef: RuleSVEF,
 }
 
-impl MatchGenerator for RuleIVEA<'_> {
+impl MatchGenerator for RuleIVEA {
   fn match_equation(&self) -> MatchEquation {
     self.rule_svef.match_equation()
   }
 }
 
-impl Iterator for RuleIVEA<'_> {
+impl Iterator for RuleIVEA {
   type Item = NextMatchResultList;
 
   fn next(&mut self) -> MaybeNextMatchResult {
@@ -200,8 +200,8 @@ impl Iterator for RuleIVEA<'_> {
   }
 }
 
-impl<'a> RuleIVEA<'a> {
-  pub fn new(me: MatchEquation) -> RuleIVEA<'a> {
+impl RuleIVEA {
+  pub fn new(me: MatchEquation) -> RuleIVEA {
     RuleIVEA{
       rule_svef: RuleSVEF::new(me)
     }

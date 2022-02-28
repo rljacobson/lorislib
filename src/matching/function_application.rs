@@ -434,9 +434,9 @@ impl Iterator for AFACGenerator<EnumerateNoUnapplied> {
 
 
 
-pub struct RuleSVE<'a, T>
+pub struct RuleSVE<T>
   where T: FunctionApplicationGenerator {
-  dfe: DestructuredFunctionEquation<'a>,
+  dfe: DestructuredFunctionEquation,
   /// A `Sequence`, holds the terms of the ground that we have attempted to match
   /// against so far.
   ground_sequence: Sequence,
@@ -445,7 +445,7 @@ pub struct RuleSVE<'a, T>
   afa_generator: Option<Box<T>>
 }
 
-impl<T> MatchGenerator for RuleSVE<'_, T>
+impl<T> MatchGenerator for RuleSVE<T>
     where T: FunctionApplicationGenerator
 {
   fn match_equation(&self) -> MatchEquation {
@@ -453,7 +453,7 @@ impl<T> MatchGenerator for RuleSVE<'_, T>
   }
 }
 
-impl<T> Iterator for RuleSVE<'_, T>
+impl<T> Iterator for RuleSVE<T>
     where T: FunctionApplicationGenerator
 {
   type Item = NextMatchResultList;
@@ -509,10 +509,10 @@ impl<T> Iterator for RuleSVE<'_, T>
 }
 
 
-impl<'a, T> RuleSVE<'a, T>
+impl<T> RuleSVE<T>
     where T: FunctionApplicationGenerator
 {
-  pub fn new(me: MatchEquation) -> RuleSVE<'a, T> {
+  pub fn new(me: MatchEquation) -> RuleSVE<T> {
     RuleSVE{
       dfe                 : DestructuredFunctionEquation::new(me),
       ground_sequence     : Sequence::default(),

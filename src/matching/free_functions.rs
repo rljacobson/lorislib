@@ -51,8 +51,8 @@ impl RuleDecF {
   }
 
   pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<Self> {
-    if (dfe.pattern_function.head() == dfe.ground_function.head())
-        && (dfe.pattern_function.first().kind() == ExpressionKind::Variable)
+    if (dfe.pattern_function.head == dfe.ground_function.head)
+        && (dfe.pattern_function.first().unwrap().kind() == ExpressionKind::Variable)
         && (dfe.ground_function.len() > 1)
     {
       Some(
@@ -109,8 +109,8 @@ impl Iterator for RuleDecF {
 
 
 // ƒ(x̅,s̃)≪ᴱƒ(t̃₁,t̃₂) ⇝ₛ {ƒ(s̃)≪ᴱ ƒ(t̃₂)}, where ƒ is free and S={x̅≈t̃₁}
-pub struct RuleSVEF<'a> {
-  dfe: DestructuredFunctionEquation<'a>,
+pub struct RuleSVEF {
+  dfe: DestructuredFunctionEquation,
 
   /// Have we produced the empty sequence as the first result yet?
   empty_produced: bool,
@@ -120,13 +120,13 @@ pub struct RuleSVEF<'a> {
 
 }
 
-impl<'a> MatchGenerator for RuleSVEF<'a> {
+impl MatchGenerator for RuleSVEF {
   fn match_equation(&self) -> MatchEquation {
     self.dfe.match_equation.clone()
   }
 }
 
-impl<'a> Iterator for RuleSVEF<'a> {
+impl Iterator for RuleSVEF {
   type Item = NextMatchResultList;
 
   fn next(&mut self) -> MaybeNextMatchResult {
@@ -154,8 +154,8 @@ impl<'a> Iterator for RuleSVEF<'a> {
   }
 }
 
-impl<'a> RuleSVEF<'a> {
-  pub fn new(me: MatchEquation) -> RuleSVEF<'a> {
+impl RuleSVEF {
+  pub fn new(me: MatchEquation) -> RuleSVEF {
     RuleSVEF{
       dfe            : DestructuredFunctionEquation::new(me),
       ground_sequence: Sequence::default(),
@@ -193,7 +193,7 @@ impl<'a> RuleSVEF<'a> {
 
 
   pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<Self> {
-
+    None
   }
 
 }

@@ -34,19 +34,19 @@ use super::{
   }
 };
 
-pub struct RuleDecC<'a> {
-  dfe: DestructuredFunctionEquation<'a>,
+pub struct RuleDecC {
+  dfe: DestructuredFunctionEquation,
   /// Which child of the ground function we are matching on.
   term_idx: u32,
 }
 
-impl<'a> MatchGenerator for RuleDecC<'a> {
+impl<'a> MatchGenerator for RuleDecC {
   fn match_equation(&self) -> MatchEquation {
     self.dfe.match_equation.clone()
   }
 }
 
-impl<'a> Iterator for RuleDecC<'a> {
+impl Iterator for RuleDecC {
   type Item = NextMatchResultList;
 
   fn next(&mut self) -> MaybeNextMatchResult {
@@ -86,8 +86,8 @@ impl<'a> Iterator for RuleDecC<'a> {
 }
 
 
-impl<'a> RuleDecC<'a> {
-  pub fn new(me: MatchEquation) -> RuleDecC<'a> {
+impl RuleDecC {
+  pub fn new(me: MatchEquation) -> RuleDecC {
     let dfe = DestructuredFunctionEquation::new(me);
     RuleDecC{
       dfe,
@@ -95,24 +95,27 @@ impl<'a> RuleDecC<'a> {
     }
   }
 
-  pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<Self> {
-    if dfe.pattern_function.part(0).kind() == ExpressionKind::Variable
+  pub fn try_rule<'b>(dfe: &DestructuredFunctionEquation) -> Option<RuleDecC> {
+    if dfe.pattern_function.len() > 0
+        && dfe.pattern_function.part(0).kind() == ExpressionKind::Variable
         && dfe.ground_function.len() > 0
     {
       Some(
         RuleDecC{
-          dfe,
+          dfe: dfe.clone(),
           term_idx: 0
         }
       )
+    } else {
+      None
     }
   }
 
 }
 
 
-pub struct RuleSVEC<'a> {
-  dfe: DestructuredFunctionEquation<'a>,
+pub struct RuleSVEC {
+  dfe: DestructuredFunctionEquation,
   /// Bit positions indicate which subset of the ground's children are currently
   /// being matched against. You'd be crazy to try to match against all
   /// subsets of a set with more than 32 elements. We use `u32::MAX` ==
@@ -123,8 +126,8 @@ pub struct RuleSVEC<'a> {
 }
 
 
-impl<'a> RuleSVEC<'a> {
-  pub fn new(me: MatchEquation) -> RuleSVEC<'a> {
+impl RuleSVEC {
+  pub fn new(me: MatchEquation) -> RuleSVEC {
     RuleSVEC{
       dfe         : DestructuredFunctionEquation::new(me),
       subset      : 0,
@@ -139,7 +142,7 @@ impl<'a> RuleSVEC<'a> {
 }
 
 
-impl<'a> Iterator for RuleSVEC<'a> {
+impl Iterator for RuleSVEC {
   type Item = NextMatchResultList;
 
   fn next(&mut self) -> MaybeNextMatchResult {
@@ -229,7 +232,7 @@ impl<'a> Iterator for RuleSVEC<'a> {
 }
 
 
-impl<'a> MatchGenerator for RuleSVEC<'a> {
+impl MatchGenerator for RuleSVEC {
   fn match_equation(&self) -> MatchEquation {
     self.dfe.match_equation.clone()
   }
