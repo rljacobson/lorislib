@@ -77,8 +77,25 @@ impl Function {
       }
 
     }
-
   }
+
+  pub fn duplicate_head(&self) -> Function {
+    Function{
+      head: self.head.clone(),
+      children: Vec::new(),
+      attributes: self.attributes.clone()
+    }
+  }
+
+
+  pub fn duplicate_with_rest(&self) -> Function {
+    Function{
+      head: self.head.clone(),
+      children: self.rest(),
+      attributes: self.attributes.clone()
+    }
+  }
+
 
   pub fn len(&self)  -> usize {
     self.children.len()
@@ -88,6 +105,29 @@ impl Function {
     self.children[idx].clone()
   }
 
+  pub fn push(&mut self, child: RcExpression) {
+    self.children.push(child);
+  }
+
+  /// Returns the first child.
+  pub fn first(&self) -> Option<RcExpression> {
+    if self.children.len() >= 1 {
+      Some(self.children[0].clone())
+    } else {
+      None
+    }
+  }
+
+  /// Returns a vector containing all but the first child. If there are zero or one children, returns an empty vector.
+  pub fn rest(&self) -> Vec<RcExpression> {
+    let mut result = Vec::new();
+    if self.children.len() > 1 {
+      self.children[1..].clone_into(&mut result);
+    }
+    result
+  }
+
+  /// Is the head of this function a function variable?
   pub fn is_function_variable(&self) -> bool {
     ExpressionKind::Variable == self.head.as_ref().into()
   }
@@ -96,6 +136,13 @@ impl Function {
     self.attributes.commutative()
   }
 
+  pub fn associative(&self) -> bool {
+    self.attributes.associative()
+  }
+
+  pub fn free(&self) -> bool {
+    !(self.attributes.associative() || self.attributes.commutative())
+  }
 
   /// Rewrites the function into associative normal form by flattening any
   /// nested occurences of the same function.
@@ -202,7 +249,8 @@ impl Function {
 impl Formatable for Function {
   fn format(&self, formatter: &Formatter) -> String {
     format!(
-      "{}({})",
+      // "{}({})",
+      "{}❨{}❩",
       self.head,
       self.children
       .iter()
@@ -307,7 +355,8 @@ mod tests {
     let u = Rc::new(SequenceVariable("b".into()).as_expression());
     let mut f = Function::with_symbolic_head("f");
     f.children = vec![v, u];
-    assert_eq!(f.format(&Formatter::default()), "f(‹a›, «b»)");
+    // assert_eq!(f.format(&Formatter::default()), "f(‹a›, «b»)");
+    assert_eq!(f.format(&Formatter::default()), "f❨‹a›, «b»❩");
   }
 
   #[test]

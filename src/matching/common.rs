@@ -11,17 +11,24 @@ FVE: Function variable elimination X(s̃)≪ᴱƒ(t̃)⇝ₛ{ƒ(s̃)≪ᴱƒ(t̃
 
 use std::rc::Rc;
 
-use tinyvec::array_vec;
+use smallvec::smallvec;
 
-use crate::{expression::{
-  Expression,
-  ExpressionKind
-}, atoms::Function};
+use crate::{
+  expression::{
+    Expression,
+    ExpressionKind
+  },
+  atoms::Function
+};
 
 use super::{
   MatchEquation,
-  matcher::Matcher,
-  Substitution
+  match_generator::{
+    MatchGenerator,
+    NextMatchResult,
+    MaybeNextMatchResult, NextMatchResultList
+  },
+  Substitution,
 };
 
 /// Trivial elimination: s ≪ᴱs
@@ -30,27 +37,34 @@ pub struct RuleT {
   exhausted     : bool,
 }
 
-impl Matcher for RuleT {
-    fn match_equation(&self) -> MatchEquation {
-        self.match_equation.clone()
-    }
+impl MatchGenerator for RuleT {
+  fn match_equation(&self) -> MatchEquation {
+    self.match_equation.clone()
+  }
+}
 
-    fn next(&mut self) -> Option<(super::NewMatchEquations, Option<super::Substitution>)> {
-        if self.exhausted {
-          None
-        } else {
-          self.exhausted = true;
-          Some(
-            (
-              array_vec![],
-              None
-            )
-          )
-        }
+impl Iterator for RuleT {
+  type Item = NextMatchResultList;
+
+  fn next(&mut self) -> MaybeNextMatchResult {
+    if self.exhausted {
+      None
+    } else {
+      self.exhausted = true;
+      Some(smallvec![])
     }
+  }
 }
 
 impl RuleT {
+
+  pub fn new(match_equation: MatchEquation) -> RuleT {
+    RuleT {
+      match_equation,
+      exhausted: false
+    }
+  }
+
   pub fn try_rule(match_equation: &MatchEquation) -> Option<Self> {
     if match_equation.pattern == match_equation.ground {
       Some(
@@ -72,32 +86,33 @@ pub struct RuleIVE {
   exhausted     : bool,
 }
 
-impl Matcher for RuleIVE {
+impl MatchGenerator for RuleIVE {
     fn match_equation(&self) -> MatchEquation {
         self.match_equation.clone()
     }
+}
 
-  fn next(&mut self) -> Option<
-        (
-          super::NewMatchEquations,
-          Option<super::Substitution>
-        )
-      > {
+impl Iterator for RuleIVE {
+  type Item = NextMatchResultList;
+
+  fn next(&mut self) -> MaybeNextMatchResult {
     if self.exhausted {
       None
     } else {
+
       self.exhausted = true;
+
       Some(
-        (
-          array_vec![],
-          Some(
+        smallvec![
+          NextMatchResult::Substitution(
             Substitution{
               variable: self.match_equation.pattern.clone(),
               ground  : self.match_equation.ground.clone(),
             }
           )
-        )
+        ]
       )
+
     }
   }
 }
@@ -130,17 +145,16 @@ pub struct RuleFVE {
 }
 
 
-impl Matcher for RuleFVE {
+impl MatchGenerator for RuleFVE {
   fn match_equation(&self) -> MatchEquation {
       self.match_equation.clone()
   }
+}
 
-  fn next(&mut self) -> Option<
-        (
-          super::NewMatchEquations,
-          Option<super::Substitution>
-        )
-      > {
+impl Iterator for RuleFVE {
+  type Item = NextMatchResultList;
+
+  fn next(&mut self) -> MaybeNextMatchResult {
     if self.exhausted {
       None
     } else {
@@ -151,9 +165,10 @@ impl Matcher for RuleFVE {
       // head.
 
       match (
-        self.match_equation.pattern.as_ref(),
-        self.match_equation.ground.as_ref()
-      ) {
+              self.match_equation.pattern.as_ref(),
+              self.match_equation.ground.as_ref()
+            )
+      {
 
         (
           Expression::Function(
@@ -169,33 +184,32 @@ impl Matcher for RuleFVE {
               ..
             }
           ),
-
         ) => {
           let substitution =
-            Some(
+            NextMatchResult::Substitution(
               Substitution{
                 variable: pattern_head.clone(),
                 ground  : ground_head.clone(),
               }
             );
-          let new_match_equations = array_vec![
-            MatchEquation {
-              pattern: Rc::new(Expression::Function(
-                Function{
-                  head: ground_head.clone(),
-                  children: pattern_children.clone(),
-                  attributes: *pattern_attributes
-                }
-              )),
-              ground: self.match_equation.ground.clone(),
-            }
-          ];
+          let new_match_equations = NextMatchResult::MatchEquation(
+              MatchEquation {
+                pattern: Rc::new(Expression::Function(
+                  Function{
+                    head: ground_head.clone(),
+                    children: pattern_children.clone(),
+                    attributes: *pattern_attributes
+                  }
+                )),
+                ground: self.match_equation.ground.clone(),
+              }
+            );
 
           Some(
-            (
+            smallvec![
               new_match_equations,
               substitution
-            )
+            ]
           )
         }
 

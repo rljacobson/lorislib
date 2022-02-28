@@ -6,8 +6,8 @@ edition = "2021"
 description = "A pattern matching engine that supports commutative and associative theories."
 categories = ["algorithms", "compilers", "parsing", "mathematics"]
 keywords = ["computer algebra", "Mathematica", "pattern matching", "term rewriting"]
-website = "http://www.github.com/rljacobson/loris"
-repository = "http://www.github.com/rljacobson/loris"
+website = "http://www.github.com/rljacobson/lemur"
+repository = "http://www.github.com/rljacobson/lemur"
 license = "BSD"
 
 
@@ -19,6 +19,6 @@ strum = { version = "0.23", features = ["derive"] }
 strum_macros = "0.23"
 fnv = { version = "1"}
 strange = {path = "../strange"}
-permutations = "0.1.1"
+permutation-generator = {path = "../permutation_generator"}
 lazy_static = "1.4.0"
 smallvec = {version = "1.8.0", features = ["union"]}

@@ -13,7 +13,8 @@ other boolean data about the function.
 
 use std::{
   cmp::Ordering,
-  iter::zip, rc::Rc
+  iter::zip,
+  rc::Rc
 };
 
 use lazy_static::__Deref;
@@ -42,6 +43,16 @@ impl Sequence {
 
   pub fn new() -> Self {
     Self::default()
+  }
+
+  pub fn from_children(children: Vec<RcExpression>) -> Self {
+    Sequence{
+      children
+    }
+  }
+
+  pub fn push(&mut self, child: RcExpression) {
+    self.children.push(child);
   }
 
   pub fn len(&self)  -> usize {
@@ -140,6 +151,8 @@ impl Formatable for Sequence {
   fn format(&self, formatter: &Formatter) -> String {
     format!(
       "({})",
+      // "（{}）",
+      // "❨{}❩",
       self.children
       .iter()
       .map(|c| c.format(formatter))

@@ -30,15 +30,15 @@ Start state: S = Ø, Γ = {pattern ≪ expression}.
 | 1.   |      |      | **Act on the active equation.**                              |      |
 |      | a.   |      | If no rule applies:                                          |      |
 |      |      | i.   | If the matcher stack is empty, halt with **FAILURE**.        |      |
-|      |      | ii.  | If there is an active matcher on top of the matcher stack, undo the actions of the last match generated from this `Matcher`:<br>&nbsp;&nbsp;- pop the top equations in Γ pushed by the last match;<br>&nbsp;&nbsp;- pop the top  substitutions in S pushed by the last match. |      |
+|      |      | ii.  | If there is an active match generator on top of the matcher stack, undo the actions of the last match generated from this `Matcher`:<br>&nbsp;&nbsp;- pop the top equations in Γ pushed by the last match;<br>&nbsp;&nbsp;- pop the top  substitutions in S pushed by the last match. |      |
 |      | b.   |      | If a rule applies, create the `Matcher` for the rule, (provide it the equation), and push it into the `Matcher` stack. It is now the active `Matcher`. |      |
 |      |      |      |                                                              |      |
 | 2.   |      |      | **Request a new match.**                                     |      |
 |      | a.   |      | If there is no active `Matcher` on top of the `Matcher` stack, return with **FAILURE**. |      |
-|      | b.   |      | If there is an active `Matcher`, call `next()` on the active matcher. This<br/>generates zero or more substitutions which are stored in S (pushed onto the S<br/>stack) and zero or more matching equations which are stored in Γ. |      |
+|      | b.   |      | If there is an active `Matcher`, call `next()` on the active match generator. This<br/>generates zero or more substitutions which are stored in S (pushed onto the S<br/>stack) and zero or more matching equations which are stored in Γ. |      |
 |      |      |      |                                                              |      |
 | 3.   |      |      | **Act on the result of `next()`.**                           |      |
-|      | a.   |      | If the matcher is exhausted (returns `None`), proceed to *Step 4.* |      |
+|      | a.   |      | If the match generator is exhausted (returns `None`), proceed to *Step 4.* |      |
 |      | b.   |      | If Γ is empty, return with **SUCCESS**.                      |      |
 |      | c.   |      | Otherwise, proceed to *Step 0.*                              |      |
 |      |      |      |                                                              |      |
@@ -94,7 +94,7 @@ where ƒ is free and s∉Ꮙₛₑ.
 
 **SVE-F:** Sequence variable elimination under free head
 ƒ(̅x,s̃)≪ᴱƒ(t̃₁,t̃₂) ⇝ₛ {ƒ(̅s̃)≪ᴱ ƒ(t̃₂)}, where ƒ is free and S={x̅≈t̃₁}.
-An SVE-F matcher must enumerate all possible ways of choosing t̃₁.
+An SVE-F match generator must enumerate all possible ways of choosing t̃₁.
 
 ### _Rules for commutative symbols._
 
@@ -103,13 +103,13 @@ These rules apply when ƒ is commutative but not associative.
 **Dec-C:** Decomposition under commutative head
 ƒ(s,s̃)≪ᴱƒ(t̃₁,t,t̃₂) ⇝ᵩ {s≪ᴱt, ƒ(s̃)≪ᴱƒ(t̃₁,t̃₂)}
 where ƒ is commutative but non-associative and s∉Ꮙₛₑ.
-A Dec-C matcher must enumerate all possible ways of choosing t.
+A Dec-C match generator must enumerate all possible ways of choosing t.
 
 **SVE-C:** Sequence variable elimination under commutative head
 ƒ(x̅,,s̃)≪ᴱƒ(t̃₁,t₁,t̃₂,t₂,…,t̃ₙ,tₙ,t̃ₙ₊₁) ⇝ₛ {ƒ(s̃)≪ᴱ ƒ(t̃₁,…,t̃ₙ₊₁)}
 where n ≥ 0, ƒ is commutative and non-associative,
 S = {x̅ ≈ ❴t₁,…,tₙ❵ }.
-An SVE-C matcher must enumerate all possible ways of choosing the
+An SVE-C match generator must enumerate all possible ways of choosing the
 t-sequence. This is equivalent to enumerating all possible
 subsets of a set with n elements, 2^n possibilities.
 
@@ -124,7 +124,7 @@ where ƒ is associative but non-commutative and s∉Ꮙₛₑ.
 **SVE-A:** Sequence variable elimination under associative head
 ƒ(̅x,s̃)≪ᴱƒ(t̃₁,t̃₂) ⇝ₛ {ƒ(̅s̃)≪ᴱ ƒ(t̃₂)}, where ƒ is associative
 and non-commutative and S={x≈(t̃₁)[ƒ]}.
-An SVE-A matcher must enumerate all possible ways of choosing t̃₁.
+An SVE-A match generator must enumerate all possible ways of choosing t̃₁.
 
 **FVE-A-strict:** Function variable elimination under associative head
 ƒ(X(s̃₁),s̃₂)≪ᴱƒ(t̃)⇝ₛ{ƒ(s̃₁,s̃₂)≪ᴱƒ(t̃)}, where ƒ is associative

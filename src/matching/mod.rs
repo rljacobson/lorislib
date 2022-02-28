@@ -1,6 +1,12 @@
+mod destructure;
+mod associative_commutative;
+mod function_application;
+mod associative;
+mod commutative;
+mod free_functions;
 mod common;
-mod match_state;
 mod matcher;
+mod match_generator;
 
 
 /*
@@ -27,6 +33,9 @@ stack) is said to be the _active equation_ (resp. _active `Matcher`_).
 
 # Algorithm
 
+This algorithm is implemented in `matcher.rs` in the implementation of `Iterator`
+for `Matcher`.
+
 Start state: S = Ø, Γ = {pattern≪expression}.
 
 0. Prepare the active matching equation. The equation at the top of the Γ stack
@@ -39,7 +48,7 @@ apply.
 1. Act on the active equation.
 1.a If no rule applies:
 1.a.i   If the matcher stack is empty, halt with *FAILURE*.
-1.a.ii. If there is an active matcher on top of the matcher stack,
+1.a.ii. If there is an active match generator on top of the matcher stack,
           Undo the actions of the last match generated from this `Matcher`:
           1. pop the top equations in Γ pushed by the last match.
           2. pop the top  substitutions in S pushed by the last match.
@@ -49,12 +58,12 @@ equation), and push it into the `Matcher` stack. It is now the active `Matcher`.
 
 2. Request a new match.
 2.a If there is no active `Matcher` on top of the `Matcher` stack, return with *FAILURE*.
-2.b If there is an active `Matcher`, call `next()` on the active matcher. This
+2.b If there is an active `Matcher`, call `next()` on the active match generator. This
 generates zero or more substitutions which are stored in S (pushed onto the S
 stack) and zero or more matching equations which are stored in Γ.
 
 3. Act on the result of `next()`.
-3.a. If the matcher is exhausted (returns `None`), proceed to Step 4.
+3.a. If the match generator is exhausted (returns `None`), proceed to Step 4.
 3.b. If Γ is empty, return with *SUCCESS*.
 3.c. Otherwise, proceed to Step 0.
 
@@ -66,14 +75,14 @@ SUCCESS: To obtain additional matches, proceed from Step 3.b to Step 1.a.ii.
 
 use std::{collections::HashMap, fmt::Display};
 
-pub use match_state::{MatchState};
+pub use matcher::{Matcher};
 use crate::expression::RcExpression;
 
 /// A map from a variable / sequence variable to the ground term is it bound to.
 pub type SolutionSet = HashMap<RcExpression, RcExpression>;
 
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct MatchEquation {
   pattern: RcExpression,
   ground: RcExpression
@@ -81,13 +90,14 @@ pub struct MatchEquation {
 
 impl Display for MatchEquation {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}≪{}", self.pattern, self.ground)
+    write!(f, "{} ≪ {}", self.pattern, self.ground)
   }
 }
 
 
 
-/// A map from pattern expressions to the expressions they match. This is
+/// A map from pattern expressions to the expressions they match.
+#[derive(Clone)]
 pub struct Substitution{
   /// Variable or sequence variable.
   variable: RcExpression,
