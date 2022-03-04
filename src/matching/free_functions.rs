@@ -20,7 +20,11 @@ use smallvec::{
 
 use crate::{
   atoms::Sequence,
-  expression::ExpressionKind
+  expression::ExpressionKind,
+  matching::decomposition::{
+    NonAssociative,
+    RuleDecNonCommutative
+  }
 };
 
 use super::{
@@ -35,82 +39,12 @@ use super::{
   Substitution
 };
 
-/// Decomposition under free head.
-/// ƒ(s,s̃)≪ᴱƒ(t,t̃) ⇝ᵩ {s≪ᴱt, ƒ(s̃)≪ᴱƒ(t̃)}, where ƒ is free and s∉Ꮙₛₑ.
-pub struct RuleDecF {
-  match_equation: MatchEquation,
-  exhausted     : bool,
-}
 
-impl RuleDecF {
-  pub fn new(match_equation: MatchEquation) -> RuleDecF {
-    RuleDecF {
-      match_equation,
-      exhausted: false
-    }
-  }
-
-  pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<Self> {
-    if (dfe.pattern_function.head == dfe.ground_function.head)
-        && (dfe.pattern_function.first().unwrap().kind() == ExpressionKind::Variable)
-        && (dfe.ground_function.len() > 1)
-    {
-      Some(
-        RuleDecF {
-          match_equation: dfe.match_equation.clone(),
-          exhausted: false
-        }
-      )
-    } else {
-      None
-    }
-  }
-
-}
-
-impl MatchGenerator for RuleDecF {
-    fn match_equation(&self) -> MatchEquation {
-        self.match_equation.clone()
-    }
-}
-
-impl Iterator for RuleDecF {
-  type Item = NextMatchResultList;
-
-    fn next(&mut self) -> MaybeNextMatchResult {
-        if self.exhausted {
-          None
-        } else {
-          self.exhausted = true;
-
-          let dfe = DestructuredFunctionEquation::new(self.match_equation.clone());
-
-          let result_variable_equation =
-            NextMatchResult::eq(
-              dfe.pattern_first,
-              dfe.ground_function.first().unwrap()
-            );
-
-          let match_equation_ground = dfe.ground_function.duplicate_with_rest();
-          let result_function_equation =
-            NextMatchResult::eq(
-              dfe.pattern_rest,
-              Rc::new(match_equation_ground.into())
-            );
-
-
-          return Some(smallvec![
-            result_variable_equation,
-            result_function_equation
-          ]);
-        } // end else not exhausted
-    }
-}
-
+pub type RuleDecF = RuleDecNonCommutative<NonAssociative>;
 
 // ƒ(x̅,s̃)≪ᴱƒ(t̃₁,t̃₂) ⇝ₛ {ƒ(s̃)≪ᴱ ƒ(t̃₂)}, where ƒ is free and S={x̅≈t̃₁}
 pub struct RuleSVEF {
-  dfe: DestructuredFunctionEquation,
+  pub(crate) dfe: DestructuredFunctionEquation,
 
   /// Have we produced the empty sequence as the first result yet?
   empty_produced: bool,
@@ -150,14 +84,14 @@ impl Iterator for RuleSVEF {
     );
 
     // Construct the result.
-    return Some(self.make_next());
+    Some(self.make_next())
   }
 }
 
 impl RuleSVEF {
   pub fn new(me: MatchEquation) -> RuleSVEF {
     RuleSVEF{
-      dfe            : DestructuredFunctionEquation::new(me),
+      dfe            : DestructuredFunctionEquation::new(&me).unwrap(),
       ground_sequence: Sequence::default(),
       empty_produced : false
     }
@@ -193,7 +127,21 @@ impl RuleSVEF {
 
 
   pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<Self> {
-    None
+    if dfe.pattern_function.len() > 0
+        && dfe.pattern_function.part(0).kind() == ExpressionKind::SequenceVariable
+        && dfe.ground_function.len() > 0 {
+
+      Some(
+        RuleSVEF {
+          dfe            : dfe.clone(),
+          empty_produced : false,
+          ground_sequence: Sequence::default()
+        }
+      )
+
+    } else {
+      None
+    }
   }
 
 }
@@ -207,7 +155,8 @@ mod tests {
     atoms::{
       SequenceVariable,
       Symbol,
-      Function, Variable
+      Function,
+      Variable
     },
     expression::RcExpression
   };
@@ -220,7 +169,7 @@ mod tests {
     let mut f = Function::with_symbolic_head("ƒ");
 
     f.push(x);
-    f.children.extend(rest.drain(..));
+    f.children.append(&mut rest);
 
     let mut g = Function::with_symbolic_head("ƒ");
     g.children = ["a", "b", "c"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
@@ -244,7 +193,7 @@ mod tests {
       "ƒ❨u, v, w❩ ≪ ƒ❨a, b, c❩",
       "«x»→()",
       "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩",
-      "«x»→(a)",
+      "«x»→a",
       "ƒ❨u, v, w❩ ≪ ƒ❨c❩",
       "«x»→(a, b)",
       "ƒ❨u, v, w❩ ≪ ƒ❨❩",
@@ -262,7 +211,7 @@ mod tests {
     let mut f = Function::with_symbolic_head("ƒ");
 
     f.push(s);
-    f.children.extend(rest.drain(..));
+    f.children.append(&mut rest);
 
     let mut g = Function::with_symbolic_head("ƒ");
     g.children = ["a", "b", "c", "d"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();

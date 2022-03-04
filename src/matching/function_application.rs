@@ -50,9 +50,12 @@ use smallvec::smallvec;
 
 use permutation_generator::PermutationGenerator32 as Permutations;
 
-use crate::atoms::{
-  Function,
-  Sequence
+use crate::{
+  expression::ExpressionKind,
+  atoms::{
+    Function,
+    Sequence
+  }, logging::log_at_level
 };
 
 use super::{
@@ -75,6 +78,7 @@ pub struct EnumerateAll;
 pub struct EnumerateOne;
 /// Enumerates every pattern in which every term is an argument to the function.
 pub struct EnumerateNoUnapplied;
+
 
 pub trait FunctionApplicationGenerator: Iterator<Item=Sequence>{
   fn new(function: Function) -> Self;
@@ -123,14 +127,10 @@ impl Iterator for AFAGenerator<EnumerateAll> {
     // The (n-1) in the formula below is because there are (n-1) spaces between n
     // elements.
     let max_application_state: u32 = ((1 << (n-1)) - 1) as u32;
+    log_at_level(5, format!("application state: {}, n: {}, max_application_state: {}", self.application_state, n, max_application_state).as_str());
 
-    if self.application_state == max_application_state {
-      // self.singleton_state is recycled as a flag indicating exhaustion.
-      if self.singleton_state == u32::MAX {
-        return None;
-      } else {
-        self.singleton_state = u32::MAX;
-      }
+    if self.singleton_state == u32::MAX {
+      return None;
     }
 
     // The "outer loop" iterates over `applications`, which defines the shape of
@@ -165,12 +165,14 @@ impl Iterator for AFAGenerator<EnumerateAll> {
         // If last boundary position is the last position checked, then we have a singleton.
         else {
           if (1 << singleton_count) & self.singleton_state > 0 {
+            log_at_level(5, format!("Singleton state is high. Wrapping in function. STATE: {}, COUNT: {}", self.singleton_state, singleton_count).as_str());
             // Wrap it in a function.
             let mut new_function = self.function.duplicate_head();
             new_function.push(self.function.part(position-1));
 
             result_sequence.push(Rc::new(new_function.into()));
           } else {
+            log_at_level(5, "Singleton state is low. Not wrapping in function.".to_string().as_str());
             result_sequence.push(self.function.part(position-1));
           }
 
@@ -192,17 +194,29 @@ impl Iterator for AFAGenerator<EnumerateAll> {
     // flag to indicate exhaustion. We have to check for this condition so
     // we don't overflow self.singleton_state.
     if self.singleton_state != u32::MAX {
+      log_at_level(5, "Increment singleton state.");
       self.singleton_state += 1;
     }
     if self.singleton_state == (1<<singleton_count) {
       // Past the maximum. Time to reset and yield control to the "outer loop".
-      self.singleton_state = 0;
+      if self.application_state == max_application_state {
+        // If we have reached the maximum application_state, we are returning the
+        // last result. Next call will return None.
+        // self.singleton_state is recycled as a flag indicating
+        // exhaustion.
+        log_at_level(5, "Setting singleton state to MAX, because application state is maximum.");
+        self.singleton_state = u32::MAX;
+      } else {
+        // We haven't exhausted the generator yet.
+        log_at_level(5, "Resetting singleton state.\nIncrementing application_state.");
+        self.singleton_state = 0;
+        // This is the only time we update the state of the outer loop.
+        self.application_state += 1;
+      }
 
-      // This is the only time we update the state of the outer loop.
-      self.application_state += 1;
     }
 
-    return Some(result_sequence);
+    Some(result_sequence)
   }
 
 
@@ -281,7 +295,7 @@ impl Iterator for AFAGenerator<EnumerateNoUnapplied> {
       self.application_state += 1;
     }
 
-    return Some(result_sequence);
+    Some(result_sequence)
   }
 }
 
@@ -296,10 +310,12 @@ pub struct AFACGenerator<EnumerationType> {
 
 impl FunctionApplicationGenerator for AFACGenerator<EnumerateAll> {
   fn new(function: Function) -> AFACGenerator<EnumerateAll> {
-    let mut permutations      = Permutations::new(function.len() as u8).unwrap();
+    log_at_level(5, format!("Creating AF-AC for {}", function).as_str());
+
+    let mut permutations = Permutations::new(function.len() as u8).unwrap();
     // The first permutation is the identity, so just clone the function.
     permutations.next();
-    let afa_generator = AFAGenerator::<EnumerateAll>::new(function.clone());
+    let afa_generator    = AFAGenerator::<EnumerateAll>::new(function.clone());
 
     AFACGenerator::<EnumerateAll>{
       function,
@@ -313,8 +329,6 @@ impl Iterator for AFACGenerator<EnumerateAll> {
   type Item = Sequence;
 
   fn next(&mut self) -> Option<Sequence> {
-    // let result: Option<Sequence> = ;
-
 
     match self.afa_generator.next() {
 
@@ -324,7 +338,7 @@ impl Iterator for AFACGenerator<EnumerateAll> {
 
           None => {
             // This generator is exhausted.
-            return None
+            None
           },
 
           Some(permutation) => {
@@ -353,7 +367,7 @@ impl Iterator for AFACGenerator<EnumerateAll> {
 
 impl FunctionApplicationGenerator for AFACGenerator<EnumerateOne> {
   fn new(function: Function) -> AFACGenerator<EnumerateOne> {
-    let permutations      = Permutations::new(1).unwrap();
+    let permutations  = Permutations::new(1).unwrap();
     let afa_generator = AFAGenerator::<EnumerateOne>::new(function.clone());
 
     AFACGenerator::<EnumerateOne>{
@@ -375,10 +389,10 @@ impl Iterator for AFACGenerator<EnumerateOne> {
 
 impl FunctionApplicationGenerator for AFACGenerator<EnumerateNoUnapplied> {
   fn new(function: Function) -> AFACGenerator<EnumerateNoUnapplied> {
-    let mut permutations      = Permutations::new(function.len() as u8).unwrap();
+    let mut permutations = Permutations::new(function.len() as u8).unwrap();
     // The first permutation is the identity, so just clone the function.
     permutations.next();
-    let afa_generator = AFAGenerator::<EnumerateNoUnapplied>::new(function.clone());
+    let afa_generator    = AFAGenerator::<EnumerateNoUnapplied>::new(function.clone());
 
     AFACGenerator::<EnumerateNoUnapplied>{
       function,
@@ -405,7 +419,7 @@ impl Iterator for AFACGenerator<EnumerateNoUnapplied> {
 
           None => {
             // This generator is exhausted.
-            return None
+            None
           },
 
           Some(permutation) => {
@@ -465,7 +479,7 @@ impl<T> Iterator for RuleSVE<T>
       None => {
         self.afa_generator = Some(Box::new(T::new(self.dfe.ground_function.duplicate_head())));
         // Return the empty sequence.
-        return self.make_next(Sequence::default());
+        self.make_next(Sequence::default())
       },
 
       Some(afa_generator) => {
@@ -499,12 +513,11 @@ impl<T> Iterator for RuleSVE<T>
 
           Some(next_result) => next_result
 
-        };
+        }; // end match on self.afa_generator.next
 
         self.make_next(ordered_sequence)
       }
     }
-
   }
 }
 
@@ -513,12 +526,13 @@ impl<T> RuleSVE<T>
     where T: FunctionApplicationGenerator
 {
   pub fn new(me: MatchEquation) -> RuleSVE<T> {
+    let dfe = DestructuredFunctionEquation::new(&me).unwrap();
     RuleSVE{
-      dfe                 : DestructuredFunctionEquation::new(me),
-      ground_sequence     : Sequence::default(),
-      afa_generator       : None,
+      dfe,
+      ground_sequence: Sequence::default(),
+      afa_generator  : None //Some(Box::new(T::new(ground_function))),
     }
-  } // end new RuleSVEF
+  } // end new RuleSVE<T
 
   // Constructs the next result using components of `self`.
   fn make_next(&self, ordered_sequence: Sequence) -> MaybeNextMatchResult {
@@ -543,12 +557,25 @@ impl<T> RuleSVE<T>
       Rc::new(ordered_sequence.into())
     );
 
-    return Some(smallvec![result_equation, result_substitution]);
+    Some(smallvec![result_equation, result_substitution])
   }
 
 
   pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<Self> {
-    todo!();
+    // The only requirement is that pattern's first child is a sequence variable.
+    if dfe.pattern_function.len() > 0
+      && dfe.pattern_function.part(0).kind() == ExpressionKind::SequenceVariable {
+
+      Some(
+        Self{
+          dfe            : dfe.clone(),
+          ground_sequence: Sequence::default(),
+          afa_generator  : None
+        }
+      )
+    } else {
+      None
+    }
   }
 
 }
@@ -583,7 +610,7 @@ mod tests {
     assert_eq!("(ƒ❨a, b❩, ƒ❨c❩)", afa_generator.next().unwrap().to_string());
     assert_eq!("(a, ƒ❨b, c❩)", afa_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨a❩, ƒ❨b, c❩)", afa_generator.next().unwrap().to_string());
-    assert_eq!("(ƒ❨a, b, c❩)", afa_generator.next().unwrap().to_string());
+    assert_eq!("ƒ❨a, b, c❩", afa_generator.next().unwrap().to_string());
     assert_eq!(None, afa_generator.next());
 
     // for result in afa_generator {
@@ -617,7 +644,7 @@ mod tests {
     assert_eq!("(ƒ❨a, b❩, ƒ❨c❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(a, ƒ❨b, c❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨a❩, ƒ❨b, c❩)", afac_generator.next().unwrap().to_string());
-    assert_eq!("(ƒ❨a, b, c❩)", afac_generator.next().unwrap().to_string());
+    assert_eq!("ƒ❨a, b, c❩", afac_generator.next().unwrap().to_string());
     assert_eq!("(a, c, b)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨a❩, c, b)", afac_generator.next().unwrap().to_string());
     assert_eq!("(a, ƒ❨c❩, b)", afac_generator.next().unwrap().to_string());
@@ -630,7 +657,7 @@ mod tests {
     assert_eq!("(ƒ❨a, c❩, ƒ❨b❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(a, ƒ❨c, b❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨a❩, ƒ❨c, b❩)", afac_generator.next().unwrap().to_string());
-    assert_eq!("(ƒ❨a, c, b❩)", afac_generator.next().unwrap().to_string());
+    assert_eq!("ƒ❨a, c, b❩", afac_generator.next().unwrap().to_string());
     assert_eq!("(b, a, c)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨b❩, a, c)", afac_generator.next().unwrap().to_string());
     assert_eq!("(b, ƒ❨a❩, c)", afac_generator.next().unwrap().to_string());
@@ -643,7 +670,7 @@ mod tests {
     assert_eq!("(ƒ❨b, a❩, ƒ❨c❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(b, ƒ❨a, c❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨b❩, ƒ❨a, c❩)", afac_generator.next().unwrap().to_string());
-    assert_eq!("(ƒ❨b, a, c❩)", afac_generator.next().unwrap().to_string());
+    assert_eq!("ƒ❨b, a, c❩", afac_generator.next().unwrap().to_string());
     assert_eq!("(b, c, a)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨b❩, c, a)", afac_generator.next().unwrap().to_string());
     assert_eq!("(b, ƒ❨c❩, a)", afac_generator.next().unwrap().to_string());
@@ -656,7 +683,7 @@ mod tests {
     assert_eq!("(ƒ❨b, c❩, ƒ❨a❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(b, ƒ❨c, a❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨b❩, ƒ❨c, a❩)", afac_generator.next().unwrap().to_string());
-    assert_eq!("(ƒ❨b, c, a❩)", afac_generator.next().unwrap().to_string());
+    assert_eq!("ƒ❨b, c, a❩", afac_generator.next().unwrap().to_string());
     assert_eq!("(c, a, b)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨c❩, a, b)", afac_generator.next().unwrap().to_string());
     assert_eq!("(c, ƒ❨a❩, b)", afac_generator.next().unwrap().to_string());
@@ -669,7 +696,7 @@ mod tests {
     assert_eq!("(ƒ❨c, a❩, ƒ❨b❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(c, ƒ❨a, b❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨c❩, ƒ❨a, b❩)", afac_generator.next().unwrap().to_string());
-    assert_eq!("(ƒ❨c, a, b❩)", afac_generator.next().unwrap().to_string());
+    assert_eq!("ƒ❨c, a, b❩", afac_generator.next().unwrap().to_string());
     assert_eq!("(c, b, a)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨c❩, b, a)", afac_generator.next().unwrap().to_string());
     assert_eq!("(c, ƒ❨b❩, a)", afac_generator.next().unwrap().to_string());
@@ -682,7 +709,7 @@ mod tests {
     assert_eq!("(ƒ❨c, b❩, ƒ❨a❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(c, ƒ❨b, a❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨c❩, ƒ❨b, a❩)", afac_generator.next().unwrap().to_string());
-    assert_eq!("(ƒ❨c, b, a❩)", afac_generator.next().unwrap().to_string());
+    assert_eq!("ƒ❨c, b, a❩", afac_generator.next().unwrap().to_string());
     assert_eq!(None, afac_generator.next());
   }
 
@@ -724,7 +751,7 @@ mod tests {
     assert_eq!("(ƒ❨a❩, ƒ❨b❩, ƒ❨c❩)", afa_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨a, b❩, ƒ❨c❩)", afa_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨a❩, ƒ❨b, c❩)", afa_generator.next().unwrap().to_string());
-    assert_eq!("(ƒ❨a, b, c❩)", afa_generator.next().unwrap().to_string());
+    assert_eq!("ƒ❨a, b, c❩", afa_generator.next().unwrap().to_string());
     assert_eq!(None, afa_generator.next());
   }
 
@@ -744,27 +771,27 @@ mod tests {
     assert_eq!("(ƒ❨a❩, ƒ❨b❩, ƒ❨c❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨a, b❩, ƒ❨c❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨a❩, ƒ❨b, c❩)", afac_generator.next().unwrap().to_string());
-    assert_eq!("(ƒ❨a, b, c❩)", afac_generator.next().unwrap().to_string());
+    assert_eq!("ƒ❨a, b, c❩", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨a❩, ƒ❨c❩, ƒ❨b❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨a, c❩, ƒ❨b❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨a❩, ƒ❨c, b❩)", afac_generator.next().unwrap().to_string());
-    assert_eq!("(ƒ❨a, c, b❩)", afac_generator.next().unwrap().to_string());
+    assert_eq!("ƒ❨a, c, b❩", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨b❩, ƒ❨a❩, ƒ❨c❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨b, a❩, ƒ❨c❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨b❩, ƒ❨a, c❩)", afac_generator.next().unwrap().to_string());
-    assert_eq!("(ƒ❨b, a, c❩)", afac_generator.next().unwrap().to_string());
+    assert_eq!("ƒ❨b, a, c❩", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨b❩, ƒ❨c❩, ƒ❨a❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨b, c❩, ƒ❨a❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨b❩, ƒ❨c, a❩)", afac_generator.next().unwrap().to_string());
-    assert_eq!("(ƒ❨b, c, a❩)", afac_generator.next().unwrap().to_string());
+    assert_eq!("ƒ❨b, c, a❩", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨c❩, ƒ❨a❩, ƒ❨b❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨c, a❩, ƒ❨b❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨c❩, ƒ❨a, b❩)", afac_generator.next().unwrap().to_string());
-    assert_eq!("(ƒ❨c, a, b❩)", afac_generator.next().unwrap().to_string());
+    assert_eq!("ƒ❨c, a, b❩", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨c❩, ƒ❨b❩, ƒ❨a❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨c, b❩, ƒ❨a❩)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨c❩, ƒ❨b, a❩)", afac_generator.next().unwrap().to_string());
-    assert_eq!("(ƒ❨c, b, a❩)", afac_generator.next().unwrap().to_string());
+    assert_eq!("ƒ❨c, b, a❩", afac_generator.next().unwrap().to_string());
     assert_eq!(None, afac_generator.next());
   }
 

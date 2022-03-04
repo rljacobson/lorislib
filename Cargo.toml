@@ -6,7 +6,7 @@ edition = "2021"
 description = "A pattern matching engine that supports commutative and associative theories."
 categories = ["algorithms", "compilers", "parsing", "mathematics"]
 keywords = ["computer algebra", "Mathematica", "pattern matching", "term rewriting"]
-website = "http://www.github.com/rljacobson/lemur"
+homepage = "http://www.github.com/rljacobson/lemur"
 repository = "http://www.github.com/rljacobson/lemur"
 license = "BSD"
 

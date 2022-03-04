@@ -7,6 +7,7 @@ mod free_functions;
 mod common;
 mod matcher;
 mod match_generator;
+mod decomposition;
 
 
 /*

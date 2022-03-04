@@ -149,16 +149,21 @@ impl Default for Sequence {
 
 impl Formatable for Sequence {
   fn format(&self, formatter: &Formatter) -> String {
-    format!(
-      "({})",
-      // "（{}）",
-      // "❨{}❩",
-      self.children
-      .iter()
-      .map(|c| c.format(formatter))
-      .collect::<Vec<_>>()
-      .join(", ")
-    )
+    // todo: Should we display the parens if there is only one child?
+    if self.children.len() == 1 {
+      self.children[0].format(formatter)
+    } else {
+      format!(
+        "({})",
+        // "（{}）",
+        // "❨{}❩",
+        self.children
+        .iter()
+        .map(|c| c.format(formatter))
+        .collect::<Vec<_>>()
+        .join(", ")
+      )
+    }
   }
 }
 

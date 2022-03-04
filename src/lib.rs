@@ -1,11 +1,11 @@
 #![feature(toowned_clone_into)]
 #![feature(type_alias_impl_trait)]
-#![feature(iter_zip)]
 #![allow(dead_code)]
 
 #[macro_use]
 mod formatter;
 pub mod expression;
+mod logging;
 mod normal_form;
 mod attributes;
 mod atoms;

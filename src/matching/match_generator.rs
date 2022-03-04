@@ -32,25 +32,18 @@ NP-complete problems.
 
 */
 
-use std::{rc::Rc, fmt::Display, borrow::Cow};
+use std::fmt::Display;
 
 use smallvec::SmallVec;
 
-use crate::{
-  expression::{
-    RcExpression,
-    Expression
-  },
-  atoms::Function
-};
-
+use crate::expression::RcExpression;
 use super::{
   MatchEquation,
   Substitution
 };
 
 
-pub type NextMatchResultList = SmallVec<[NextMatchResult; 3]>;
+pub type NextMatchResultList  = SmallVec<[NextMatchResult; 3]>;
 pub type MaybeNextMatchResult = Option<NextMatchResultList>;
 
 /// A `MatchGenerator` iterates over every way it can transform a match equation and

@@ -4,15 +4,17 @@ A utility struct that destructures a match equation into its component parts.
 
 */
 
-use std::{borrow::Cow, rc::Rc};
+use std::rc::Rc;
 
 use crate::{
   atoms::function::Function,
-  expression::{RcExpression, Expression}
+  expression::{
+    RcExpression,
+    Expression
+  }
 };
 use super::{
   MatchEquation,
-
 };
 
 /**
@@ -37,7 +39,7 @@ pub struct DestructuredFunctionEquation {
 }
 
 impl DestructuredFunctionEquation{
-  pub fn new(mut me: MatchEquation) -> DestructuredFunctionEquation {
+  pub fn new(me: &MatchEquation) -> Result<DestructuredFunctionEquation,()> {
     // let mut  pattern = me.pattern.make_mut();
     // let mut ground = Rc::<Expression>::make_mut(&mut me.ground);
 
@@ -45,27 +47,30 @@ impl DestructuredFunctionEquation{
     if let Expression::Function(pattern_function) = me.pattern.as_ref() {
 
       let pattern_rest = Rc::new(pattern_function.duplicate_with_rest().into());
-      let pattern_first = pattern_function.first().unwrap();
+      let pattern_first = pattern_function.first().ok_or(())?;
 
       // Destructure ground
       if let Expression::Function(ground_function) = me.ground.as_ref() {
         // let ground_function = f.clone();
 
+        let dfe =
         DestructuredFunctionEquation{
           match_equation: me.clone(),
           pattern_function: pattern_function.clone(),
           pattern_first,
           pattern_rest,
           ground_function: ground_function.clone(),
-        }
+        };
+
+        Ok(dfe)
 
       } // end destructure ground
       else {
-        unreachable!();
+        Err(())
       }
     } // end destructure pattern
     else {
-      unreachable!();
+      Err(())
     }
   }
 }

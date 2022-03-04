@@ -20,7 +20,11 @@ use permutation_generator::PermutationGenerator32 as Permutations;
 
 use crate::{
   atoms::Sequence,
-  expression::ExpressionKind
+  expression::ExpressionKind,
+  matching::decomposition::{
+    NonAssociative,
+    RuleDecCommutative
+  }
 };
 
 use super::{
@@ -34,85 +38,7 @@ use super::{
   }
 };
 
-pub struct RuleDecC {
-  dfe: DestructuredFunctionEquation,
-  /// Which child of the ground function we are matching on.
-  term_idx: u32,
-}
-
-impl<'a> MatchGenerator for RuleDecC {
-  fn match_equation(&self) -> MatchEquation {
-    self.dfe.match_equation.clone()
-  }
-}
-
-impl Iterator for RuleDecC {
-  type Item = NextMatchResultList;
-
-  fn next(&mut self) -> MaybeNextMatchResult {
-
-    // Is there another term?
-    if self.term_idx as usize == self.dfe.ground_function.len() {
-      return None;
-    }
-
-    // Construct the result.
-    let term_equation = NextMatchResult::eq(
-        self.dfe.pattern_first.clone(),
-        self.dfe.ground_function
-            .children[self.term_idx as usize]
-            .clone()
-      );
-
-    let mut new_ground_function = self.dfe.ground_function.duplicate_head();
-    new_ground_function.children =
-      self.dfe.ground_function
-          .children
-          .iter()
-          .enumerate()
-          .filter_map(|(k, v)| if k != self.term_idx as usize {Some(v.clone())} else {None})
-          .collect::<Vec<_>>();
-
-    let function_equation = NextMatchResult::eq(
-      self.dfe.pattern_rest.clone(),
-      Rc::new(new_ground_function.into())
-    );
-
-    // We just iterate over the children of the ground.
-    self.term_idx += 1;
-
-    Some(smallvec![term_equation, function_equation])
-  }
-}
-
-
-impl RuleDecC {
-  pub fn new(me: MatchEquation) -> RuleDecC {
-    let dfe = DestructuredFunctionEquation::new(me);
-    RuleDecC{
-      dfe,
-      term_idx: 0
-    }
-  }
-
-  pub fn try_rule<'b>(dfe: &DestructuredFunctionEquation) -> Option<RuleDecC> {
-    if dfe.pattern_function.len() > 0
-        && dfe.pattern_function.part(0).kind() == ExpressionKind::Variable
-        && dfe.ground_function.len() > 0
-    {
-      Some(
-        RuleDecC{
-          dfe: dfe.clone(),
-          term_idx: 0
-        }
-      )
-    } else {
-      None
-    }
-  }
-
-}
-
+pub type RuleDecC = RuleDecCommutative<NonAssociative>;
 
 pub struct RuleSVEC {
   dfe: DestructuredFunctionEquation,
@@ -129,14 +55,28 @@ pub struct RuleSVEC {
 impl RuleSVEC {
   pub fn new(me: MatchEquation) -> RuleSVEC {
     RuleSVEC{
-      dfe         : DestructuredFunctionEquation::new(me),
+      dfe         : DestructuredFunctionEquation::new(&me).unwrap(),
       subset      : 0,
-      permutations: Permutations::new(0).unwrap()
+      permutations: Permutations::new(1).unwrap()
     }
   }
 
   pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<Self> {
-    todo!();
+    if dfe.pattern_function.len() > 0
+        && dfe.pattern_function.part(0).kind() == ExpressionKind::SequenceVariable
+        && dfe.ground_function.len() > 0 {
+
+      Some(
+        RuleSVEC {
+          dfe         : dfe.clone(),
+          subset      : 0,
+          permutations: Permutations::new(1).unwrap(),
+        }
+      )
+
+    } else {
+      None
+    }
   }
 
 }
@@ -151,6 +91,7 @@ impl Iterator for RuleSVEC {
     let max_subset_state: u32 = ((1 << n) - 1) as u32;
 
     // Have we sent the empty subset yet?
+
     if self.subset == 0 {
       self.subset += 1;
       self.permutations = Permutations::new(1).unwrap();
@@ -169,6 +110,7 @@ impl Iterator for RuleSVEC {
         ]
       );
     }
+
 
     let permutation = // the value of this match
     match self.permutations.next() {
@@ -246,7 +188,8 @@ mod tests {
     atoms::{
       SequenceVariable,
       Symbol,
-      Function, Variable
+      Function,
+      Variable
     },
     expression::RcExpression
   };
@@ -259,7 +202,7 @@ mod tests {
     let mut f = Function::with_symbolic_head("ƒ");
 
     f.push(x);
-    f.children.extend(rest.drain(..));
+    f.children.append(&mut rest);
 
     let mut g = Function::with_symbolic_head("ƒ");
     g.children = ["a", "b", "c"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
@@ -281,15 +224,15 @@ mod tests {
       "ƒ❨u, v, w❩ ≪ ƒ❨a, b, c❩",
       "«x»→()",
       "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩",
-      "«x»→(a)",
+      "«x»→a",
       "ƒ❨u, v, w❩ ≪ ƒ❨a, c❩",
-      "«x»→(b)",
+      "«x»→b",
       "ƒ❨u, v, w❩ ≪ ƒ❨c❩",
       "«x»→(a, b)",
       "ƒ❨u, v, w❩ ≪ ƒ❨c❩",
       "«x»→(b, a)",
       "ƒ❨u, v, w❩ ≪ ƒ❨a, b❩",
-      "«x»→(c)",
+      "«x»→c",
       "ƒ❨u, v, w❩ ≪ ƒ❨b❩",
       "«x»→(a, c)",
       "ƒ❨u, v, w❩ ≪ ƒ❨b❩",
@@ -323,7 +266,7 @@ mod tests {
     let mut f = Function::with_symbolic_head("ƒ");
 
     f.push(s);
-    f.children.extend(rest.drain(..));
+    f.children.append(&mut rest);
 
     let mut g = Function::with_symbolic_head("ƒ");
     g.children = ["a", "b", "c", "d"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
@@ -334,19 +277,25 @@ mod tests {
     };
     let rule_decc = RuleDecC::new(me);
 
-    for result in rule_decc {
-      for e in result{
-        println!("{}", e);
-      }
-    }
+    // for result in rule_decc {
+    //   for e in result{
+    //     println!("{}", e);
+    //   }
+    // }
 
-    // let expected = [
-    //   "‹s›≪a",
-    //   "ƒ❨u, v, w❩≪ƒ❨b, c, d❩"
-    // ];
-    // let result = rule_decf.flatten().map(|r| r.to_string()).collect::<Vec<String>>();
+    let expected = [
+      "‹s› ≪ a",
+      "ƒ❨u, v, w❩ ≪ ƒ❨b, c, d❩",
+      "‹s› ≪ b",
+      "ƒ❨u, v, w❩ ≪ ƒ❨a, c, d❩",
+      "‹s› ≪ c",
+      "ƒ❨u, v, w❩ ≪ ƒ❨a, b, d❩",
+      "‹s› ≪ d",
+      "ƒ❨u, v, w❩ ≪ ƒ❨a, b, c❩",
+    ];
+    let result = rule_decc.flatten().map(|r| r.to_string()).collect::<Vec<String>>();
 
-    // assert_eq!(expected, result.as_slice());
+    assert_eq!(expected, result.as_slice());
 
   }
 
