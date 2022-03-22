@@ -22,3 +22,8 @@ strange = {path = "../strange"}
 permutation-generator = {path = "../permutation_generator"}
 lazy_static = "1.4.0"
 smallvec = {version = "1.8.0", features = ["union"]}
+
+nom = {version = "7", optional = true}
+
+[features]
+default = []

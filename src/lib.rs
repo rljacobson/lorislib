@@ -10,7 +10,7 @@ mod normal_form;
 mod attributes;
 mod atoms;
 mod matching;
-
+mod parser;
 
 
 /*
