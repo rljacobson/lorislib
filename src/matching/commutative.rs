@@ -56,6 +56,9 @@ impl RuleSVEC {
   pub fn new(me: MatchEquation) -> RuleSVEC {
     RuleSVEC{
       dfe         : DestructuredFunctionEquation::new(&me).unwrap(),
+      #[cfg(feature = "strict-associativity")]      // Skip the empty subset
+      subset      : 1,
+      #[cfg(not(feature = "strict-associativity"))] // Include the empty subset
       subset      : 0,
       permutations: Permutations::new(1).unwrap()
     }
@@ -69,6 +72,9 @@ impl RuleSVEC {
       Some(
         RuleSVEC {
           dfe         : dfe.clone(),
+          #[cfg(feature = "strict-associativity")]      // Skip the empty subset
+          subset      : 1,
+          #[cfg(not(feature = "strict-associativity"))] // Include the empty subset
           subset      : 0,
           permutations: Permutations::new(1).unwrap(),
         }
@@ -90,8 +96,22 @@ impl Iterator for RuleSVEC {
     n = if n > 31 { 31 } else { n };
     let max_subset_state: u32 = ((1 << n) - 1) as u32;
 
-    // Have we sent the empty subset yet?
 
+    /*
+      In Dundua, the strict associativity axiom is
+        ƒ(x̅, ƒ(y̅₁, y, y̅₂), z̅) = ƒ(x̅, y̅₁, y, y̅₂, z̅),
+      that is, a term must appear inside the inner function in order to flatten it. Likewise,
+      strict variants of the Σ expansion rules preclude producing the empty sequence.
+
+      However, it seems more natural to me to allow the solution {x = f(), y=f(a, b)} for the
+      matching problem
+         ƒ(x,y)≪ᴱƒ(a,b), ƒ is AC
+      for example. It isn't clear what the best way to do this is. Feature flag? Generics and
+      marker types? Multiple `MatchGenerator`s? For now we use a feature flag.
+    */
+    // Todo: Determine the "right" way to have different variants of associativity.
+    // Have we sent the empty subset yet?
+    #[cfg(not(feature = "strict-associativity"))]
     if self.subset == 0 {
       self.subset += 1;
       self.permutations = Permutations::new(1).unwrap();
@@ -221,8 +241,6 @@ mod tests {
     // }
     let result = rule_svec.flatten().map(|r| r.to_string()).collect::<Vec<String>>();
     let expected = [
-      "ƒ❨u, v, w❩ ≪ ƒ❨a, b, c❩",
-      "«x»→()",
       "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩",
       "«x»→a",
       "ƒ❨u, v, w❩ ≪ ƒ❨a, c❩",

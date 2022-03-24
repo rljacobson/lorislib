@@ -274,7 +274,9 @@ mod tests {
 
     let result = rule_svea.flatten().map(|r| r.to_string()).collect::<Vec<String>>();
     let expected = [
+      #[cfg(not(feature = "strict-associativity"))]
       "ƒ❨u, v, w❩ ≪ ƒ❨a, b, c❩",
+      #[cfg(not(feature = "strict-associativity"))]
       "«x»→()",
       "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩",
       "«x»→a",
@@ -383,7 +385,9 @@ mod tests {
     // }
 
     let expected = [
+      #[cfg(not(feature = "strict-associativity"))]
       "ƒ❨u, v, w❩ ≪ ƒ❨a, b, c❩",
+      #[cfg(not(feature = "strict-associativity"))]
       "‹x›→ƒ❨❩",
       "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩",
       "‹x›→ƒ❨a❩",

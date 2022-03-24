@@ -454,9 +454,25 @@ pub struct RuleSVE<T>
   /// A `Sequence`, holds the terms of the ground that we have attempted to match
   /// against so far.
   ground_sequence: Sequence,
-  // SVE-A iterates over both the subset of the children and S={x&#773;≈(t̃₁)[ƒ]}.
+  /// SVE-A iterates over both the subset of the children and S={x&#773;≈(t̃₁)[ƒ]}.
+  /*
+    In Dundua, the strict associativity axiom is
+      ƒ(x̅, ƒ(y̅₁, y, y̅₂), z̅) = ƒ(x̅, y̅₁, y, y̅₂, z̅),
+    that is, a term must appear inside the inner function in order to flatten it. Likewise,
+    strict variants of the Σ expansion rules preclude producing the empty sequence.
+
+    However, it seems more natural to me to allow the solution {x = f(), y=f(a, b)} for the
+    matching problem
+       ƒ(x,y)≪ᴱƒ(a,b), ƒ is AC
+    for example. It isn't clear what the best way to do this is. Feature flag? Generics and
+    marker types? Multiple `MatchGenerator`s? For now we use a feature flag.
+  */
+  // Todo: Determine the "right" way to have different variants of associativity.
   // This is `None` if we have not yet produced the empty sequence.
-  afa_generator: Option<Box<T>>
+  #[cfg(not(feature = "strict-associativity"))]
+  afa_generator: Option<Box<T>>,
+  #[cfg(feature = "strict-associativity")]
+  afa_generator: Box<T>
 }
 
 impl<T> MatchGenerator for RuleSVE<T>
@@ -474,8 +490,8 @@ impl<T> Iterator for RuleSVE<T>
 
   fn next(&mut self) -> MaybeNextMatchResult {
     // Have we produced the empty sequence?
+    #[cfg(not(feature = "strict-associativity"))]
     match &mut self.afa_generator {
-
       None => {
         self.afa_generator = Some(Box::new(T::new(self.dfe.ground_function.duplicate_head())));
         // Return the empty sequence.
@@ -484,39 +500,75 @@ impl<T> Iterator for RuleSVE<T>
 
       Some(afa_generator) => {
         let ordered_sequence = // The result of this match
-        match afa_generator.next() {
+            match afa_generator.next() {
+              None => {
+                // Are there any more terms to take?
+                if self.dfe.ground_function.len() == self.ground_sequence.len() {
+                  // No more terms.
+                  return None;
+                }
 
-          None => {
-            // Are there any more terms to take?
-            if self.dfe.ground_function.len() == self.ground_sequence.len() {
-              // No more terms.
-              return None;
-            }
+                // Take the next term from the ground function.
+                self.ground_sequence.children.push(
+                  self.dfe.ground_function.children[
+                      self.ground_sequence.len()
+                      ].clone()
+                );
 
-            // Take the next term from the ground function.
-            self.ground_sequence.children.push(
-              self.dfe.ground_function.children[
-                self.ground_sequence.len()
-              ].clone()
-            );
+                // Create a new AFAGenerator.
+                let mut afa_function = self.dfe.ground_function.duplicate_head();
+                afa_function.children = self.ground_sequence.children.clone();
 
-            // Create a new AFAGenerator.
-            let mut afa_function = self.dfe.ground_function.duplicate_head();
-            afa_function.children = self.ground_sequence.children.clone();
+                let mut new_afa_generator = T::new(afa_function);
+                let next_result = new_afa_generator.next().unwrap();
+                self.afa_generator = Some(Box::new(new_afa_generator));
 
-            let mut new_afa_generator = T::new(afa_function);
-            let next_result = new_afa_generator.next().unwrap();
-            self.afa_generator = Some(Box::new(new_afa_generator));
+                next_result
+              }
 
-            next_result
-          }
-
-          Some(next_result) => next_result
-
-        }; // end match on self.afa_generator.next
+              Some(next_result) => next_result
+            }; // end match on self.afa_generator.next
 
         self.make_next(ordered_sequence)
       }
+    }
+
+    #[cfg(feature = "strict-associativity")]
+    {
+    let ordered_sequence = // The result of this match
+    // Should
+      match self.afa_generator.next() {
+        None => {
+          // Are there any more terms to take?
+          if self.dfe.ground_function.len() == self.ground_sequence.len() {
+            // No more terms.
+            return None;
+          }
+
+          // Take the next term from the ground function.
+          self.ground_sequence.children.push(
+            self.dfe.ground_function.children[
+                self.ground_sequence.len()
+                ].clone()
+          );
+
+          // Create a new AFAGenerator.
+          let mut afa_function = self.dfe.ground_function.duplicate_head();
+          afa_function.children = self.ground_sequence.children.clone();
+
+          let mut new_afa_generator = T::new(afa_function);
+          let next_result = new_afa_generator.next().unwrap();
+
+
+          self.afa_generator = Box::new(new_afa_generator);
+
+          next_result
+        }
+
+        Some(next_result) => next_result
+      }; // end match on self.afa_generator.next
+
+      self.make_next(ordered_sequence)
     }
   }
 }
@@ -527,10 +579,17 @@ impl<T> RuleSVE<T>
 {
   pub fn new(me: MatchEquation) -> RuleSVE<T> {
     let dfe = DestructuredFunctionEquation::new(&me).unwrap();
+
+    #[cfg(feature = "strict-associativity")]
+    let afa_generator = Box::new(T::new(dfe.ground_function.duplicate_head()));
+
     RuleSVE{
       dfe,
       ground_sequence: Sequence::default(),
-      afa_generator  : None //Some(Box::new(T::new(ground_function))),
+      #[cfg(not(feature = "strict-associativity"))]
+      afa_generator  : None,
+      #[cfg(feature = "strict-associativity")]
+      afa_generator,
     }
   } // end new RuleSVE<T
 
@@ -570,7 +629,10 @@ impl<T> RuleSVE<T>
         Self{
           dfe            : dfe.clone(),
           ground_sequence: Sequence::default(),
-          afa_generator  : None
+          #[cfg(not(feature = "strict-associativity"))]
+          afa_generator  : None,
+          #[cfg(feature = "strict-associativity")]
+          afa_generator  : Box::new(T::new(dfe.ground_function.duplicate_head())),
         }
       )
     } else {

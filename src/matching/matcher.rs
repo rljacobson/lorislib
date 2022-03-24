@@ -26,8 +26,9 @@ use crate::{
     ExpressionKind,
     RcExpression
   },
-  logging::log_at_level
+  // logging::log_at_level
 };
+use crate::logging::log_at_level;
 use crate::matching::associative_commutative::RuleIVEAC;
 
 use super::{
@@ -194,6 +195,18 @@ impl Matcher {
   /// generator for that rule, and pushes the match generator onto the match
   /// stack.
   fn select_rule(&mut self) -> Result<(), ()>{
+    /*
+
+      "The form and the conditions of the rules guarantee that no two rules apply to the same
+      equation except if one of them is Dec-A or Dec-AC. Dec-A can apply to the equation that is
+      transformed by FVE-A or IVE-A. Similarly, Dec-AC is an alternative of FVE-AC or IVE-AC."
+
+      This modification was added to Dundua's paper on 4 March 2022 after I pointed out that not
+      all solutions are produced if only one rule is applied. We implement this by pushing _both_
+      applicable rules onto the match stack.
+
+    */
+
     if self.equation_stack.is_empty() {
       // Nothing to select.
       return Err(());
@@ -259,7 +272,7 @@ impl Matcher {
 
     match (dfe.ground_function.commutative(), dfe.ground_function.associative()) {
 
-      // Rules for Free Functons (neither associative nor commutative)
+      // Rules for Free Functions (neither associative nor commutative)
       (false, false) => {
         // Dec-F
         if let Some(rule) = RuleDecF::try_rule(&dfe){
@@ -308,12 +321,15 @@ impl Matcher {
       (false, true) => {
 
         // Dec-A
+        // New `if`-block. See not at the top of this function.
         if let Some(rule) = RuleDecA::try_rule(&dfe){
           log_at_level(5, format!("Creating Dec-A for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
+
+
         // SVE-A
-        else if let Some(rule) = RuleSVEA::try_rule(&dfe) {
+        if let Some(rule) = RuleSVEA::try_rule(&dfe) {
           log_at_level(5, format!("Creating SVE-A for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
@@ -341,12 +357,15 @@ impl Matcher {
       (true, true) => {
 
         // Dec-AC
+        // New `if`-block. See not at the top of this function.
         if let Some(rule) = RuleDecAC::try_rule(&dfe){
           log_at_level(5, format!("Creating Dec-AC for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
+
+
         // SVE-AC
-        else if let Some(rule) = RuleSVEAC::try_rule(&dfe) {
+        if let Some(rule) = RuleSVEAC::try_rule(&dfe) {
           log_at_level(5, format!("Creating SVE-AC for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
@@ -402,7 +421,7 @@ impl Matcher {
 }
 
 
-impl Iterator for Matcher {
+impl Iterator for &mut Matcher {
   type Item = SolutionSet;
 
   fn next(&mut self) -> Option<Self::Item> {
@@ -528,8 +547,8 @@ mod tests {
       Symbol, Variable
     },
     attributes::Attribute,
-    logging::set_verbosity
   };
+  // use crate::logging::set_verbosity;
 
   use super::*;
 
@@ -547,7 +566,7 @@ mod tests {
 
     // println!("{}", me);
 
-    let matcher = Matcher::new(me.pattern.clone(), me.ground);
+    let mut matcher = Matcher::new(me.pattern.clone(), me.ground);
     let result: Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
     assert_eq!("EMPTY", result.join(", "));
   }
@@ -574,7 +593,7 @@ mod tests {
 
     // println!("{}", me);
 
-    let matcher = Matcher::new(me.pattern.clone(), me.ground);
+    let mut matcher = Matcher::new(me.pattern.clone(), me.ground);
     let result: Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
 
     assert_eq!("{«x» = a, «x» = ƒ❨a❩}", format!("{{{}}}", result.join(", ")));
@@ -606,17 +625,19 @@ mod tests {
 
     // println!("{}", me);
 
-    let matcher = Matcher::new(me.pattern.clone(), me.ground);
+    let mut matcher = Matcher::new(me.pattern.clone(), me.ground);
 
-    // for result in matcher {
+    // for result in &mut Matcher::new(me.pattern.clone(), me.ground) {
     //   println!("{}", display_solutions(&result));
     // }
 
     let expected = [
-      "‹x› = ƒ❨❩, ‹y› = ƒ❨a, b❩",
+      #[cfg(not(feature = "strict-associativity"))]
+      "‹x› = ƒ❨❩, ‹y› = ƒ❨a, b❩", // Not allowed by strict-associativity.
       "‹x› = ƒ❨a❩, ‹y› = ƒ❨b❩",
       "‹x› = ƒ❨b❩, ‹y› = ƒ❨a❩",
-      "‹x› = ƒ❨a, b❩, ‹y› = ƒ❨❩"
+      #[cfg(not(feature = "strict-associativity"))]
+      "‹x› = ƒ❨a, b❩, ‹y› = ƒ❨❩" // Not allowed by strict-associativity.
     ];
 
     let result: Vec<String> = matcher.map(|s| display_solutions(&s)).collect();

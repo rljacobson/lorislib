@@ -87,20 +87,30 @@ impl RuleIVEAC {
   pub fn new(me: MatchEquation) -> Self {
     RuleIVEAC {
       dfe: DestructuredFunctionEquation::new(&me).unwrap(),
-      subset: 0
+      #[cfg(not(feature = "strict-associativity"))]
+      subset: 0,
+      #[cfg(feature = "strict-associativity")]
+      subset: 1, // Cannot match the empty set under strict associativity.
     }
   }
 
   pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<RuleIVEAC> {
     if dfe.pattern_function.len() > 0
         && dfe.pattern_function.part(0).kind() == ExpressionKind::Variable
-        // && dfe.ground_function.len() > 0
     {
+      // Additional condition for strict associativity
+      #[cfg(not(feature = "strict-associativity"))]
+      if dfe.ground_function.len() == 0{
+        return None;
+      }
 
       Some(
         RuleIVEAC {
           dfe: dfe.clone(),
-          subset: 0
+          #[cfg(not(feature = "strict-associativity"))]
+          subset: 0,
+          #[cfg(feature = "strict-associativity")]
+          subset: 1, // Cannot match the empty set under strict associativity.
         }
       )
     } else {
@@ -213,7 +223,9 @@ mod tests {
     // }
 
     let expected = [
+      #[cfg(not(feature = "strict-associativity"))]
       "ƒ❨u, v, w❩ ≪ ƒ❨a, b, c❩",
+      #[cfg(not(feature = "strict-associativity"))]
       "‹x›→ƒ❨❩",
       "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩",
       "‹x›→ƒ❨a❩",

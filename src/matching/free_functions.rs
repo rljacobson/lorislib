@@ -46,6 +46,21 @@ pub type RuleDecF = RuleDecNonCommutative<NonAssociative>;
 pub struct RuleSVEF {
   pub(crate) dfe: DestructuredFunctionEquation,
 
+  /*
+    In Dundua, the strict associativity axiom is
+      ƒ(x̅, ƒ(y̅₁, y, y̅₂), z̅) = ƒ(x̅, y̅₁, y, y̅₂, z̅),
+    that is, a term must appear inside the inner function in order to flatten it. Likewise,
+    strict variants of the Σ expansion rules preclude producing the empty sequence.
+
+    However, it seems more natural to me to allow the solution {x = f(), y=f(a, b)} for the
+    matching problem
+       ƒ(x,y)≪ᴱƒ(a,b), ƒ is AC
+    for example. It isn't clear what the best way to do this is. Feature flag? Generics and
+    marker types? Multiple `MatchGenerator`s? For now we use a feature flag.
+  */
+  // Todo: Determine the "right" way to have different variants of associativity.
+
+  #[cfg(not(feature = "strict-associativity"))]
   /// Have we produced the empty sequence as the first result yet?
   empty_produced: bool,
   /// A `Sequence`, holds the terms of the ground that we have attempted to match
@@ -64,7 +79,9 @@ impl Iterator for RuleSVEF {
   type Item = NextMatchResultList;
 
   fn next(&mut self) -> MaybeNextMatchResult {
+
     // If we haven't produced the empty sequence, do that.
+    #[cfg(not(feature = "strict-associativity"))]
     if !self.empty_produced {
       self.empty_produced = true;
       return Some(self.make_next());
@@ -93,6 +110,8 @@ impl RuleSVEF {
     RuleSVEF{
       dfe            : DestructuredFunctionEquation::new(&me).unwrap(),
       ground_sequence: Sequence::default(),
+      // Se note in the struct definition.
+      #[cfg(not(feature = "strict-associativity"))]
       empty_produced : false
     }
   } // end new RuleSVEF
@@ -134,6 +153,7 @@ impl RuleSVEF {
       Some(
         RuleSVEF {
           dfe            : dfe.clone(),
+          #[cfg(not(feature = "strict-associativity"))]
           empty_produced : false,
           ground_sequence: Sequence::default()
         }
@@ -190,8 +210,12 @@ mod tests {
     // }
     let result = rule_svea.flatten().map(|r| r.to_string()).collect::<Vec<String>>();
     let expected = [
+
+      #[cfg(not(feature = "strict-associativity"))]
       "ƒ❨u, v, w❩ ≪ ƒ❨a, b, c❩",
-      "«x»→()",
+      #[cfg(not(feature = "strict-associativity"))]
+      "«x»→()", // Not allowed by strict-associativity.
+
       "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩",
       "«x»→a",
       "ƒ❨u, v, w❩ ≪ ƒ❨c❩",
