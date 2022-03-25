@@ -26,10 +26,8 @@ use crate::{
     ExpressionKind,
     RcExpression
   },
-  // logging::log_at_level
+  logging::log_at_level
 };
-use crate::logging::log_at_level;
-use crate::matching::associative_commutative::RuleIVEAC;
 
 use super::{
   associative::{
@@ -41,7 +39,8 @@ use super::{
   associative_commutative::{
     RuleDecAC,
     RuleFVEAC,
-    RuleSVEAC
+    RuleSVEAC,
+    RuleIVEAC
   },
   common::{
     RuleFVE,
@@ -148,7 +147,7 @@ impl Matcher {
   /// stack.
   fn undo(&mut self) -> Box<dyn MatchGenerator> {
     loop {
-  match self.match_stack.pop().unwrap() {
+      match self.match_stack.pop().unwrap() {
 
         MatchStack::MatchGenerator(match_generator) => {
           // Leave the match generator on top of the match stack, and don't restore
@@ -202,8 +201,12 @@ impl Matcher {
       transformed by FVE-A or IVE-A. Similarly, Dec-AC is an alternative of FVE-AC or IVE-AC."
 
       This modification was added to Dundua's paper on 4 March 2022 after I pointed out that not
-      all solutions are produced if only one rule is applied. We implement this by pushing _both_
-      applicable rules onto the match stack.
+      all solutions are produced if only one rule is applied.
+
+      The rules Dec-A* always apply whenever FVE-A* or IVE-A* apply. Also, Dec-A* applies when
+      the first argument of the pattern function is a non-function non-variable, i.e. a literal
+      or symbol. Thus, we modify the definitions of FVE-A* or IVE-A* to have an encapsulated copy
+      of Dec-A*. We also place Dec-A* _after_ FVE-A* or IVE-A* in the `if`-list of rules.
 
     */
 
@@ -320,14 +323,6 @@ impl Matcher {
       // Rules for associative functions
       (false, true) => {
 
-        // Dec-A
-        // New `if`-block. See not at the top of this function.
-        if let Some(rule) = RuleDecA::try_rule(&dfe){
-          log_at_level(5, format!("Creating Dec-A for {}", dfe.match_equation).as_str());
-          self.push_rule(Box::new(rule));
-        }
-
-
         // SVE-A
         if let Some(rule) = RuleSVEA::try_rule(&dfe) {
           log_at_level(5, format!("Creating SVE-A for {}", dfe.match_equation).as_str());
@@ -343,6 +338,11 @@ impl Matcher {
           log_at_level(5, format!("Creating IVE-A for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
+        // Dec-A
+        else if let Some(rule) = RuleDecA::try_rule(&dfe){
+          log_at_level(5, format!("Creating Dec-A for {}", dfe.match_equation).as_str());
+          self.push_rule(Box::new(rule));
+        }
         else {
           log_at_level(5, format!("No applicable (associative) rule found.").as_str());
           // Return match equation.
@@ -355,14 +355,6 @@ impl Matcher {
 
       // Rules for associative-commutative symbols.
       (true, true) => {
-
-        // Dec-AC
-        // New `if`-block. See not at the top of this function.
-        if let Some(rule) = RuleDecAC::try_rule(&dfe){
-          log_at_level(5, format!("Creating Dec-AC for {}", dfe.match_equation).as_str());
-          self.push_rule(Box::new(rule));
-        }
-
 
         // SVE-AC
         if let Some(rule) = RuleSVEAC::try_rule(&dfe) {
@@ -379,8 +371,15 @@ impl Matcher {
           log_at_level(5, format!("Creating IVE-AC for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
+        // Dec-AC
+        else if let Some(rule) = RuleDecAC::try_rule(&dfe){
+          log_at_level(5, format!("Creating Dec-AC for {}", dfe.match_equation).as_str());
+          self.push_rule(Box::new(rule));
+        }
         else {
           log_at_level(5, format!("No applicable (associative-commutative) rule found.").as_str());
+          // Return match equation.
+          self.equation_stack.push(me);
           return Err(());
         }
         return Ok(());
@@ -548,12 +547,12 @@ mod tests {
     },
     attributes::Attribute,
   };
-  // use crate::logging::set_verbosity;
+  use crate::logging::set_verbosity;
 
   use super::*;
 
   #[test]
-  // ƒ()≪ᴱƒ(), ƒ is A or AC
+  /// Solve ƒ()≪ᴱƒ(), ƒ is A or AC
   fn match_empty_functions(){
     let mut f = Function::with_symbolic_head("ƒ");
     f.attributes.set(Attribute::Associative);
@@ -564,8 +563,6 @@ mod tests {
       ground: Rc::new(g.into()),
     };
 
-    // println!("{}", me);
-
     let mut matcher = Matcher::new(me.pattern.clone(), me.ground);
     let result: Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
     assert_eq!("EMPTY", result.join(", "));
@@ -574,7 +571,7 @@ mod tests {
   // The following numbered tests are from p. 37 of Dundua, the numbers coming from the paper.
 
   #[test]
-  // ƒ(x̅)≪ᴱƒ(a), ƒ is A or AC
+  /// Solve ƒ(x̅)≪ᴱƒ(a), ƒ is A or AC
   fn problem5() {
     // set_verbosity(5);
     let mut f = Function::with_symbolic_head("ƒ");
@@ -591,8 +588,6 @@ mod tests {
       ground: Rc::new(g.into()),
     };
 
-    // println!("{}", me);
-
     let mut matcher = Matcher::new(me.pattern.clone(), me.ground);
     let result: Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
 
@@ -600,7 +595,7 @@ mod tests {
   }
 
   #[test]
-  // ƒ(x,y)≪ᴱƒ(a,b), ƒ is AC
+  /// Solve ƒ(x,y)≪ᴱƒ(a,b), ƒ is AC
   fn problem7() {
     // set_verbosity(5);
 
@@ -635,14 +630,50 @@ mod tests {
       #[cfg(not(feature = "strict-associativity"))]
       "‹x› = ƒ❨❩, ‹y› = ƒ❨a, b❩", // Not allowed by strict-associativity.
       "‹x› = ƒ❨a❩, ‹y› = ƒ❨b❩",
+      "‹x› = ƒ❨a❩, ‹y› = b",
       "‹x› = ƒ❨b❩, ‹y› = ƒ❨a❩",
+      "‹x› = ƒ❨b❩, ‹y› = a",
       #[cfg(not(feature = "strict-associativity"))]
-      "‹x› = ƒ❨a, b❩, ‹y› = ƒ❨❩" // Not allowed by strict-associativity.
+        "‹x› = ƒ❨a, b❩, ‹y› = ƒ❨❩", // Not allowed by strict-associativity.
+      "‹x› = a, ‹y› = ƒ❨b❩",
+      "‹x› = a, ‹y› = b",
+      "‹x› = b, ‹y› = ƒ❨a❩",
+      "‹x› = b, ‹y› = a"
     ];
 
     let result: Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
     assert_eq!(expected, result.as_slice());
 
     // println!("{{{}}}", result.join(", "));
+  }
+
+
+  /// Solve ƒ❨‹x›❩ ≪ ƒ❨❩.
+  /// No solution for strict associativity. One solution for (regular) associativity.
+  #[test]
+  fn match_empty_associative_function() {
+    // set_verbosity(5);
+
+    let mut f = Function::with_symbolic_head("ƒ");
+    f.attributes.set(Attribute::Associative);
+    f.attributes.set(Attribute::Commutative);
+    let x = Rc::new(Variable("x".into()).into());
+    f.push(x);
+
+    let g = f.duplicate_head();
+
+    let me = MatchEquation{
+      pattern: Rc::new(f.into()),
+      ground: Rc::new(g.into()),
+    };
+
+    let mut matcher = Matcher::new(me.pattern.clone(), me.ground);
+
+    let result: Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+
+    #[cfg(not(feature = "strict-associativity"))]
+    assert_eq!("‹x› = ƒ❨❩", result.join(", "));
+    #[cfg(feature = "strict-associativity")]
+    assert_eq!("", result.join(", ")); // Empty
   }
 }

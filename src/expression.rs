@@ -13,7 +13,7 @@ the expression, and transform the result back into your native types.
 
 use std::{rc::Rc, cmp::Ordering};
 
-use strum::EnumDiscriminants;
+use strum::{EnumDiscriminants, Display};
 use lazy_static::lazy_static;
 
 use crate::{
@@ -36,6 +36,7 @@ pub type RcExpression = Rc<Expression>;
 
 #[derive(Clone, PartialEq, Eq, EnumDiscriminants, Debug, Hash)]
 #[strum_discriminants(name(ExpressionKind))]
+#[strum_discriminants(derive(Display))]
 pub enum Expression{
   /// A symbol is an atomic nonvariable expression.
   Symbol(Symbol),

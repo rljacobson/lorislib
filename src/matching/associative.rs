@@ -63,23 +63,28 @@ use super::{
 /// and s∉Ꮙₛₑ.
 pub type RuleDecA = RuleDecNonCommutative<Associative>;
 
-// Sequence variable elimination under associative head
-//    ƒ(x̅,s̃)≪ᴱƒ(t̃₁,t̃₂) ⇝ₛ {ƒ(s̃)≪ᴱ ƒ(t̃₂)},
-// where ƒ is associative and non-commutative and S={x̅≈(t̃₁)[ƒ]}.
+/// Sequence variable elimination under associative head
+///    ƒ(x̅,s̃)≪ᴱƒ(t̃₁,t̃₂) ⇝ₛ {ƒ(s̃)≪ᴱ ƒ(t̃₂)},
+/// where ƒ is associative and non-commutative and S={x̅≈(t̃₁)[ƒ]}.
 pub type RuleSVEA = RuleSVE<AFAGenerator<EnumerateAll>>;
 
 /// Function variable elimination under associative head
 /// ƒ(X(s̃₁),s̃₁)≪ᴱƒ(t̃)⇝ₛ{ƒ(s̃₁,s̃₂)≪ᴱƒ(t̃)}, where ƒ is associative and non-commutative and S={X≈ƒ}.
+///
+/// Note that `RuleFVEA` automatically chains with `RuleDecA`, because rule Dec-A always applies
+/// when rule FVE-A applies.
 pub struct RuleFVEA {
   dfe      : DestructuredFunctionEquation,
-  exhausted: bool
+  rule_deca: Option<RuleDecA>, // Doubles as a flag to indicate that the rule has been exhausted.
 }
 
 impl RuleFVEA {
   pub fn new(match_equation: MatchEquation) -> RuleFVEA {
+    // let rule_deca = Some(RuleDecA::new(match_equation.clone()));
+
     RuleFVEA{
-      dfe      : DestructuredFunctionEquation:: new(&match_equation).unwrap(),
-      exhausted: false
+      dfe      : DestructuredFunctionEquation::new(&match_equation).unwrap(),
+      rule_deca: None // Doubles as a flag to indicate that the rule has been exhausted.
     }
   }
 
@@ -91,10 +96,11 @@ impl RuleFVEA {
       {
         if function.is_function_variable()
         {
+          // let rule_deca = Some(RuleDecA::new(dfe.match_equation.clone()));
           return Some(
             RuleFVEA{
-              dfe: dfe.clone(),
-              exhausted: false
+              dfe      : dfe.clone(),
+              rule_deca: None
             }
           );
         }
@@ -116,11 +122,15 @@ impl Iterator for RuleFVEA {
   type Item = NextMatchResultList;
 
   fn next(&mut self) -> MaybeNextMatchResult {
-    // One shot.
-    if self.exhausted {
-      return None;
+    // `RuleFVEA` itself is just one shot, so we set up the flag to indicate that it has been
+    // exhausted by populating the `rule_deca` field.
+    if let Some(rule_deca) = &mut self.rule_deca {
+      return rule_deca.next();
+    } else {
+      self.rule_deca = Some(RuleDecA::new(self.match_equation()));
     }
-    self.exhausted = true;
+
+
     // This method more than most others demonstrates how we do not verify that the form of these expressions is correct.
     // That verification is done at the time of rule selection.
 
@@ -147,17 +157,13 @@ impl Iterator for RuleFVEA {
     };
 
     let ground_function_head = self.dfe.ground_function.head.clone();
-    let new_substitution = NextMatchResult::sub(function_variable, ground_function_head);
-
-    // Make new pattern
-    // let mut new_pattern = if let Expression::Function(function) = self.dfe.pattern_rest.as_ref() {
-    //   function.children.insert(0, function_first);
-    //   function.clone()
-    // } else {
-    //   unreachable!();
-    // };
-
-    let new_match_equation = NextMatchResult::eq(Rc::new(new_pattern.into()), self.dfe.match_equation.ground.clone());
+    let new_substitution =
+        NextMatchResult::sub(function_variable, ground_function_head);
+    let new_match_equation =
+        NextMatchResult::eq(
+          Rc::new(new_pattern.into()),
+          self.dfe.match_equation.ground.clone()
+        );
 
     Some(smallvec![new_substitution, new_match_equation])
   }
@@ -167,11 +173,14 @@ impl Iterator for RuleFVEA {
 
 /// Individual variable elimination under associative head
 ///   ƒ(x,s̃)≪ᴱƒ(t̃₁,t̃₂) ⇝ₛ {ƒ(s̃)≪ᴱ ƒ(t̃₂)},
-/// where ƒ is associative and non-commutative and S = {x≈ƒ(t̃₁)}.
-/// Since this is almost identical to `RuleSVEF`, we just use
-/// RuleSVEF behind the scenes.
+/// where ƒ is associative and non-commutative and S = {x≈ƒ(t̃₁)}. Since this is almost identical to
+/// `RuleSVEF`, we just use RuleSVEF behind the scenes.
+///
+/// Note that `RuleIVEA` automatically chains with `RuleDecA`, because rule Dec-A always applies
+/// when rule IVE-A applies.
 pub struct RuleIVEA {
   rule_svef: RuleSVEF,
+  rule_deca: RuleDecA
 }
 
 impl MatchGenerator for RuleIVEA {
@@ -184,7 +193,15 @@ impl Iterator for RuleIVEA {
   type Item = NextMatchResultList;
 
   fn next(&mut self) -> MaybeNextMatchResult {
-    let mut result = self.rule_svef.next()?;
+    // The inner `RuleSVEF` is chained with the inner `RuleDecA`. We can't just use `chain()`,
+    // though, because the result of `RuleSVEF` needs to be transformed.
+    let mut result =
+        match self.rule_svef.next() {
+          Some(result) => result,
+          None => {
+            return self.rule_deca.next()
+          }
+        };
 
     // Transform the substitution to be a substitution for a function instead of a sequence..
     // Destructure result to get substitution.
@@ -214,7 +231,8 @@ impl Iterator for RuleIVEA {
 impl RuleIVEA {
   pub fn new(me: MatchEquation) -> RuleIVEA {
     RuleIVEA{
-      rule_svef: RuleSVEF::new(me)
+      rule_svef: RuleSVEF::new(me.clone()),
+      rule_deca: RuleDecA::new(me)
     }
   }
 
@@ -225,10 +243,12 @@ impl RuleIVEA {
     {
 
       let rule_svef = RuleSVEF::new(dfe.match_equation.clone());
+      let rule_deca = RuleDecA::new(dfe.match_equation.clone());
 
       Some(
         RuleIVEA{
-          rule_svef
+          rule_svef,
+          rule_deca
         }
       )
     } else {
@@ -324,18 +344,24 @@ mod tests {
 
   }
 
-
+  /// Solve ƒ❨‹X›❨u, v, w❩, x, y, z❩ ≪ ƒ❨a, b, c, d, e, h❩
   #[test]
   fn generate_rule_fvea() {
     let mut x = Function::with_variable_head("X");
     x.children = ["u", "v", "w"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
-    let s2 = ["x", "y", "z"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
+    let s2 = ["x", "y", "z"]
+              .iter()
+              .map(|&n| Rc::new(Symbol::from(n).into()))
+              .collect::<Vec<RcExpression>>();
     let mut f = Function::with_symbolic_head("ƒ");
     f.push(Rc::new(x.into()));
     f.children.extend(s2);
 
     let mut g = Function::with_symbolic_head("ƒ");
-    g.children = ["a", "b", "c", "d", "e", "h"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
+    g.children = ["a", "b", "c", "d", "e", "h"]
+                      .iter()
+                      .map(|&n| Rc::new(Symbol::from(n).into()))
+                      .collect::<Vec<RcExpression>>();
 
     let me = MatchEquation{
         pattern: Rc::new(f.into()),
@@ -351,7 +377,9 @@ mod tests {
 
     let expected = [
       "‹X›→ƒ",
-      "ƒ❨u, v, w, x, y, z❩ ≪ ƒ❨a, b, c, d, e, h❩"
+      "ƒ❨u, v, w, x, y, z❩ ≪ ƒ❨a, b, c, d, e, h❩",
+      "‹X›❨u, v, w❩ ≪ a",
+      "ƒ❨x, y, z❩ ≪ ƒ❨b, c, d, e, h❩"
     ];
     let result = rule_fvea.flatten().map(|r| r.to_string()).collect::<Vec<String>>();
 
@@ -359,6 +387,7 @@ mod tests {
   }
 
 
+  /// Solve ƒ❨‹x›, u, v, w❩ ≪ ƒ❨a, b, c❩
   #[test]
   fn generate_rule_ivea() {
     let x: RcExpression = Rc::new(Variable::from("x").into());
@@ -395,6 +424,8 @@ mod tests {
       "‹x›→ƒ❨a, b❩",
       "ƒ❨u, v, w❩ ≪ ƒ❨❩",
       "‹x›→ƒ❨a, b, c❩",
+      "‹x› ≪ a",
+      "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩"
     ];
     let result = rule_ivea.flatten().map(|r| r.to_string()).collect::<Vec<String>>();
     assert_eq!(expected, result.as_slice());

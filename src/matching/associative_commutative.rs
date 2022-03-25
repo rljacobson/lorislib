@@ -68,10 +68,16 @@ pub type RuleSVEAC = RuleSVE<AFACGenerator<EnumerateAll>>;
 /// ƒ(X(s̃₁),s̃₁)≪ᴱƒ(t̃)⇝ₛ{ƒ(s̃₁,s̃₂)≪ᴱƒ(t̃)}, where ƒ
 /// is associative-commutative and S={X≈ƒ}.
 /// Same as `RuleFVEA`.
+///
+/// Note that `RuleFVEAC` automatically chains with `RuleDecAC`, because rule Dec-AC always applies
+/// when rule FVE-AC applies.
 pub type RuleFVEAC = RuleFVEA;
 
 
 /// IVE-AC: Individual variable elimination under AC head.
+///
+/// Note that `RuleIVEAC` automatically chains with `RuleDecAC`, because rule Dec-AC always applies
+/// when rule IVE-AC applies.
 pub struct RuleIVEAC {
   dfe: DestructuredFunctionEquation,
   /// Bit positions indicate which subset of the ground's children are currently
@@ -79,7 +85,8 @@ pub struct RuleIVEAC {
   /// subsets of a set with more than 32 elements. We use `u32::MAX` ==
   /// `2^32-1` to indicate the rule is exhausted, so we only support at most
   /// 31 children.
-  subset: u32
+  subset: u32,
+  rule_decac: RuleDecAC
 }
 
 impl RuleIVEAC {
@@ -91,6 +98,7 @@ impl RuleIVEAC {
       subset: 0,
       #[cfg(feature = "strict-associativity")]
       subset: 1, // Cannot match the empty set under strict associativity.
+      rule_decac: RuleDecAC::new(me)
     }
   }
 
@@ -99,7 +107,7 @@ impl RuleIVEAC {
         && dfe.pattern_function.part(0).kind() == ExpressionKind::Variable
     {
       // Additional condition for strict associativity
-      #[cfg(not(feature = "strict-associativity"))]
+      #[cfg(feature = "strict-associativity")]
       if dfe.ground_function.len() == 0{
         return None;
       }
@@ -111,6 +119,7 @@ impl RuleIVEAC {
           subset: 0,
           #[cfg(feature = "strict-associativity")]
           subset: 1, // Cannot match the empty set under strict associativity.
+          rule_decac: RuleDecAC::new(dfe.match_equation.clone())
         }
       )
     } else {
@@ -135,9 +144,8 @@ impl Iterator for RuleIVEAC {
     let max_subset_state: u32 = ((1 << n) - 1) as u32;
 
     if self.subset > max_subset_state {
-      return None;
+      return self.rule_decac.next();
     }
-
 
     // For the subset of the children that will be matched against as well as its
     // complement, which will go in the new match equation.
@@ -197,6 +205,7 @@ mod tests {
   };
 
 
+  /// Solve ƒ❨‹x›, u, v, w❩ ≪ ƒ❨a, b, c❩
   #[test]
   fn generate_rule_ivea() {
     let x: RcExpression = Rc::new(Variable::from("x").into());
@@ -240,7 +249,14 @@ mod tests {
       "ƒ❨u, v, w❩ ≪ ƒ❨a❩",
       "‹x›→ƒ❨b, c❩",
       "ƒ❨u, v, w❩ ≪ ƒ❨❩",
-      "‹x›→ƒ❨a, b, c❩"
+      "‹x›→ƒ❨a, b, c❩",
+
+      "‹x› ≪ a",
+      "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩",
+      "‹x› ≪ b",
+      "ƒ❨u, v, w❩ ≪ ƒ❨a, c❩",
+      "‹x› ≪ c",
+      "ƒ❨u, v, w❩ ≪ ƒ❨a, b❩"
     ];
     let result = rule_iveac.flatten().map(|r| r.to_string()).collect::<Vec<String>>();
     assert_eq!(expected, result.as_slice());

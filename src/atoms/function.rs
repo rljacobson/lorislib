@@ -342,9 +342,9 @@ mod tests {
     sequence_outer.children.push(Rc::new(f2.into()));
     f1.children.push(Rc::new(sequence_outer.into()));
 
-    println!("{}", f1);
+    // println!("{}", f1);
     f1.associative_normal_form();
-    println!("{}", f1);
+    // println!("{}", f1);
 
     assert_eq!(f1, g);
   }
