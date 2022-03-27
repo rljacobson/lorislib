@@ -26,9 +26,10 @@ use crate::{
     Function,
     Variable,
     Sequence,
-    SequenceVariable
+    SequenceVariable,
+    Literal
   },
-  normal_form::NormalFormOrder
+  normal_form::NormalFormOrder,
 };
 
 
@@ -71,6 +72,8 @@ pub enum Expression{
   /// only holds sequences.
   SequenceVariable(SequenceVariable),
 
+  /// A `Literal` is a string, float, hexadecimal, or decimal number.
+  Literal(Literal)
 }
 
 lazy_static!{
@@ -101,6 +104,7 @@ impl Expression {
       Expression::SequenceVariable(SequenceVariable(name)) => &name,
       Expression::Symbol(Symbol(name)) => &name,
       Expression::Variable(Variable(name)) => &name,
+      Expression::Literal(Literal(name)) => &name,
     }
   }
 
@@ -109,6 +113,7 @@ impl Expression {
 
       // todo: Should non M-expressions have a positive length?
       | Expression::Symbol(_)
+      | Expression::Literal(_)
       | Expression::Variable(_)
       | Expression::SequenceVariable(_) => 1,
 
@@ -127,6 +132,7 @@ impl Expression {
         Expression::Sequence(sequence) => sequence.associative_normal_form(),
 
         _ => { /* nothing to do */ }
+
     }
   }
 
@@ -139,6 +145,7 @@ impl Expression {
         Expression::Sequence(sequence) => sequence.commutative_normal_form(),
 
         _ => { /* nothing to do */ }
+
     }
   }
 
@@ -172,7 +179,11 @@ impl Formatable for Expression {
 
       Expression::SequenceVariable(variable) => {
         variable.format(formatter)
-      }
+      },
+
+      Expression::Literal(literal) => {
+        literal.format(formatter)
+      },
 
     }
   }
@@ -186,6 +197,9 @@ impl NormalFormOrder for Expression {
       // Same expression type //
 
       (Expression::Symbol(s), Expression::Symbol(t))
+      => NormalFormOrder::cmp(s, t),
+
+      (Expression::Literal(s), Expression::Literal(t))
       => NormalFormOrder::cmp(s, t),
 
       (Expression::Function(f), Expression::Function(g))

@@ -10,7 +10,8 @@ mod normal_form;
 mod attributes;
 mod atoms;
 mod matching;
-
+#[cfg(feature = "nom")]
+mod parser;
 
 
 /*

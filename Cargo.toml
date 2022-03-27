@@ -23,9 +23,13 @@ permutation-generator = {path     = "../permutation_generator"}
 lazy_static           = "1.4.0"
 smallvec              = {version  = "1.8.0", features = ["union"]}
 
+nom = {version = "7", optional = true, features = ["alloc"]}
+
+unicode-xid = "0.2.2" # Unicode support for identifiers.
+
 
 [features]
-default = ["strict-associativity"]
+default = ["strict-associativity", "nom"]
 
 strict-associativity     = []
 mathematica-compatibiity = []
