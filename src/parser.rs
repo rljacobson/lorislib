@@ -3,7 +3,10 @@
 Quick and dirty parser for an M-expression language.
 
  */
-#![cfg(feature = "alloc")]
+// #![cfg(feature = "alloc")]
+
+
+use std::rc::Rc;
 
 use nom::{
   branch::alt,
@@ -16,25 +19,23 @@ use nom::{
       take_while_m_n
     }
   },
-  character::complete::{
-    alphanumeric1,
-    alphanumeric0,
-    alpha1,
-    char,
-    digit1,
-    multispace0,
-    multispace1
+  character::{
+    complete::{
+      alphanumeric0,
+      alpha1,
+      char as char1,
+      multispace1,
+      one_of
+    }
   },
   combinator::{
     map,
     map_res,
-    opt,
     recognize,
     map_opt,
     value,
     verify
   },
-  Err,
   error::{
     ErrorKind,
     FromExternalError,
@@ -43,42 +44,74 @@ use nom::{
   IResult,
   multi::{
     many0,
-    fold_many0
+    fold_many0,
+    many1,
+    separated_list1
   },
   number::complete::{
     recognize_float_parts,
-    hex_u32,
   },
   sequence::{
     delimited,
     pair,
     preceded,
-    tuple
+    separated_pair,
+    terminated
   },
 };
-use nom::multi::many1;
-use nom::sequence::terminated;
 
-use crate::expression::{Expression, RcExpression};
+use crate::{
+  atoms::{Function, Literal, Symbol, Variable, Sequence, SequenceVariable},
+  attributes::{Attribute, Attributes},
+  expression::{Expression, RcExpression},
+  matching::MatchEquation
+};
 
-pub fn parse_program(input: &str) -> IResult<&str, Vec<RcExpression>> {
+pub fn parse_program(input: &str) -> IResult<&str, MatchEquation> { //Vec<RcExpression>
 
-  many0(
-    delimited(
-      many0(ignorable),
-      statement,
-      many0(ignorable)
-    )
+  // many0(
+  //   delimited(
+  //     many0(ignorable),
+  //     statement,
+  //     many0(ignorable)
+  //   )
+  // )(input)
+
+  delimited(
+    many0(ignorable),
+    match_expression,
+    many0(ignorable)
   )(input)
 
 }
 
 fn ignorable(input: &str) -> IResult<&str, &str> {
-  alt((
-    is_a(" \t\n\r"),
-    comment
-  ))(input)
+  recognize(
+    many0(
+      alt((
+        is_a(" \t\n\r"),
+        comment
+      ))
+    )
+  )(input)
 }
+
+
+/// A combinator that takes a parser `inner` and produces a parser that also consumes both leading and
+/// trailing whitespace, returning the output of `inner`.
+fn ignore_ignorables<'a, F: 'a, O>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O, nom::error::Error<&str>>
+  where
+      F: Fn(&'a str) -> IResult<&'a str, O, nom::error::Error<&str> >,
+{
+  delimited(
+    ignorable,
+    inner,
+    ignorable
+  )
+}
+
+
+// Atomic expressions
 
 fn comment(input: &str) -> IResult<&str, &str> {
   alt((
@@ -91,23 +124,29 @@ fn comment(input: &str) -> IResult<&str, &str> {
   (input)
 }
 
+
 fn identifier(input: &str) -> IResult<&str, &str> {
   recognize(
     pair(
-      alpha1,
+      alt((alpha1, tag("ƒ"))),
       alphanumeric0
     )
   )(input)
 }
 
-fn literal(input: &str) -> IResult<&str, &str> {
-  alt((
-    parse_string,
-    recognize_float_parts,
-    hexadecimal,
-    decimal,
+
+fn literal(input: &str) -> IResult<&str, RcExpression> {
+  let val = alt((
+    recognize(parse_string),
+    recognize(recognize_float_parts),
+    recognize(hexadecimal),
+    recognize(decimal),
     // etc.
-  ))(input)
+  ))(input)?;
+
+  let expr = Rc::new(Literal(val.1.to_string()).into());
+
+  Ok((val.0, expr))
 }
 
 
@@ -116,19 +155,146 @@ fn hexadecimal(input: &str) -> IResult<&str, &str> { // <'a, E: ParseError<&'a s
     alt((tag("0x"), tag("0X"))),
     recognize(
       many1(
-        terminated(one_of("0123456789abcdefABCDEF"), many0(char('_')))
+        terminated(one_of("0123456789abcdefABCDEF"), many0(char1('_')))
       )
     )
   )(input)
 }
 
+
 fn decimal(input: &str) -> IResult<&str, &str> {
   recognize(
     many1(
-      terminated(one_of("0123456789"), many0(char('_')))
+      terminated(one_of("0123456789"), many0(char1('_')))
     )
   )(input)
 }
+
+
+// Higher-order expressions
+
+/// A function call is a name (symbol) or variable adjacent to a sequence. A sequence, function,
+/// or literal cannot be the "head" of a function.
+fn function_application(input: &str) -> IResult<&str, RcExpression> {
+  let val = pair(
+    alt((symbol, variable)),
+    sequence
+  )(input)?;
+
+  let mut attributes = Attributes::new();
+  attributes.set(Attribute::Associative);
+  attributes.set(Attribute::Commutative);
+  attributes.set(Attribute::Variadic);
+
+
+
+  if let Expression::Sequence(sequence) = Rc::<Expression>::try_unwrap(val.1.1).unwrap() {
+    let f = Function{
+      head: val.1.0.clone(),
+      children: sequence.children,
+      attributes
+    };
+
+    Ok((val.0, Rc::new(f.into())))
+  } else {
+    unreachable!()
+  }
+
+
+}
+
+
+fn variable(input: &str) -> IResult<&str, RcExpression> {
+  let val = delimited(
+    char1('‹'),
+    identifier,
+    char1('›')
+  )(input)?;
+
+  let expr: RcExpression = Rc::new(Variable(val.1.to_string()).into());
+
+  Ok((val.0, expr))
+}
+
+fn symbol(input: &str) -> IResult<&str, RcExpression> {
+  let val = identifier(input)?;
+  let expr: RcExpression = Rc::new(Symbol(val.1.to_string()).into());
+
+  Ok((val.0, expr))
+}
+
+
+fn sequence_variable(input: &str) -> IResult<&str, RcExpression> {
+  let val = delimited(
+    char1('«'),
+    identifier,
+    char1('»')
+  )(input)?;
+
+  let expr: RcExpression = Rc::new(SequenceVariable(val.1.to_string()).into());
+
+  Ok((val.0, expr))
+}
+
+
+fn expression(input: &str) -> IResult<&str, RcExpression> {
+  delimited(
+    ignorable,
+    alt((
+      function_application,
+      sequence,
+      symbol,
+      literal,
+      variable,
+      sequence_variable,
+    )),
+    ignorable
+  )(input)
+}
+
+
+fn sequence(input: &str) -> IResult<&str, RcExpression> {
+  let val = delimited(
+    alt((char1('('), char1('❨'))),
+    separated_list1(
+      char1(','),
+      expression
+    ),
+    alt((char1(')'), char1('❩')))
+  )(input)?;
+
+  let seq = Sequence{
+    children: val.1
+  };
+  let expr: RcExpression = Rc::new(seq.into());
+
+  Ok((val.0, expr))
+}
+
+
+fn match_operator(input: &str) -> IResult<&str, &str> {
+  alt((
+    tag("<<"),
+    tag("≪")
+  ))(input)
+}
+
+
+fn match_expression(input: &str) -> IResult<&str, MatchEquation> {
+  let val = separated_pair(
+    expression,
+    match_operator,
+    expression
+  )(input)?;
+
+  let me = MatchEquation{
+    pattern: val.1.0,
+    ground: val.1.1
+  };
+
+  Ok((val.0, me))
+}
+
 
 
 // region String Parsing
@@ -160,11 +326,11 @@ fn parse_unicode<'a, E>(input: &'a str) -> IResult<&'a str, char, E>
   // `preceded` takes a prefix parser, and if it succeeds, returns the result
   // of the body parser. In this case, it parses u{XXXX}.
   let parse_delimited_hex = preceded(
-    char('u'),
+    char1('u'),
     // `delimited` is like `preceded`, but it parses both a prefix and a suffix.
     // It returns the result of the middle parser. In this case, it parses
     // {XXXX}, where XXXX is 1 to 6 hex numerals, and returns XXXX
-    delimited(char('{'), parse_hex, char('}')),
+    delimited(char1('{'), parse_hex, char1('}')),
   );
 
   // `map_res` takes the result of a parser and applies a function that returns
@@ -185,7 +351,7 @@ fn parse_escaped_char<'a, E>(input: &'a str) -> IResult<&'a str, char, E>
       E: ParseError<&'a str> + FromExternalError<&'a str, std::num::ParseIntError>,
 {
   preceded(
-    char('\\'),
+    char1('\\'),
     // `alt` tries each parser in sequence, returning the result of
     // the first successful match
     alt((
@@ -194,14 +360,14 @@ fn parse_escaped_char<'a, E>(input: &'a str) -> IResult<&'a str, char, E>
       // parser (the second argument) succeeds. In these cases, it looks for
       // the marker characters (n, r, t, etc) and returns the matching
       // character (\n, \r, \t, etc).
-      value('\n', char('n')),
-      value('\r', char('r')),
-      value('\t', char('t')),
-      value('\u{08}', char('b')),
-      value('\u{0C}', char('f')),
-      value('\\', char('\\')),
-      value('/', char('/')),
-      value('"', char('"')),
+      value('\n', char1('n')),
+      value('\r', char1('r')),
+      value('\t', char1('t')),
+      value('\u{08}', char1('b')),
+      value('\u{0C}', char1('f')),
+      value('\\', char1('\\')),
+      value('/', char1('/')),
+      value('"', char1('"')),
     )),
   )(input)
 }
@@ -211,7 +377,7 @@ fn parse_escaped_char<'a, E>(input: &'a str) -> IResult<&'a str, char, E>
 fn parse_escaped_whitespace<'a, E: ParseError<&'a str>>(
   input: &'a str,
 ) -> IResult<&'a str, &'a str, E> {
-  preceded(char('\\'), multispace1)(input)
+  preceded(char1('\\'), multispace1)(input)
 }
 
 /// Parse a non-empty block of text that doesn't include \ or "
@@ -281,7 +447,47 @@ fn parse_string<'a, E>(input: &'a str) -> IResult<&'a str, String, E>
   // " character, the closing delimiter " would never match. When using
   // `delimited` with a looping parser (like fold_many0), be sure that the
   // loop won't accidentally match your closing delimiter!
-  delimited(char('"'), build_string, char('"'))(input)
+  delimited(char1('"'), build_string, char1('"'))(input)
 }
 
 // endregion
+
+
+
+
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  #[test]
+  fn test_items() {
+    let hex = "0xff4d";
+    hexadecimal(hex).unwrap();
+
+    let dec = "23409857";
+    decimal(dec).unwrap();
+
+    let text = "\"Hello, world!\"";
+    parse_string::<(&str, ErrorKind)>(text).unwrap();
+
+    let symb = "x";
+    symbol(symb).unwrap();
+
+    let seq = "(x, y, z)";
+    sequence(seq).unwrap();
+
+    let func = "ƒ(x, y, z)";
+    function_application(func).unwrap();
+
+    let v = "‹v›";
+    variable(v).unwrap();
+
+    let sv = "«s»";
+    sequence_variable(sv).unwrap();
+
+    let match_expr = "ƒ(‹u›, ‹v›) << ƒ(a, b)";
+    match_expression(match_expr).unwrap();
+
+    assert_eq!(2+2, 4);
+  }
+}

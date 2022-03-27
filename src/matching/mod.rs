@@ -85,8 +85,8 @@ pub type SolutionSet = HashMap<RcExpression, RcExpression>;
 
 #[derive(Clone)]
 pub struct MatchEquation {
-  pattern: RcExpression,
-  ground: RcExpression
+  pub(crate) pattern: RcExpression,
+  pub(crate) ground: RcExpression
 }
 
 impl Display for MatchEquation {
