@@ -14,6 +14,7 @@ use nom::{
     complete::{
       tag,
       take_until,
+      take_while,
       is_not,
       is_a,
       take_while_m_n
@@ -21,9 +22,8 @@ use nom::{
   },
   character::{
     complete::{
-      alphanumeric0,
-      alpha1,
       char as char1,
+      satisfy,
       multispace1,
       one_of
     }
@@ -37,7 +37,6 @@ use nom::{
     verify
   },
   error::{
-    ErrorKind,
     FromExternalError,
     ParseError
   },
@@ -59,6 +58,8 @@ use nom::{
     terminated
   },
 };
+
+use unicode_xid::UnicodeXID;
 
 use crate::{
   atoms::{Function, Literal, Symbol, Variable, Sequence, SequenceVariable},
@@ -128,8 +129,8 @@ fn comment(input: &str) -> IResult<&str, &str> {
 fn identifier(input: &str) -> IResult<&str, &str> {
   recognize(
     pair(
-      alt((alpha1, tag("ƒ"))),
-      alphanumeric0
+      satisfy(|c| UnicodeXID::is_xid_start(c)),
+      take_while(|c| UnicodeXID::is_xid_continue(c)),
     )
   )(input)
 }
@@ -458,6 +459,7 @@ fn parse_string<'a, E>(input: &'a str) -> IResult<&'a str, String, E>
 
 #[cfg(test)]
 mod tests {
+  use nom::error::ErrorKind;
   use super::*;
   #[test]
   fn test_items() {
