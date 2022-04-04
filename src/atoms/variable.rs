@@ -46,7 +46,7 @@ impl NormalFormOrder for Variable {
 }
 
 impl Atom for Variable {
-    fn as_expression(self) -> crate::expression::Expression {
+    fn to_expression(self) -> crate::expression::Expression {
         Expression::Variable(self)
     }
 }

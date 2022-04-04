@@ -46,13 +46,13 @@ impl Function {
 
   /// Creates a new function having a head that is a symbol of the name `name`.
   pub fn with_symbolic_head(name: &str) -> Function {
-    let head = Rc::new(Symbol(name.to_string()).as_expression());
+    let head = Rc::new(Symbol(name.to_string()).to_expression());
     Function::new(head).unwrap()
   }
 
   /// Creates a new function having a head that is a variable of the name `name`.
   pub fn with_variable_head(name: &str) -> Function {
-    let head = Rc::new(Variable(name.to_string()).as_expression());
+    let head = Rc::new(Variable(name.to_string()).to_expression());
     Function::new(head).unwrap()
   }
 
@@ -270,7 +270,7 @@ impl NormalFormOrder for Function {
 }
 
 impl Atom for Function {
-  fn as_expression(self) -> Expression {
+  fn to_expression(self) -> Expression {
     Expression::Function(self)
   }
 }
@@ -305,12 +305,12 @@ mod tests {
     // a mutually nested case similar to `ƒ(a, (b, ƒ(c)))`. (See the
     // comment in `Self::associative_normal_form()`.)
 
-    let a = Rc::new(Variable("a".into()).as_expression());
-    let b = Rc::new(Variable("b".into()).as_expression());
-    let c = Rc::new(Variable("c".into()).as_expression());
-    let d = Rc::new(Variable("d".into()).as_expression());
-    let e = Rc::new(Variable("e".into()).as_expression());
-    let h = Rc::new(Variable("h".into()).as_expression());
+    let a = Rc::new(Variable("a".into()).to_expression());
+    let b = Rc::new(Variable("b".into()).to_expression());
+    let c = Rc::new(Variable("c".into()).to_expression());
+    let d = Rc::new(Variable("d".into()).to_expression());
+    let e = Rc::new(Variable("e".into()).to_expression());
+    let h = Rc::new(Variable("h".into()).to_expression());
 
     let mut g = Function::with_symbolic_head("f");
     g.attributes.set(Attribute::Associative);
@@ -351,8 +351,8 @@ mod tests {
 
   #[test]
   fn formatted_function() {
-    let v = Rc::new(Variable("a".into()).as_expression());
-    let u = Rc::new(SequenceVariable("b".into()).as_expression());
+    let v = Rc::new(Variable("a".into()).to_expression());
+    let u = Rc::new(SequenceVariable("b".into()).to_expression());
     let mut f = Function::with_symbolic_head("f");
     f.children = vec![v, u];
     // assert_eq!(f.format(&Formatter::default()), "f(‹a›, «b»)");
@@ -361,8 +361,8 @@ mod tests {
 
   #[test]
   fn function_len() {
-    let v = Rc::new(Variable("a".into()).as_expression());
-    let u = Rc::new(Variable("b".into()).as_expression());
+    let v = Rc::new(Variable("a".into()).to_expression());
+    let u = Rc::new(Variable("b".into()).to_expression());
     let mut f = Function::with_symbolic_head("f");
     f.children = vec![v, u];
     assert_eq!(f.len(), 2);
@@ -370,8 +370,8 @@ mod tests {
 
   #[test]
   fn function_part() {
-    let v = Rc::new(Variable("a".into()).as_expression());
-    let u = Rc::new(Variable("b".into()).as_expression());
+    let v = Rc::new(Variable("a".into()).to_expression());
+    let u = Rc::new(Variable("b".into()).to_expression());
     let mut f = Function::with_symbolic_head("f");
     f.children = vec![v, u.clone()];
     assert_eq!(f.part(1), u);
@@ -383,13 +383,13 @@ mod tests {
     let mut g: Function = Function::with_symbolic_head("g");
 
     f.children = vec![
-    Rc::new(Variable("a".into()).as_expression()),
-    Rc::new(Variable("b".into()).as_expression()),
-    Rc::new(Variable("c".into()).as_expression()),
-    Rc::new(Variable("d".into()).as_expression()),
+      Rc::new(Variable("a".into()).to_expression()),
+      Rc::new(Variable("b".into()).to_expression()),
+      Rc::new(Variable("c".into()).to_expression()),
+      Rc::new(Variable("d".into()).to_expression()),
     ];
     g.children = f.children.clone();
-    g.children.push(Rc::new(Variable("e".into()).as_expression()));
+    g.children.push(Rc::new(Variable("e".into()).to_expression()));
 
     assert_eq!(NormalFormOrder::cmp(&f, &g), Ordering::Less);
     assert_eq!(NormalFormOrder::cmp(&g, &f), Ordering::Greater);
@@ -400,7 +400,7 @@ mod tests {
     assert_eq!(NormalFormOrder::cmp(&g, &f), Ordering::Greater);
 
     g.children = f.children.clone();
-    f.children.push(Rc::new(Variable("e".into()).as_expression()));
+    f.children.push(Rc::new(Variable("e".into()).to_expression()));
 
     assert_eq!(NormalFormOrder::cmp(&f, &g), Ordering::Less);
     assert_eq!(NormalFormOrder::cmp(&g, &f), Ordering::Greater);

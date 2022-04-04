@@ -38,7 +38,7 @@ impl NormalFormOrder for Symbol {
 }
 
 impl Atom for Symbol {
-    fn as_expression(self) -> crate::expression::Expression {
+    fn to_expression(self) -> crate::expression::Expression {
         Expression::Symbol(self)
     }
 }

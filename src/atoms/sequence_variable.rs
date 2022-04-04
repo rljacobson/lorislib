@@ -37,7 +37,7 @@ impl NormalFormOrder for SequenceVariable {
 }
 
 impl Atom for SequenceVariable {
-    fn as_expression(self) -> crate::expression::Expression {
+    fn to_expression(self) -> crate::expression::Expression {
         Expression::SequenceVariable(self)
     }
 }

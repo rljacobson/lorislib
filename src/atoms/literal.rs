@@ -40,7 +40,7 @@ impl NormalFormOrder for Literal {
 }
 
 impl Atom for Literal {
-  fn as_expression(self) -> crate::expression::Expression {
+  fn to_expression(self) -> crate::expression::Expression {
     Expression::Literal(self)
   }
 }

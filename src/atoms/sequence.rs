@@ -191,7 +191,7 @@ impl NormalFormOrder for Sequence {
 }
 
 impl Atom for Sequence {
-  fn as_expression(self) -> Expression {
+  fn to_expression(self) -> Expression {
     Expression::Sequence(self)
   }
 }
@@ -216,8 +216,8 @@ mod tests {
 
   #[test]
   fn formatted_function() {
-    let v = Rc::new(Variable("a".into()).as_expression());
-    let u = Rc::new(SequenceVariable("b".into()).as_expression());
+    let v = Rc::new(Variable("a".into()).to_expression());
+    let u = Rc::new(SequenceVariable("b".into()).to_expression());
     let mut f = Sequence::new();
     f.children = vec![v, u];
     assert_eq!(f.format(&Formatter::default()), "(‹a›, «b»)");
@@ -225,8 +225,8 @@ mod tests {
 
   #[test]
   fn function_len() {
-    let v = Rc::new(Variable("a".into()).as_expression());
-    let u = Rc::new(Variable("b".into()).as_expression());
+    let v = Rc::new(Variable("a".into()).to_expression());
+    let u = Rc::new(Variable("b".into()).to_expression());
     let mut f = Sequence::new();
     f.children = vec![v, u];
     assert_eq!(f.len(), 2);
@@ -234,8 +234,8 @@ mod tests {
 
   #[test]
   fn function_part() {
-    let v = Rc::new(Variable("a".into()).as_expression());
-    let u = Rc::new(Variable("b".into()).as_expression());
+    let v = Rc::new(Variable("a".into()).to_expression());
+    let u = Rc::new(Variable("b".into()).to_expression());
     let mut f = Sequence::new();
     f.children = vec![v, u.clone()];
     assert_eq!(f.part(1), u);
@@ -247,13 +247,13 @@ mod tests {
     let mut g: Sequence = Sequence::new();
 
     f.children = vec![
-    Rc::new(Variable("a".into()).as_expression()),
-    Rc::new(Variable("b".into()).as_expression()),
-    Rc::new(Variable("c".into()).as_expression()),
-    Rc::new(Variable("d".into()).as_expression()),
+      Rc::new(Variable("a".into()).to_expression()),
+      Rc::new(Variable("b".into()).to_expression()),
+      Rc::new(Variable("c".into()).to_expression()),
+      Rc::new(Variable("d".into()).to_expression()),
     ];
     g.children = f.children.clone();
-    g.children.push(Rc::new(Variable("e".into()).as_expression()));
+    g.children.push(Rc::new(Variable("e".into()).to_expression()));
 
     assert_eq!(NormalFormOrder::cmp(&f, &g), Ordering::Less);
     assert_eq!(NormalFormOrder::cmp(&g, &f), Ordering::Greater);
@@ -264,7 +264,7 @@ mod tests {
     assert_eq!(NormalFormOrder::cmp(&f, &g), Ordering::Greater);
 
     g.children = f.children.clone();
-    f.children.push(Rc::new(Variable("e".into()).as_expression()));
+    f.children.push(Rc::new(Variable("e".into()).to_expression()));
 
     assert_eq!(NormalFormOrder::cmp(&g, &f), Ordering::Less);
     assert_eq!(NormalFormOrder::cmp(&f, &g), Ordering::Greater);

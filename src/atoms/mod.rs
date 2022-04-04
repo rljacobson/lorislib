@@ -18,7 +18,7 @@ pub use literal::Literal;
 
 pub trait Atom: Formatable+NormalFormOrder+Into<Expression> {
 
-  fn as_expression(self) -> Expression {
+  fn to_expression(self) -> Expression {
     self.into()
   }
 
