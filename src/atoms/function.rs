@@ -23,7 +23,7 @@ use crate::{
     ExpressionKind
   },
   attributes::Attributes,
-  formatter::{
+  format::{
     Formatable,
     Formatter
   },

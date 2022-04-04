@@ -8,7 +8,7 @@
 use std::cmp::Ordering;
 
 use crate::{
-  formatter::{
+  format::{
     Formatable,
     Formatter
   },

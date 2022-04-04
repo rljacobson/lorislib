@@ -11,7 +11,7 @@ use std::{
 };
 
 use crate::{
-  formatter::{
+  format::{
     Formatable,
     Formatter
   },

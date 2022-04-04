@@ -11,13 +11,16 @@ the expression, and transform the result back into your native types.
 
 */
 
-use std::{rc::Rc, cmp::Ordering};
+use std::{
+  rc::Rc,
+  cmp::Ordering
+};
 
 use strum::{EnumDiscriminants, Display};
 use lazy_static::lazy_static;
 
 use crate::{
-  formatter::{
+  format::{
     Formatable,
     Formatter
   },
@@ -58,9 +61,9 @@ pub enum Expression{
 
   /**
   A `Sequence` is an ordered list of expressions that can be spliced into a
-  functions arguments or into another sequence. For clarity, `Sequence`s will
+  function's arguments or into another sequence. For clarity, `Sequence`s will
   always be written with parentheses, even if the sequence is empty: `()`, `(a,
-  f(b), c)`, etc. A `Sequence` is amcontiguous sublist of terms from a possiblely
+  f(b), c)`, etc. A `Sequence` is a contiguous sublist of terms from a possibly
   larger list that we want to call out specifically for some purpose.
   */
   Sequence(Sequence),
@@ -95,8 +98,8 @@ impl Expression {
           // An argument can be made that we should format a variable function name.
           | Expression::Symbol(Symbol(name))// => &name,
           | Expression::Variable(Variable(name)) => &name,
-
-          _ => unreachable!()
+          _ => &EMPTY_STRING
+          // _ => unreachable!()
 
         }
       },
@@ -106,6 +109,10 @@ impl Expression {
       Expression::Variable(Variable(name)) => &name,
       Expression::Literal(Literal(name)) => &name,
     }
+  }
+
+  pub fn is_empty(&self) -> bool {
+    self.len() == 0
   }
 
   pub fn len(&self) -> usize {
@@ -127,7 +134,7 @@ impl Expression {
   pub fn associative_normal_form(&mut self) {
     match self {
 
-        Expression::Function(function) => function.associative_normal_form(),
+        Expression::Function(function) if function.associative()  => function.associative_normal_form(),
 
         Expression::Sequence(sequence) => sequence.associative_normal_form(),
 
@@ -140,11 +147,14 @@ impl Expression {
   pub fn commutative_normal_form(&mut self) {
     match self {
 
-        Expression::Function(function) => function.commutative_normal_form(),
+      Expression::Function(function) if function.commutative() =>
+        function.commutative_normal_form(),
 
-        Expression::Sequence(sequence) => sequence.commutative_normal_form(),
+      // It is not clear how to handle commutativity for sequences. For now, we will assume that
+      // sequences are not commutative. That feels more conservative.
+      // Expression::Sequence(sequence) => sequence.commutative_normal_form(),
 
-        _ => { /* nothing to do */ }
+      _ => { /* nothing to do */ }
 
     }
   }

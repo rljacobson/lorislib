@@ -24,7 +24,7 @@ use crate::{
     RcExpression,
     Expression
   },
-  formatter::{
+  format::{
     Formatable,
     Formatter
   },

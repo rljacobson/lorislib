@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 #[macro_use]
-mod formatter;
+mod format;
 pub mod expression;
 mod logging;
 mod normal_form;

@@ -6,7 +6,7 @@ pub mod variable;
 pub mod literal;
 
 use crate::expression::Expression;
-use crate::formatter::Formatable;
+use crate::format::Formatable;
 use crate::normal_form::NormalFormOrder;
 
 pub use function::Function;
