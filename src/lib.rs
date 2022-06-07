@@ -10,8 +10,10 @@ mod normal_form;
 mod attributes;
 mod atoms;
 mod matching;
+mod context;
 #[cfg(feature = "nom")]
 mod parser;
+mod data_structures;
 
 
 /*

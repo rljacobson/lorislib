@@ -9,7 +9,7 @@ use std::cmp::Ordering;
 
 use crate::{
   format::{
-    Formatable,
+    Formattable,
     Formatter
   },
   normal_form::NormalFormOrder,
@@ -24,7 +24,7 @@ use super::Atom;
 pub struct SequenceVariable(pub String);
 
 
-impl Formatable for SequenceVariable {
+impl Formattable for SequenceVariable {
   fn format(&self, _formatter: &Formatter) -> String {
     format!("«{}»", self.0).to_string()
   }
@@ -64,7 +64,7 @@ impl From<SequenceVariable> for Expression {
 }
 
 
-display_formatable_impl!(SequenceVariable);
+display_formattable_impl!(SequenceVariable);
 
 
 

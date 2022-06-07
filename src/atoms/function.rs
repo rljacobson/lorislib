@@ -15,6 +15,8 @@ use std::{
   cmp::Ordering,
   rc::Rc
 };
+use std::hash::Hasher;
+use fnv::FnvHasher;
 
 use crate::{
   expression::{
@@ -24,7 +26,7 @@ use crate::{
   },
   attributes::Attributes,
   format::{
-    Formatable,
+    Formattable,
     Formatter
   },
   normal_form::NormalFormOrder
@@ -36,9 +38,10 @@ use super::{Atom, Symbol, Variable};
 pub struct Function{
   /// The head of the function is either a symbol or a variable. It cannot be a
   /// function, sequence, or sequence variable.
+  pub cached_hash: u64,
   pub head: RcExpression,
   pub children: Vec<RcExpression>,
-  pub attributes: Attributes
+  pub attributes: Attributes,
 }
 
 
@@ -65,6 +68,7 @@ impl Function {
       | ExpressionKind::Variable => {
         Ok(
           Function{
+            cached_hash: 0,
             head,
             children: Vec::new(),
             attributes: Attributes::default()
@@ -81,6 +85,7 @@ impl Function {
 
   pub fn duplicate_head(&self) -> Function {
     Function{
+      cached_hash: 0,
       head: self.head.clone(),
       children: Vec::new(),
       attributes: self.attributes.clone()
@@ -90,6 +95,7 @@ impl Function {
 
   pub fn duplicate_with_rest(&self) -> Function {
     Function{
+      cached_hash: 0,
       head: self.head.clone(),
       children: self.rest(),
       attributes: self.attributes.clone()
@@ -246,7 +252,7 @@ impl Function {
 }
 
 
-impl Formatable for Function {
+impl Formattable for Function {
   fn format(&self, formatter: &Formatter) -> String {
     format!(
       // "{}({})",
@@ -262,7 +268,8 @@ impl Formatable for Function {
 }
 
 impl NormalFormOrder for Function {
-  /// For the purposes of `NormalFormOrder`, two functions are equal if their names are equal.
+  /// Two functions are equal if their names are equal, if their lengths are equal, and if their
+  /// corresponding children are equal.
   fn cmp(&self, other: &Self) -> Ordering {
     // todo: Prohibit distinct expressions with the same name, presumably in the symbol table.
     self.head.cmp(&other.head)
@@ -270,6 +277,25 @@ impl NormalFormOrder for Function {
 }
 
 impl Atom for Function {
+
+  fn hash(&mut self) -> u64 {
+    if self.cached_hash != 0 {
+      return self.cached_hash;
+    }
+
+    let mut hasher = FnvHasher::default();
+
+    hasher.write(&[72u8, 5u8, 244u8, 86u8, 5u8, 210u8, 69u8, 30u8]);
+    for part in self.children {
+      hasher.write_u64(part.hash());
+    }
+
+    let result       = hasher.finish();
+    self.cached_hash = result;
+
+    result
+  }
+
   fn to_expression(self) -> Expression {
     Expression::Function(self)
   }
@@ -282,7 +308,7 @@ impl From<Function> for Expression {
 }
 
 
-display_formatable_impl!(Function);
+display_formattable_impl!(Function);
 
 
 

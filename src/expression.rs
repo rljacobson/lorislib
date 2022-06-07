@@ -21,8 +21,7 @@ use lazy_static::lazy_static;
 
 use crate::{
   format::{
-    Formatable,
-    Formatter
+    Formattable
   },
   atoms::{
     Symbol,
@@ -30,13 +29,22 @@ use crate::{
     Variable,
     Sequence,
     SequenceVariable,
-    Literal
+    Literal,
+    Atom
   },
   normal_form::NormalFormOrder,
+  format::Formatter
 };
 
 
 pub type RcExpression = Rc<Expression>;
+
+lazy_static!{
+  static ref EMPTY_STRING: String = String::from("");
+}
+// static EMPTY_STRING: String = String::from("");
+
+
 
 #[derive(Clone, PartialEq, Eq, EnumDiscriminants, Debug, Hash)]
 #[strum_discriminants(name(ExpressionKind))]
@@ -79,10 +87,22 @@ pub enum Expression{
   Literal(Literal)
 }
 
-lazy_static!{
-  static ref EMPTY_STRING: String = String::from("");
+
+macro_rules! forward_call {
+  ($func_name:ident, $ret_type:ty) => {
+    pub fn $func_name(&self) -> $ret_type {
+      match self {
+        // Expression::StringExpression(e) => e.$func_name(),
+        Expression::Symbol(e)           => e.$func_name(),
+        Expression::Function(e)         => e.$func_name(),
+        Expression::Sequence(e)         => e.$func_name(),
+        Expression::SequenceVariable(e) => e.$func_name(),
+        Expression::Variable(e)         => e.$func_name(),
+      }
+    }
+  }
 }
-// static EMPTY_STRING: String = String::from("");
+
 
 impl Expression {
 
@@ -118,11 +138,11 @@ impl Expression {
   pub fn len(&self) -> usize {
     match self {
 
-      // todo: Should non M-expressions have a positive length?
+      // Todo: Should non M-expressions have a positive length?
       | Expression::Symbol(_)
       | Expression::Literal(_)
       | Expression::Variable(_)
-      | Expression::SequenceVariable(_) => 1,
+      | Expression::SequenceVariable(_) => 0,
 
       Expression::Function(function) => function.len(),
 
@@ -131,6 +151,8 @@ impl Expression {
     }
   }
 
+
+  /// Transforms self into associative normal form in-place.
   pub fn associative_normal_form(&mut self) {
     match self {
 
@@ -144,6 +166,7 @@ impl Expression {
   }
 
 
+  /// Transforms self into commutative normal form in-place.
   pub fn commutative_normal_form(&mut self) {
     match self {
 
@@ -160,14 +183,27 @@ impl Expression {
   }
 
 
+  /// Transforms self into AC-normal form in-place.
   pub fn normal_form(&mut self) {
     self.associative_normal_form();
     self.commutative_normal_form();
   }
+
+  /*
+  fn copy(&self) -> Expression;
+  fn needs_eval(&self) -> bool;
+  */
+
+  // fn deep_copy(&self) -> Expression;
+  forward_call!(deep_copy, Expression);
+  forward_call!(hash, u64);
+
 }
 
 
-impl Formatable for Expression {
+impl Formattable for Expression {
+
+  // forward_call!(format, String)
   fn format(&self, formatter: &Formatter) -> String {
     match self {
 
@@ -197,6 +233,7 @@ impl Formatable for Expression {
 
     }
   }
+
 }
 
 
@@ -242,4 +279,4 @@ impl NormalFormOrder for Expression {
 }
 
 
-display_formatable_impl!(Expression);
+display_formattable_impl!(Expression);

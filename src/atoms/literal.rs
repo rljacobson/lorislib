@@ -12,7 +12,7 @@ use std::{
 
 use crate::{
   format::{
-    Formatable,
+    Formattable,
     Formatter
   },
   normal_form::NormalFormOrder,
@@ -27,7 +27,7 @@ use super::Atom;
 pub struct Literal(pub String);
 
 
-impl Formatable for Literal {
+impl Formattable for Literal {
   fn format(&self, _formatter: &Formatter) -> String {
     self.0.clone()
   }
@@ -67,4 +67,4 @@ impl From<Literal> for Expression {
 }
 
 
-display_formatable_impl!(Literal);
+display_formattable_impl!(Literal);

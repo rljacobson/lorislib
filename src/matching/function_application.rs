@@ -55,7 +55,11 @@ use crate::{
   atoms::{
     Function,
     Sequence
-  }, logging::log_at_level
+  },
+  logging::{
+    Channel,
+    log
+  }
 };
 
 use super::{
@@ -127,7 +131,8 @@ impl Iterator for AFAGenerator<EnumerateAll> {
     // The (n-1) in the formula below is because there are (n-1) spaces between n
     // elements.
     let max_application_state: u32 = ((1 << (n-1)) - 1) as u32;
-    log_at_level(5, format!("application state: {}, n: {}, max_application_state: {}", self.application_state, n, max_application_state).as_str());
+    log(Channel::Debug, 5, format!("application state: {}, n: {}, max_application_state: {}", self
+        .application_state, n, max_application_state).as_str());
 
     if self.singleton_state == u32::MAX {
       return None;
@@ -165,14 +170,14 @@ impl Iterator for AFAGenerator<EnumerateAll> {
         // If last boundary position is the last position checked, then we have a singleton.
         else {
           if (1 << singleton_count) & self.singleton_state > 0 {
-            log_at_level(5, format!("Singleton state is high. Wrapping in function. STATE: {}, COUNT: {}", self.singleton_state, singleton_count).as_str());
+            log(Channel::Debug, 5, format!("Singleton state is high. Wrapping in function. STATE: {}, COUNT: {}", self.singleton_state, singleton_count).as_str());
             // Wrap it in a function.
             let mut new_function = self.function.duplicate_head();
             new_function.push(self.function.part(position-1));
 
             result_sequence.push(Rc::new(new_function.into()));
           } else {
-            log_at_level(5, "Singleton state is low. Not wrapping in function.".to_string().as_str());
+            log(Channel::Debug, 5, "Singleton state is low. Not wrapping in function.".to_string().as_str());
             result_sequence.push(self.function.part(position-1));
           }
 
@@ -194,7 +199,7 @@ impl Iterator for AFAGenerator<EnumerateAll> {
     // flag to indicate exhaustion. We have to check for this condition so
     // we don't overflow self.singleton_state.
     if self.singleton_state != u32::MAX {
-      log_at_level(5, "Increment singleton state.");
+      log(Channel::Debug, 5, "Increment singleton state.");
       self.singleton_state += 1;
     }
     if self.singleton_state == (1<<singleton_count) {
@@ -204,11 +209,11 @@ impl Iterator for AFAGenerator<EnumerateAll> {
         // last result. Next call will return None.
         // self.singleton_state is recycled as a flag indicating
         // exhaustion.
-        log_at_level(5, "Setting singleton state to MAX, because application state is maximum.");
+        log(Channel::Debug, 5, "Setting singleton state to MAX, because application state is maximum.");
         self.singleton_state = u32::MAX;
       } else {
         // We haven't exhausted the generator yet.
-        log_at_level(5, "Resetting singleton state.\nIncrementing application_state.");
+        log(Channel::Debug, 5, "Resetting singleton state.\nIncrementing application_state.");
         self.singleton_state = 0;
         // This is the only time we update the state of the outer loop.
         self.application_state += 1;
@@ -310,7 +315,7 @@ pub struct AFACGenerator<EnumerationType> {
 
 impl FunctionApplicationGenerator for AFACGenerator<EnumerateAll> {
   fn new(function: Function) -> AFACGenerator<EnumerateAll> {
-    log_at_level(5, format!("Creating AF-AC for {}", function).as_str());
+    log(Channel::Debug, 5, format!("Creating AF-AC for {}", function).as_str());
 
     let mut permutations = Permutations::new(function.len() as u8).unwrap();
     // The first permutation is the identity, so just clone the function.

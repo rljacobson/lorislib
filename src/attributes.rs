@@ -25,12 +25,36 @@ pub enum Attribute {
   /// Attributes of the symbol cannot be changed.
   AttributesReadOnly,
   SequenceHold
+
+  /*
+  Orderless = 0, // Commutative
+  Flat, // Associative
+  OneIdentity,
+  Listable,
+  Constant,
+  NumericFunction,
+  Protected,
+  Locked,
+  ReadProtected,
+  HoldFirst,
+  HoldRest,
+  HoldAll,
+  HoldAllComplete,
+  NHoldFirst,
+  NHoldRest,
+  NHoldAll,
+  SequenceHold,
+  Temporary,
+  Stub
+  */
+
+
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct Attributes(u32);
 
-// These exist soley to be static references.
+// These exist solely to be static references.
 const ATTRIBUTE_SET  : bool = true;
 const ATTRIBUTE_UNSET: bool = false;
 

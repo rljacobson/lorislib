@@ -25,7 +25,7 @@ use crate::{
     Expression
   },
   format::{
-    Formatable,
+    Formattable,
     Formatter
   },
   normal_form::NormalFormOrder
@@ -147,7 +147,7 @@ impl Default for Sequence {
 }
 
 
-impl Formatable for Sequence {
+impl Formattable for Sequence {
   fn format(&self, formatter: &Formatter) -> String {
     // todo: Should we display the parens if there is only one child?
     if self.children.len() == 1 {
@@ -204,7 +204,7 @@ impl From<Sequence> for Expression {
 }
 
 
-display_formatable_impl!(Sequence);
+display_formattable_impl!(Sequence);
 
 
 

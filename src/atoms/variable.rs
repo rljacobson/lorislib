@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
   format::{
-    Formatable,
+    Formattable,
     Formatter
   },
   normal_form::NormalFormOrder,
@@ -33,7 +33,7 @@ impl Variable {
 }
 
 
-impl Formatable for Variable {
+impl Formattable for Variable {
   fn format(&self, _formatter: &Formatter) -> String {
     format!("‹{}›", self.0).to_string()
   }
@@ -73,7 +73,7 @@ impl From<Variable> for Expression {
 }
 
 
-display_formatable_impl!(Variable);
+display_formattable_impl!(Variable);
 
 
 

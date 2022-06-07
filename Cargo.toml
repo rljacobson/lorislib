@@ -23,7 +23,8 @@ lazy_static  = "1.4.0"
 smallvec     = {version = "1.8.0", features = ["union"]}
 nom          = {version = "7", optional = true , features = ["alloc"]}
 unicode-xid  = "0.2.2" # Unicode support for identifiers.
-
+yansi        = "0.5.1" # ANSI color support.
+fnv          = "1.0.7" # FNV-1a hash.
 
 [features]
 default = ["strict-associativity", "nom"]

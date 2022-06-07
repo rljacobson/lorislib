@@ -1,3 +1,7 @@
+/*
+ *   Copyright (c) 2022
+ *   All rights reserved.
+ */
 /*!
 
 A `Matcher` holds the state of the matching algorithm as it walks the
@@ -10,11 +14,14 @@ set of active `MatchGenerator`s. Since future rule applications depend on a
 implemented as a stack. When a `MatchGenerator` is exhausted, it is popped from
 the stack, and the next `MatchGenerator` is queried for the next substitution.
 
-Other state includes whether or not patterns are being held. A subexpression can
-be wrapped in `HoldPattern`. Inside of `HoldPattern`, pattern symbols are treated
-as literal symbols, not as patterns.
+ToDo: Other state includes whether or not patterns are being held. A subexpression can
+      be wrapped in `HoldPattern`. Inside of `HoldPattern`, pattern symbols are treated
+      as literal symbols, not as patterns. Also, `Longest` and `Shortest` affect the order in
+      which sequence variables generate matches.
 
 */
+
+
 
 use std::{
   collections::HashMap,
@@ -26,7 +33,10 @@ use crate::{
     ExpressionKind,
     RcExpression
   },
-  logging::log_at_level
+  logging::{
+    Channel,
+    log
+  }
 };
 
 use super::{
@@ -162,7 +172,7 @@ impl Matcher {
 
         MatchStack::ProducedMatchEquations(added) => {
           // Remove it.
-          log_at_level(5, format!("Removing {} added equations from equation stack with len {}.", added, self.equation_stack.len()).as_str());
+          log(Channel::Debug, 5, format!("Removing {} added equations from equation stack with len {}.", added, self.equation_stack.len()).as_str());
           let new_length = self.equation_stack.len() - added as usize;
           self.equation_stack.truncate(new_length);
         },
@@ -176,7 +186,7 @@ impl Matcher {
   /// Undoes the effects of the last call to `next()`, removes the match generator, and
   /// restores any match equation corresponding to the match generator, if any.
   fn backtrack(&mut self) {
-    log_at_level(5, "Failed to match with that generator. Backtracking.".to_string().as_str());
+    log(Channel::Debug, 5, "Failed to match with that generator. Backtracking.".to_string().as_str());
     // Remove the match generator from the match stack.
     let match_generator = self.undo();
     // Restore the match equation corresponding to the match generator.
@@ -218,20 +228,20 @@ impl Matcher {
     let me: MatchEquation = self.equation_stack.pop().unwrap();
     // todo: Substitute bound variables with their values.
 
-    log_at_level(5, format!("Selecting rule. Match equation on stack: {}", me).as_str());
+    log(Channel::Debug, 5, format!("Selecting rule. Match equation on stack: {}", me).as_str());
     // Common Rules
     if let Some(rule) = RuleT::try_rule(&me) {
-      log_at_level(5, format!("Creating Trivial rule for {}", me).as_str());
+      log(Channel::Debug, 5, format!("Creating Trivial rule for {}", me).as_str());
       self.push_rule(Box::new(rule));
       return Ok(());
 
     } else if let Some(rule) = RuleIVE::try_rule(&me) {
-      log_at_level(5, format!("Creating IVE for {}", me).as_str());
+      log(Channel::Debug, 5, format!("Creating IVE for {}", me).as_str());
       self.push_rule(Box::new(rule));
       return Ok(());
 
     } else if let Some(rule) = RuleFVE::try_rule(&me) {
-      log_at_level(5, format!("Creating FVE for {}", me).as_str());
+      log(Channel::Debug, 5, format!("Creating FVE for {}", me).as_str());
       self.push_rule(Box::new(rule));
       return Ok(());
     }
@@ -250,13 +260,13 @@ impl Matcher {
     match DestructuredFunctionEquation::new(&me) {
 
       Ok(dfe) => {
-        // log_at_level(5, format!("Destructuring during rule selection. Destructured to").as_str());
-        // log_at_level(5, format!("PATTERN FN: {}\nGROUND: {}\nPATERN FIRST: {}\nGROUND FN: {}\n", dfe.pattern_function, dfe.match_equation.ground, dfe.pattern_first, dfe.ground_function).as_str());
+        // log(Channel::Debug, 5, format!("Destructuring during rule selection. Destructured to").as_str());
+        // log(Channel::Debug, 5, format!("PATTERN FN: {}\nGROUND: {}\nPATERN FIRST: {}\nGROUND FN: {}\n", dfe.pattern_function, dfe.match_equation.ground, dfe.pattern_first, dfe.ground_function).as_str());
         dfe
       },
 
       Err(_) => {
-        log_at_level(5, "Could not deconstruct.".to_string().as_str());
+        log(Channel::Debug, 5, "Could not deconstruct.".to_string().as_str());
 
         // Return match equation.
         self.equation_stack.push(me);
@@ -267,7 +277,7 @@ impl Matcher {
 
     // Another opportunity to bail early. This indicates program state that should be impossible to.
     if dfe.pattern_function.head != dfe.ground_function.head {
-      log_at_level(5, "Both sides not functions.".to_string().as_str());
+      log(Channel::Debug, 5, "Both sides not functions.".to_string().as_str());
       // Return match equation.
       self.equation_stack.push(me);
       return Err(());
@@ -279,19 +289,19 @@ impl Matcher {
       (false, false) => {
         // Dec-F
         if let Some(rule) = RuleDecF::try_rule(&dfe){
-          log_at_level(5, format!("Creating Dec-F for {}", dfe.match_equation).as_str());
+          log(Channel::Debug, 5, format!("Creating Dec-F for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
 
         }
         // SVE-F
         else if let Some(rule) = RuleSVEF::try_rule(&dfe){
-          log_at_level(5, format!("Creating DVE-F for {}", dfe.match_equation).as_str());
+          log(Channel::Debug, 5, format!("Creating DVE-F for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
         else {
           // Return match equation.
           self.equation_stack.push(me);
-          log_at_level(5, format!("No applicable (free) rule found.").as_str());
+          log(Channel::Debug, 5, format!("No applicable (free) rule found.").as_str());
           return Err(());
         }
         return Ok(());
@@ -302,18 +312,18 @@ impl Matcher {
 
         // Dec-C
         if let Some(rule) = RuleDecC::try_rule(&dfe) {
-          log_at_level(5, format!("Creating Dec-C for {}", dfe.match_equation).as_str());
+          log(Channel::Debug, 5, format!("Creating Dec-C for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
         // SVE-C
         else if let Some(rule) = RuleSVEC::try_rule(&dfe) {
-          log_at_level(5, format!("Creating SVE-C for {}", dfe.match_equation).as_str());
+          log(Channel::Debug, 5, format!("Creating SVE-C for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
         else {
           // Return match equation.
           self.equation_stack.push(me);
-          log_at_level(5, format!("No applicable (commutative) rule found.").as_str());
+          log(Channel::Debug, 5, format!("No applicable (commutative) rule found.").as_str());
           return Err(());
         }
         return Ok(());
@@ -325,26 +335,26 @@ impl Matcher {
 
         // SVE-A
         if let Some(rule) = RuleSVEA::try_rule(&dfe) {
-          log_at_level(5, format!("Creating SVE-A for {}", dfe.match_equation).as_str());
+          log(Channel::Debug, 5, format!("Creating SVE-A for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
         // FVE-A
         else if let Some(rule) = RuleFVEA::try_rule(&dfe) {
-          log_at_level(5, format!("Creating FVE-A for {}", dfe.match_equation).as_str());
+          log(Channel::Debug, 5, format!("Creating FVE-A for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
         // IVE-A
         else if let Some(rule) = RuleIVEA::try_rule(&dfe) {
-          log_at_level(5, format!("Creating IVE-A for {}", dfe.match_equation).as_str());
+          log(Channel::Debug, 5, format!("Creating IVE-A for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
         // Dec-A
         else if let Some(rule) = RuleDecA::try_rule(&dfe){
-          log_at_level(5, format!("Creating Dec-A for {}", dfe.match_equation).as_str());
+          log(Channel::Debug, 5, format!("Creating Dec-A for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
         else {
-          log_at_level(5, format!("No applicable (associative) rule found.").as_str());
+          log(Channel::Debug, 5, format!("No applicable (associative) rule found.").as_str());
           // Return match equation.
           self.equation_stack.push(me);
           return Err(());
@@ -358,26 +368,26 @@ impl Matcher {
 
         // SVE-AC
         if let Some(rule) = RuleSVEAC::try_rule(&dfe) {
-          log_at_level(5, format!("Creating SVE-AC for {}", dfe.match_equation).as_str());
+          log(Channel::Debug, 5, format!("Creating SVE-AC for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
         // FVE-AC
         else if let Some(rule) = RuleFVEAC::try_rule(&dfe) {
-          log_at_level(5, format!("Creating FVE-AC for {}", dfe.match_equation).as_str());
+          log(Channel::Debug, 5, format!("Creating FVE-AC for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
         // IVE-AC
         else if let Some(rule) = RuleIVEAC::try_rule(&dfe) {
-          log_at_level(5, format!("Creating IVE-AC for {}", dfe.match_equation).as_str());
+          log(Channel::Debug, 5, format!("Creating IVE-AC for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
         // Dec-AC
         else if let Some(rule) = RuleDecAC::try_rule(&dfe){
-          log_at_level(5, format!("Creating Dec-AC for {}", dfe.match_equation).as_str());
+          log(Channel::Debug, 5, format!("Creating Dec-AC for {}", dfe.match_equation).as_str());
           self.push_rule(Box::new(rule));
         }
         else {
-          log_at_level(5, format!("No applicable (associative-commutative) rule found.").as_str());
+          log(Channel::Debug, 5, format!("No applicable (associative-commutative) rule found.").as_str());
           // Return match equation.
           self.equation_stack.push(me);
           return Err(());
@@ -404,7 +414,7 @@ impl Matcher {
       }
 
       NextMatchResult::MatchEquation(match_equation) => {
-        log_at_level(5, format!("Pushing match equation: {}", match_equation).as_str());
+        log(Channel::Debug, 5, format!("Pushing match equation: {}", match_equation).as_str());
         self.equation_stack.push(match_equation);
         equation_count += 1;
       }
@@ -428,7 +438,7 @@ impl Iterator for &mut Matcher {
     // there could be more solutions possible, in which case backtracking
     // will put equations back on the stack.
     if self.equation_stack.is_empty() && self.match_stack.is_empty() {
-      log_at_level(5, "Both equation stack and match stack are empty. Done.".to_string().as_str());
+      log(Channel::Debug, 5, "Both equation stack and match stack are empty. Done.".to_string().as_str());
       return None;
     }
 
@@ -445,7 +455,7 @@ impl Iterator for &mut Matcher {
           // Step 1.a.ii. If there is an active match generator on top of the
           // matcher stack, undo the actions of the last match generated
           // from this match generator…
-          log_at_level(5, "Undoing the last match generator actions.".to_string().as_str());
+          log(Channel::Debug, 5, "Undoing the last match generator actions.".to_string().as_str());
           let match_generator: Box<dyn MatchGenerator> = self.undo();
           // …but retain the active match generator.
           self.match_stack.push(MatchStack::MatchGenerator(match_generator));
@@ -465,7 +475,7 @@ impl Iterator for &mut Matcher {
 
           None => {
             // Step 2.a
-            log_at_level(5, "Nothing on Match Stack.".to_string().as_str());
+            log(Channel::Debug, 5, "Nothing on Match Stack.".to_string().as_str());
             return None
           }
 
@@ -475,11 +485,11 @@ impl Iterator for &mut Matcher {
             match next_match_result {
 
               Some(results) => {
-                log_at_level(5, "Match generator returned Some".to_string().as_str());
+                log(Channel::Debug, 5, "Match generator returned Some".to_string().as_str());
                 self.process_next_match_list(results);
                 // Step 3.b
                 if self.equation_stack.is_empty(){
-                  log_at_level(5, "SUCCESS!".to_string().as_str());
+                  log(Channel::Debug, 5, "SUCCESS!".to_string().as_str());
                   return Some(self.substitutions.clone());
                 }
                 // Step 3.c
@@ -488,7 +498,7 @@ impl Iterator for &mut Matcher {
 
               None => {
                 // Step 4.
-                log_at_level(5, "Match generator returned None. Trying to match again.".to_string().as_str());
+                log(Channel::Debug, 5, "Match generator returned None. Trying to match again.".to_string().as_str());
                 self.backtrack(); // Back to previous matcher.
                 // Undo the match of the matcher that created the one we just popped.
                 if self.match_stack.is_empty() {
@@ -504,11 +514,11 @@ impl Iterator for &mut Matcher {
           },
 
           Some(MatchStack::ProducedMatchEquations(me)) => {
-            log_at_level(5, format!("Bad state in Step 2. Expected a match generator, found # produced match equations: {}", me).as_str());
+            log(Channel::Debug, 5, format!("Bad state in Step 2. Expected a match generator, found # produced match equations: {}", me).as_str());
           },
 
           Some(MatchStack::Substitution(sub)) => {
-            log_at_level(5, format!("Bad state in Step 2. Expected a match generator, found substitution: {}", sub).as_str());
+            log(Channel::Debug, 5, format!("Bad state in Step 2. Expected a match generator, found substitution: {}", sub).as_str());
           }
 
         } // end match on self.match_stack.last_mut()
@@ -539,6 +549,8 @@ fn display_solutions(solution_set: &SolutionSet) -> String {
 mod tests {
   use std::rc::Rc;
 
+  use nom::Parser;
+
   use crate::{
     atoms::{
       Function,
@@ -546,8 +558,8 @@ mod tests {
       Symbol, Variable
     },
     attributes::Attribute,
+    logging::set_verbosity
   };
-  use crate::logging::set_verbosity;
 
   use super::*;
 
@@ -573,7 +585,7 @@ mod tests {
   #[test]
   /// Solve ƒ(x̅)≪ᴱƒ(a), ƒ is A or AC
   fn problem5() {
-    // set_verbosity(5);
+    set_verbosity(5);
     let mut f = Function::with_symbolic_head("ƒ");
     f.attributes.set(Attribute::Associative);
     let x = Rc::new(SequenceVariable("x".into()).into());
@@ -597,7 +609,7 @@ mod tests {
   #[test]
   /// Solve ƒ(x,y)≪ᴱƒ(a,b), ƒ is AC
   fn problem7() {
-    // set_verbosity(5);
+    set_verbosity(5);
 
     let mut f = Function::with_symbolic_head("ƒ");
     f.attributes.set(Attribute::Associative);
@@ -652,7 +664,7 @@ mod tests {
   /// No solution for strict associativity. One solution for (regular) associativity.
   #[test]
   fn match_empty_associative_function() {
-    // set_verbosity(5);
+    set_verbosity(5);
 
     let mut f = Function::with_symbolic_head("ƒ");
     f.attributes.set(Attribute::Associative);

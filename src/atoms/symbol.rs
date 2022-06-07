@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
   format::{
-    Formatable,
+    Formattable,
     Formatter
   },
   normal_form::NormalFormOrder,
@@ -25,7 +25,7 @@ use super::Atom;
 pub struct Symbol(pub String);
 
 
-impl Formatable for Symbol {
+impl Formattable for Symbol {
   fn format(&self, _formatter: &Formatter) -> String {
     self.0.clone()
   }
@@ -65,4 +65,4 @@ impl From<Symbol> for Expression {
 }
 
 
-display_formatable_impl!(Symbol);
+display_formattable_impl!(Symbol);

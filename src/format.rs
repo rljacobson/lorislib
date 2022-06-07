@@ -1,29 +1,71 @@
 /*!
 
-  A `Formatter` holds information about how to format an expression, that is, how
-  to express the expression as a string. Right now this is a stub
-  implementation, but it is convenient to have it in place now, because any
-  real application will undoubtedly need to have it.
+A `Formatter` holds information about how to format an expression, that is, how to express the
+expression as a string. This allows for alternative string representations based on the context.
+For example, an expression might have a TeX representation and an infix representation in
+addition to its full form representation.
 
 */
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+
+use std::borrow::Cow;
+
+use strum::EnumString;
+
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString, Hash)]
+pub enum DisplayForm {
+  #[strum(serialize = "System`InputForm")]
+  Input,
+  #[strum(serialize = "System`FullForm")]
+  Full,
+  #[strum(serialize = "System`TraditionalForm")]
+  Traditional,
+  #[strum(serialize = "System`TeXForm")]
+  TeX,
+  #[strum(serialize = "System`StandardForm")]
+  Standard,
+  #[strum(serialize = "System`OutputForm")]
+  Output,
+}
+
+impl Default for DisplayForm {
+  fn default() -> DisplayForm {
+    DisplayForm::Input
+  }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+/// Parameters used in methods that transform expressions into strings.
+// Todo: This will probably need to include context at some point.
 pub struct Formatter {
-  /* pass */
+  pub form: DisplayForm,
 }
 
-impl Default for Formatter {
-    fn default() -> Self {
-        Self {  }
+static DEFAULT_FORMATTER: Cow<Formatter> = Cow::Owned(Formatter {
+  form: DisplayForm::Input
+});
+
+impl Formatter {
+  pub fn default() -> Cow<'static, Formatter> {
+    DEFAULT_FORMATTER.clone()
+  }
+}
+
+impl From<DisplayForm> for Formatter {
+  fn from(form: DisplayForm) -> Self {
+    Formatter {
+      form
     }
+  }
 }
 
-
-pub trait Formatable {
+pub trait Formattable {
   fn format(&self, formatter: &Formatter) -> String;
 }
 
-macro_rules! display_formatable_impl {
+
+macro_rules! display_formattable_impl {
   ($type_name:ty) => {
     impl std::fmt::Display for $type_name {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
