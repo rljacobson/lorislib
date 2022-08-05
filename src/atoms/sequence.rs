@@ -16,8 +16,7 @@ use std::{
   iter::zip,
   rc::Rc
 };
-
-use lazy_static::__Deref;
+use std::ops::Deref;
 
 use crate::{
   expression::{

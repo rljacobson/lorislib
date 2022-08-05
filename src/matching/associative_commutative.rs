@@ -231,6 +231,7 @@ mod tests {
     //   }
     // }
 
+    // All (single-step) solutions to ƒ❨‹x›, u, v, w❩ ≪ ƒ❨a, b, c❩
     let expected = [
       #[cfg(not(feature = "strict-associativity"))]
       "ƒ❨u, v, w❩ ≪ ƒ❨a, b, c❩",
@@ -250,7 +251,6 @@ mod tests {
       "‹x›→ƒ❨b, c❩",
       "ƒ❨u, v, w❩ ≪ ƒ❨❩",
       "‹x›→ƒ❨a, b, c❩",
-
       "‹x› ≪ a",
       "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩",
       "‹x› ≪ b",
@@ -258,6 +258,7 @@ mod tests {
       "‹x› ≪ c",
       "ƒ❨u, v, w❩ ≪ ƒ❨a, b❩"
     ];
+
     let result = rule_iveac.flatten().map(|r| r.to_string()).collect::<Vec<String>>();
     assert_eq!(expected, result.as_slice());
   }

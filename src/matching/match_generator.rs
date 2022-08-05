@@ -66,10 +66,6 @@ pub trait MatchGenerator: Iterator<Item=NextMatchResultList>{
   /// Returns the match equation that this match generator was created to solve.
   fn match_equation(&self) -> MatchEquation;
 }
-  /// Returns the next `(Γ, S)` pair in the form of an `Option<SmallVec<[NextMatchResult; 3]>>`. There can be at most
-  /// one substitution and two match equations.
-//   fn next(&mut self) -> MaybeNextMatchResult;
-// }
 
 
 pub enum NextMatchResult {
