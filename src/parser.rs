@@ -112,7 +112,7 @@ fn ignore_ignorables<'a, F: 'a, O>(inner: F) -> impl FnMut(&'a str) -> IResult<&
 }
 
 
-// Atomic expressions
+// region Atomic expressions
 
 fn comment(input: &str) -> IResult<&str, &str> {
   alt((
@@ -170,9 +170,9 @@ fn decimal(input: &str) -> IResult<&str, &str> {
     )
   )(input)
 }
+//  endregion
 
-
-// Higher-order expressions
+// region Composite expressions
 
 /// A function call is a name (symbol) or variable adjacent to a sequence. A sequence, function,
 /// or literal cannot be the "head" of a function.
@@ -295,8 +295,7 @@ fn match_expression(input: &str) -> IResult<&str, MatchEquation> {
 
   Ok((val.0, me))
 }
-
-
+// endregion
 
 // region String Parsing
 
@@ -394,9 +393,9 @@ fn parse_literal<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str,
   verify(not_quote_slash, |s: &str| !s.is_empty())(input)
 }
 
-/// A string fragment contains a fragment of a string being parsed: either
-/// a non-empty Literal (a series of non-escaped characters), a single
-/// parsed escaped character, or a block of escaped whitespace.
+/// A `StringFragment` contains a fragment of a string (in the implemented language)
+/// being parsed: either a non-empty `Literal` (a series of non-escaped characters),
+/// a single parsed escaped character, or a block of escaped whitespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StringFragment<'a> {
   Literal(&'a str),
@@ -488,7 +487,7 @@ mod tests {
     sequence_variable(sv).unwrap();
 
     let match_expr = "ƒ(‹u›, ‹v›) << ƒ(a, b)";
-    match_expression(match_expr).unwrap();
+    let result: (&str, MatchEquation) = match_expression(match_expr).unwrap();
 
     assert_eq!(2+2, 4);
   }
