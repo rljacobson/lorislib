@@ -9,6 +9,7 @@ FVE: Function variable elimination X(s̃)≪ᴱƒ(t̃)⇝ₛ{ƒ(s̃)≪ᴱƒ(t̃
 
 */
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use smallvec::smallvec;
@@ -175,7 +176,8 @@ impl Iterator for RuleFVE {
             Function{
               head: pattern_head,
               children: pattern_children,
-              attributes: pattern_attributes
+              attributes: pattern_attributes,
+              ..
             }
           ),
           Expression::Function(
@@ -198,7 +200,8 @@ impl Iterator for RuleFVE {
                   Function{
                     head: ground_head.clone(),
                     children: pattern_children.clone(),
-                    attributes: *pattern_attributes
+                    attributes: *pattern_attributes,
+                    cached_hash: Cell::new(0)
                   }
                 )),
                 ground: self.match_equation.ground.clone(),

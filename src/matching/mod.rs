@@ -8,6 +8,7 @@ mod common;
 mod matcher;
 mod match_generator;
 mod decomposition;
+mod substitutions;
 
 
 /*

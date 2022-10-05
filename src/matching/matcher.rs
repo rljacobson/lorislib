@@ -489,7 +489,7 @@ impl Iterator for &mut Matcher {
                 self.process_next_match_list(results);
                 // Step 3.b
                 if self.equation_stack.is_empty(){
-                  log(Channel::Debug, 5, "SUCCESS!".to_string().as_str());
+                  log(Channel::Debug, 4, "SUCCESS!".to_string().as_str());
                   return Some(self.substitutions.clone());
                 }
                 // Step 3.c
@@ -548,8 +548,6 @@ fn display_solutions(solution_set: &SolutionSet) -> String {
 #[cfg(test)]
 mod tests {
   use std::rc::Rc;
-
-  use nom::Parser;
 
   use crate::{
     atoms::{

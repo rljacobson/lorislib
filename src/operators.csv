@@ -1,0 +1,8 @@
+NAME_STRING, PRECEDENCE, L_TOKEN, N_TOKEN, O_TOKEN, ASSOCIATIVITY, AFFIX, ARITY, CALLABLE
+Base       ,5, √      ,        ,        , N            , I    ,2, base
+Power      ,10, ^      ,        ,        , R            , I    ,2, power
+Times      ,20, *      ,        ,        , F            , I    ,2, multiply
+Divide     ,20, /      ,        ,        , L            , I    ,2, divide
+Add,30, +      ,        ,        , F            , I    ,2, add
+Subtract,30, -      ,        ,        , F            , I    ,2, subtract
+Construct,40,[,,],L,I,*,function

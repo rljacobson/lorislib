@@ -1,9 +1,11 @@
 /*!
 
-An expression is a syntatically correct "thing", a symbol, function, sequence,
-non-sequence variable, or sequence variable. We try to keep `Expression`s
-immutable. We can use `Rc<Expression>`, aliased to `RcExpression`, as a garbage
-collected copy-on-write smart pointer.
+An `Expression` is a syntactically correct "thing", a symbol, function, sequence, non-sequence variable,
+or sequence variable. We try to keep `Expression`s immutable. We can use `Rc<Expression>`, aliased to
+`RcExpression`, as a garbage collected copy-on-write smart pointer. Every `Expression` is a composition
+of `Atoms`, so every `Expression` _is_ an atom, that is, has an atom as its root. Therefore, `Expression`
+is an enum whose variants wrap each `Atom` type. We use `EnumDiscriminants` from `strum` to derive the
+`ExpressionKind` enum whose variants are only the names (no data) of the variants in `Expression`.
 
 To implement matching on your own structures, implement a `get_expression`
 method or equivalent that returns the expression form of the type. Match on
@@ -15,13 +17,15 @@ use std::{
   rc::Rc,
   cmp::Ordering
 };
+use std::hash::{Hash, Hasher};
 
 use strum::{EnumDiscriminants, Display};
 use lazy_static::lazy_static;
 
 use crate::{
   format::{
-    Formattable
+    Formattable,
+    Formatter
   },
   atoms::{
     Symbol,
@@ -29,11 +33,12 @@ use crate::{
     Variable,
     Sequence,
     SequenceVariable,
-    Literal,
-    Atom
+    StringLiteral,
+    Atom,
+    Integer,
+    Real
   },
   normal_form::NormalFormOrder,
-  format::Formatter
 };
 
 
@@ -46,7 +51,7 @@ lazy_static!{
 
 
 
-#[derive(Clone, PartialEq, Eq, EnumDiscriminants, Debug, Hash)]
+#[derive(Clone, PartialEq, Eq, EnumDiscriminants, Debug)]
 #[strum_discriminants(name(ExpressionKind))]
 #[strum_discriminants(derive(Display))]
 pub enum Expression{
@@ -58,12 +63,7 @@ pub enum Expression{
   a function is not an expression. It's just the name of the function.
   Functions are usually written with parentheses, even if the function takes no
   arguments: `f()`. In contexts where only a function name can be the
-  parentheses are dropped.
-
-  The children of a function are an ordered list (a `Vec<RcExpression>`) of
-  expressions even when the function is commutative. The attributes of a
-  function record whether it is commutative or associative and potentially
-  other boolean data about the function.
+  parentheses are dropped. See `crate::atoms::function` for more details.
   */
   Function(Function),
 
@@ -72,24 +72,31 @@ pub enum Expression{
   function's arguments or into another sequence. For clarity, `Sequence`s will
   always be written with parentheses, even if the sequence is empty: `()`, `(a,
   f(b), c)`, etc. A `Sequence` is a contiguous sublist of terms from a possibly
-  larger list that we want to call out specifically for some purpose.
+  larger list that we want to call out specifically for some purpose. See
+  `crate::atomes::Sequence` for more details.
   */
   Sequence(Sequence),
 
-  /// A `Variable` is a placeholder for an atom and may be bound or unbound.
+  /// A `Variable` is a placeholder for an atom and may be bound or unbound. It is not a variable in the mathematical
+  /// sense. Rather, it is a metavariable, a variable for the purposes of pattern matching.
   Variable(Variable),
 
   /// A sequence variable is a placeholder for a sequence, that is, a variable that
   /// only holds sequences.
   SequenceVariable(SequenceVariable),
 
-  /// A `Literal` is a string, float, hexadecimal, or decimal number.
-  Literal(Literal)
+  /// A wrapper for `String`
+  StringLiteral(StringLiteral),
+
+  Integer(Integer),
+
+  Real(Real),
 }
 
 
 macro_rules! forward_call {
   ($func_name:ident, $ret_type:ty) => {
+    // Note: we need self to be mutable so it can cache its own hash value.
     pub fn $func_name(&self) -> $ret_type {
       match self {
         // Expression::StringExpression(e) => e.$func_name(),
@@ -98,6 +105,9 @@ macro_rules! forward_call {
         Expression::Sequence(e)         => e.$func_name(),
         Expression::SequenceVariable(e) => e.$func_name(),
         Expression::Variable(e)         => e.$func_name(),
+        Expression::StringLiteral(e)    => e.$func_name(),
+        Expression::Integer(e)          => e.$func_name(),
+        Expression::Real(e)             => e.$func_name(),
       }
     }
   }
@@ -123,11 +133,16 @@ impl Expression {
 
         }
       },
-      Expression::Sequence(_) => &EMPTY_STRING,
+
+      | Expression::Sequence(_)
+      | Expression::Integer(_)
+      | Expression::Real(_)
+      | Expression::StringLiteral(_) => &EMPTY_STRING,
+
       Expression::SequenceVariable(SequenceVariable(name)) => &name,
       Expression::Symbol(Symbol(name)) => &name,
       Expression::Variable(Variable(name)) => &name,
-      Expression::Literal(Literal(name)) => &name,
+
     }
   }
 
@@ -140,9 +155,11 @@ impl Expression {
 
       // Todo: Should non M-expressions have a positive length?
       | Expression::Symbol(_)
-      | Expression::Literal(_)
+      | Expression::StringLiteral(_)
       | Expression::Variable(_)
-      | Expression::SequenceVariable(_) => 0,
+      | Expression::SequenceVariable(_)
+      | Expression::Integer(_)
+      | Expression::Real(_)      => 0,
 
       Expression::Function(function) => function.len(),
 
@@ -227,8 +244,16 @@ impl Formattable for Expression {
         variable.format(formatter)
       },
 
-      Expression::Literal(literal) => {
+      Expression::StringLiteral(literal) => {
         literal.format(formatter)
+      },
+
+      Expression::Integer(integer) => {
+        integer.format(formatter)
+      },
+
+      Expression::Real(real) => {
+        real.format(formatter)
       },
 
     }
@@ -246,7 +271,7 @@ impl NormalFormOrder for Expression {
       (Expression::Symbol(s), Expression::Symbol(t))
       => NormalFormOrder::cmp(s, t),
 
-      (Expression::Literal(s), Expression::Literal(t))
+      (Expression::StringLiteral(s), Expression::StringLiteral(t))
       => NormalFormOrder::cmp(s, t),
 
       (Expression::Function(f), Expression::Function(g))
@@ -275,6 +300,13 @@ impl NormalFormOrder for Expression {
       } // end match on (thing_one, thing_two)
 
     }
+  }
+}
+
+
+impl Hash for Expression {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    state.write_u64(self.hash())
   }
 }
 

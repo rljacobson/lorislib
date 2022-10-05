@@ -1,22 +1,31 @@
 /*!
-A function is an M-expression. For the purposes of this library, the "head" of
-a function is not an expression. It's just the name of the function.
-Functions are usually written with parentheses, even if the function takes no
-arguments: `f()`. In contexts where only a function name can be the
-parentheses are dropped.
+  A `Sequence` is an ordered list of expressions that can be spliced into a
+  function's arguments or into another sequence. For clarity, `Sequence`s will
+  always be written with parentheses, even if the sequence is empty: `()`, `(a,
+  f(b), c)`, etc. A `Sequence` is a contiguous sublist of terms from a possibly
+  larger list that we want to call out specifically for some purpose.
 
-The children of a function are an ordered list (a `Vec<RcExpression>`) of
-expressions even when the function is commutative. The attributes of a
-function record whether it is commutative or associative and potentially
-other boolean data about the function.
+  A `Sequence` is _not_ a `List` in the sense of Lisp or Mathematica. A `List` in that sense is a single
+  M-expression, a function with the symbolic head `List` the children of which are the elements of the list.
+  If you put a `List` into a `Sequence` or `Function`, it would be a single child of that `Sequence` or
+  `Function`. A `Sequence`, on the other hand, may be multiple M-expressions. If you apply a function to a
+  sequence, each child of the sequence becomes a child of the function, and the `Sequence` itself goes away.
+
+  `Sequence`s automatically flatten themselves, so you can never have a `Sequence` of `Sequences`.
+  However, we don't say they have the `Flat` attribute (or associative property), because
+  they are not functions, and only functions can be said to have attributes (be associative).
+)
 */
 
 use std::{
   cmp::Ordering,
   iter::zip,
-  rc::Rc
+  rc::Rc,
+  ops::Deref,
+  hash::Hasher,
+  cell::Cell
 };
-use std::ops::Deref;
+use fnv::FnvHasher;
 
 use crate::{
   expression::{
@@ -32,8 +41,10 @@ use crate::{
 
 use super::Atom;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sequence{
+  // We want to be able to compute a hash without mutable access, as hashing is a read-only operation.
+  pub(crate) cached_hash : Cell<u64>,
   pub children: Vec<RcExpression>,
 }
 
@@ -46,6 +57,7 @@ impl Sequence {
 
   pub fn from_children(children: Vec<RcExpression>) -> Self {
     Sequence{
+      cached_hash: Cell::new(0),
       children
     }
   }
@@ -141,7 +153,10 @@ impl Sequence {
 
 impl Default for Sequence {
   fn default() -> Self {
-    Sequence{ children: vec![] }
+    Sequence{
+      cached_hash: Cell::new(0),
+      children   : vec![]
+    }
   }
 }
 
@@ -190,6 +205,24 @@ impl NormalFormOrder for Sequence {
 }
 
 impl Atom for Sequence {
+
+  fn hash(&self) -> u64 {
+    if self.cached_hash.get() != 0 {
+      return self.cached_hash.get();
+    }
+
+    let mut hasher = FnvHasher::default();
+
+    hasher.write(&[174, 52 , 210, 181, 122, 46 , 205, 101]);
+    for part in &self.children {
+      hasher.write_u64(part.hash());
+    }
+    let result = hasher.finish();
+    self.cached_hash.replace(result);
+
+    result
+  }
+
   fn to_expression(self) -> Expression {
     Expression::Sequence(self)
   }

@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use crate::{
   expression::Expression,
   attributes::Attributes,
-  atoms::symbol::Symbol
+  atoms::Symbol
 };
 
 pub struct Context{

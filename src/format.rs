@@ -14,10 +14,6 @@
   there is no way to make it work with a different set of formatting rules.
 
 */
-
-use std::fmt::Display;
-
-
 use std::borrow::Cow;
 
 use strum::EnumString;

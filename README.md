@@ -1,8 +1,8 @@
-# Lemur
+# Loris
 
 ### An experiment in pattern matching algorithms.
 
-![Lemur](https://repository-images.githubusercontent.com/460711591/cffb54a0-00de-4a7b-bfd5-35dde4a62b73)
+<img src="loris.jpg" alt="Loris" style="zoom: 33%;" />
 
 An implementation of the pattern matching algorithms described in the paper:
 
@@ -22,3 +22,8 @@ Wolfram Mathematica's matching behavior, is not implemented, but I would like to
 Algorithms $RS$ (_Reconstruct Solutions_) and $RS_S$ (_Reconstruct Solutions
 with Strict associativity_) are not implemented. Instead, match generators and
 backtracking are used to find solutions. I would like to implement them in the future.
+
+# The Slow Loris
+
+The Slow Loris is at risk of extinction due to habitat loss and the illegal wildlife trade. There is demand for 
+lorises for use in traditional medicine and as pets. 

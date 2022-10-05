@@ -7,7 +7,7 @@ A utility struct that destructures a match equation into its component parts.
 use std::rc::Rc;
 
 use crate::{
-  atoms::function::Function,
+  atoms::Function,
   expression::{
     RcExpression,
     Expression

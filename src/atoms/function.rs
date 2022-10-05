@@ -13,9 +13,10 @@ other boolean data about the function.
 
 use std::{
   cmp::Ordering,
-  rc::Rc
+  rc::Rc,
+  hash::Hasher,
+  cell::Cell
 };
-use std::hash::Hasher;
 use fnv::FnvHasher;
 
 use crate::{
@@ -34,14 +35,25 @@ use crate::{
 
 use super::{Atom, Symbol, Variable};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function{
   /// The head of the function is either a symbol or a variable. It cannot be a
   /// function, sequence, or sequence variable.
-  pub cached_hash: u64,
-  pub head: RcExpression,
-  pub children: Vec<RcExpression>,
+  pub(crate) cached_hash   : Cell<u64>,
+  pub head      : RcExpression,
+  pub children  : Vec<RcExpression>,
   pub attributes: Attributes,
+}
+
+impl Default for Function {
+  fn default() -> Self {
+    Function{
+      cached_hash: Cell::new(0),
+      head       : Rc::new(Symbol::from("f").into()),
+      children   : vec![],
+      attributes : Attributes::default()
+    }
+  }
 }
 
 
@@ -68,7 +80,7 @@ impl Function {
       | ExpressionKind::Variable => {
         Ok(
           Function{
-            cached_hash: 0,
+            cached_hash: Cell::new(0),
             head,
             children: Vec::new(),
             attributes: Attributes::default()
@@ -85,7 +97,7 @@ impl Function {
 
   pub fn duplicate_head(&self) -> Function {
     Function{
-      cached_hash: 0,
+      cached_hash: Cell::new(0),
       head: self.head.clone(),
       children: Vec::new(),
       attributes: self.attributes.clone()
@@ -95,7 +107,7 @@ impl Function {
 
   pub fn duplicate_with_rest(&self) -> Function {
     Function{
-      cached_hash: 0,
+      cached_hash: Cell::new(0),
       head: self.head.clone(),
       children: self.rest(),
       attributes: self.attributes.clone()
@@ -276,34 +288,34 @@ impl NormalFormOrder for Function {
   }
 }
 
+impl From<Function> for Expression {
+  fn from(function: Function) -> Self {
+    Expression::Function(function)
+  }
+}
+
 impl Atom for Function {
 
-  fn hash(&mut self) -> u64 {
-    if self.cached_hash != 0 {
-      return self.cached_hash;
+  fn hash(&self) -> u64 {
+    if self.cached_hash.get() != 0 {
+      return self.cached_hash.get();
     }
 
     let mut hasher = FnvHasher::default();
 
-    hasher.write(&[72u8, 5u8, 244u8, 86u8, 5u8, 210u8, 69u8, 30u8]);
-    for part in self.children {
+    hasher.write(&[1, 207, 143, 106, 203, 58, 96, 148]);
+    for part in &self.children {
       hasher.write_u64(part.hash());
     }
-
-    let result       = hasher.finish();
-    self.cached_hash = result;
+    hasher.write_u64(self.head.hash());
+    let result = hasher.finish();
+    self.cached_hash.replace(result);
 
     result
   }
 
   fn to_expression(self) -> Expression {
     Expression::Function(self)
-  }
-}
-
-impl From<Function> for Expression {
-  fn from(function: Function) -> Self {
-    Expression::Function(function)
   }
 }
 

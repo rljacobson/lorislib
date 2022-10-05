@@ -1,5 +1,8 @@
 # Project Specific
 ignore
+reference/*.nb
+# articles
+Algorithm.html
 
 # Rust
 Cargo.lock

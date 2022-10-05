@@ -1,4 +1,3 @@
-#![feature(toowned_clone_into)]
 #![feature(type_alias_impl_trait)]
 #![allow(dead_code)]
 
@@ -11,9 +10,9 @@ mod attributes;
 mod atoms;
 mod matching;
 mod context;
-#[cfg(feature = "nom")]
 mod parser;
-mod data_structures;
+mod operator;
+mod lexer;
 
 
 /*
