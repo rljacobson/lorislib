@@ -1,8 +1,7 @@
 /*!
 
-A context is a namespace. A `Context` struct is a symbol table that holds the
-values, definitions, and attributes for symbols within a context. It is the
-`Context` that owns expressions related to a symbol.
+A `Context` is a namespace. A `Context` struct is a symbol table that holds the
+values, definitions, and attributes for symbols within a context.
 
 Much of this should arguably be implemented in the language being implemented.
 However, doing so would mean that information about the original expression that

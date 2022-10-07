@@ -18,16 +18,20 @@ publish = false
 permutation-generator = {path = "../permutation_generator"}
 
 strum        = {version = "0.23", features = ["derive"]}
-strum_macros = "0.23"
+strum_macros = "0.23"   # Generates variant name  only enum.
 lazy_static  = "1.4.0"
+# Vecs on the stack in the matcher
 smallvec     = {version = "1.8.0", features = ["union"]}
-#nom          = {version = "7", optional = true , features = ["alloc"]}
-unicode-xid  = "0.2.2" # Unicode support for identifiers.
-yansi        = "0.5.1" # ANSI color support.
-fnv          = "1.0.7" # FNV-1a hash.
+# Strings On the stack in the lexer/parser.
+#inlinable_string = "0.1.15"
+unicode-xid      = "0.2.2"  # Unicode support for identifiers.
+logos            = "0.12.1" # Scanner generator
+yansi            = "0.5.1"  # ANSI color support.
+fnv              = "1.0.7"  # FNV-1a hash.
+csv              = "1.1"    # Reading operators from a CSV file
 
 [features]
-default = ["strict-associativity", "nom"]
+default = ["strict-associativity"]
 
 strict-associativity     = []
 mathematica-compatibiity = []

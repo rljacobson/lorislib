@@ -13,13 +13,73 @@ Thus, the operator table is a `HashMap` from `String` to `Operator`.
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, BufRead};
-use crate::ASTNode;
-use crate::interpreter::RuntimeContext;
+use std::io::{
+  BufReader,
+  BufRead
+};
+use std::string::ToString;
 
-const OPERATOR_DB_FILE: &str = "resources/operators.csv"; // Used in `get_operator_table()`
+use strum::{AsRefStr};
+use csv::{ReaderBuilder, Reader, Trim, StringRecord, StringRecordIter};
+use crate::logging::{Channel, log, set_verbosity};
 
-pub type OperatorTable = HashMap<String, Operator>;
+use crate::parsing::Token;
+
+static OPERATOR_DB_FILE: &str = "resources/operators.csv"; // Used in `get_operator_table()`
+
+// Operator defined below.
+/// Non-operator tokens generally have the same properties. Instead of making an entry in the table for each
+/// kind of widget, we just return this prototype.
+// pub static NULLARY_OPERAND: Operator = Operator {
+//   name         : "".to_string(),
+//   precedence   : 1000i32,
+//   l_token      : None,
+//   n_token      : None,
+//   o_token      : None,
+//   associativity: Associativity::Null,
+//   affix        : Affix::Null,
+//   arity        : 0,
+// };
+
+#[derive(Clone, Debug,  Default)]
+pub struct OperatorTable {
+  map: HashMap < String, Operator >,
+}
+
+impl OperatorTable {
+
+  pub fn new() -> OperatorTable {
+    OperatorTable::default()
+  }
+
+
+  /// If `token` has a record in the operator table, return it. Otherwise, return `None`. We assume `None` is a leaf
+  /// token, but it might also be an error token.
+  pub fn look_up(&self, token: &Token) -> Option<&Operator> {
+    match token {
+      // An OpToken is anything that is not a leaf.
+      Token::OpToken(token) => {
+        self.map.get(token)
+      }
+
+      // Should error tokens be treated differently?
+      // Token::Error => {}
+
+      _ => {
+        // Must be a leaf token.
+        None
+      }
+    }
+  }
+
+  pub fn insert(&mut self, name: String, operator: Operator) {
+    self.map.insert(name, operator);
+  }
+
+}
+
+
+
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum Associativity {
@@ -34,7 +94,7 @@ pub enum Associativity {
 
 impl Associativity{
   pub fn from_str(s: &str) -> Associativity {
-    match s{
+    match s {
 
       "R" => Associativity::Right,
 
@@ -46,7 +106,10 @@ impl Associativity{
 
       "" => Associativity::Null,
 
-      _ => {unreachable!()}
+      anything => {
+        eprint!("Unreachable associativity: {}", anything);
+        unreachable!()
+      }
     }
   }
 }
@@ -68,7 +131,8 @@ impl Affix {
   pub fn from_str(s: &str) -> Affix {
     match s {
 
-      "N" => Affix::Null,
+      "N"
+      | "" => Affix::Null,
 
       "P" => Affix::Prefix,
 
@@ -78,7 +142,12 @@ impl Affix {
 
       "M" => Affix::Matchfix,
 
-      _   => {unreachable!()}
+      anything   => {
+        {
+          eprint!("Unreachable Affix: {}", anything);
+          unreachable!()
+        }
+      }
 
     }
   }
@@ -91,7 +160,7 @@ impl Affix {
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct Operator {                // Example Value
   pub name         : String,         // "Multiplication"
-  pub precedence   : u32,            // 30
+  pub precedence   : i32,            // 30
   pub l_token      : Option<String>, // "*"
   pub n_token      : Option<String>, // <None>
   pub o_token      : Option<String>, // <None>
@@ -103,7 +172,20 @@ pub struct Operator {                // Example Value
 
 impl Operator {
 
-  pub fn lbp(&self) -> u32 {
+  pub fn nullary_operand() -> Self {
+    Operator {
+      name         : "".to_string(),
+      precedence   : 0,
+      l_token      : None,
+      n_token      : None,
+      o_token      : None,
+      associativity: Associativity::Null,
+      affix        : Affix::Null,
+      arity        : 0,
+    }
+  }
+
+  pub fn left_binding_power(&self) -> i32 {
     match self.affix {
 
       | Affix::Infix
@@ -114,15 +196,15 @@ impl Operator {
     }
   }
 
-  pub fn rbp(&self) -> u32 {
+  pub fn right_binding_power(&self) -> i32 {
     match self.associativity {
 
       | Associativity::Left
-      | Associativity::Non => self.lbp() + 1,
+      | Associativity::Non => self.left_binding_power() + 1,
 
-      Associativity::Right => self.lbp(),
+      Associativity::Right => self.left_binding_power(),
 
-      Associativity::Full  => self.lbp() - 1,
+      Associativity::Full  => self.left_binding_power() - 1,
 
       Associativity::Null  => -1 // Technically, Matchfix is N/A.
 
@@ -130,14 +212,14 @@ impl Operator {
 
   }
 
-  pub fn nbp(&self) -> u32 {
+  pub fn next_binding_power(&self) -> i32 {
     match self.associativity {
 
       | Associativity::Left
-      | Associativity::Right => self.lbp(),
+      | Associativity::Right => self.left_binding_power(),
 
       | Associativity::Non
-      | Associativity::Full  => self.lbp() - 1,
+      | Associativity::Full  => self.left_binding_power() - 1,
 
       _  => {
 
@@ -174,7 +256,7 @@ Note that the first row is a header row and is discarded.
 | Field         | Possible Values                                              | Notes                                                        |
 | ------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
 | NAME_STRING   | An identifier as a string                                    | The name is the function the expression will be interpreted as. |
-| PRECEDENCE    | Nonnegative integer                                          | The higher the precedence, the stronger the binding power.   |
+| PRECEDENCE    | integer                                                      | The higher the precedence, the stronger the binding power.   |
 | L_TOKEN       | String                                                       | A token that accepts an argument on its left                 |
 | N_TOKEN       | String                                                       | Null token, a token that appears at the start of an expression |
 | O_TOKEN       | String                                                       | Other, a token that is neither an L_TOKEN or an N_TOKEN      |
@@ -184,21 +266,30 @@ Note that the first row is a header row and is discarded.
 
 */
 pub fn get_operator_table() -> OperatorTable {
-  let f = File::open(OPERATOR_DB_FILE)
-      .expect(format!("Could not read from {}", OPERATOR_DB_FILE).as_str());
-  let reader = BufReader::new(f);
-  let mut operator_table = OperatorTable::new();
-  let mut lines = reader.lines();
-  lines.next(); // Eat the column headers
+  // let f = File::open(OPERATOR_DB_FILE)
+  //     .expect(format!("Could not read from {}", OPERATOR_DB_FILE).as_str());
+  // let mut cvs_reader = csv::Reader::from_reader(BufReader::new(f));
+  let mut csv_reader
+      = ReaderBuilder::new().delimiter(b'|')
+                            .has_headers(true)
+                            .trim(Trim::All)
+                            .from_path(OPERATOR_DB_FILE)
+                            .unwrap();
+                            // .from_reader(BufReader::new(f));
 
-  for line in lines {
-    let line = line.unwrap();
-    let mut fields = line.split(',');
+  // let reader = BufReader::new(f);
+  let mut operator_table = OperatorTable::new();
+  // let mut lines = reader.lines();
+  // lines.next(); // Eat the column headers
+  let mut records =  csv_reader.records();
+  for result in records {
+    let mut record = result.unwrap();
+    let mut fields: StringRecordIter = record.iter();
 
     let new_op = Operator{
       // Fields filled according to csv column order which need not be declaration order.
       name      : fields.next().unwrap().to_string(),
-      precedence: fields.next().unwrap().parse::<u32>().unwrap(),
+      precedence: fields.next().unwrap().parse::<i32>().unwrap(),
       l_token   : fields.next().map_or(
                     None,
                     |s| if s != "" { Some(s.to_string()) } else { None }
@@ -214,11 +305,24 @@ pub fn get_operator_table() -> OperatorTable {
       associativity : Associativity::from_str(fields.next().unwrap()),
       affix     : Affix::from_str(fields.next().unwrap()),
       arity     : fields.next().unwrap().parse::<u32>().unwrap(),
-
     };
 
-    println!("{:?}", &new_op);
-    operator_table.insert(new_op.name.clone(), new_op);
+    // log(Channel::Debug, 5, format!("Read from CSV: {:?}", &new_op).as_str());
+
+    // todo: The following doesn't work if the same sigil is used both as an L_TOKEN and an N_TOKEN. Does it?
+    if let Some(tok) = &new_op.l_token {
+      operator_table.insert(tok.clone(), new_op.clone());
+    }
+    if let Some(tok) = &new_op.n_token {
+      let mut new_op = new_op.clone();
+      operator_table.insert(tok.clone(), new_op);
+    }
+
+    if let Some(tok) = &new_op.o_token {
+      let mut new_op = new_op.clone();
+      new_op.precedence = -2;
+      operator_table.insert(tok.clone(), new_op);
+    }
   }
 
   operator_table

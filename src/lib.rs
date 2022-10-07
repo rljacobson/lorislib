@@ -10,9 +10,7 @@ mod attributes;
 mod atoms;
 mod matching;
 mod context;
-mod parser;
-mod operator;
-mod lexer;
+mod parsing;
 
 
 /*

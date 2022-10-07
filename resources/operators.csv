@@ -1,11 +1,13 @@
-NAME_STRING, PRECEDENCE, L_TOKEN, N_TOKEN, O_TOKEN, ASSOCIATIVITY, AFFIX, ARITY
-Base       , 5         , √      ,        ,        , N            , I    , 2
-Power      , 10        , ^      ,        ,        , R            , I    , 2
-Times      , 20        , *      ,        ,        , F            , I    , 2
-Divide     , 20        , /      ,        ,        , L            , I    , 2
-Plus       , 30        , +      ,        ,        , F            , I    , 2
-Minus      , 30        , -      ,        ,        , F            , I    , 2
-Parentheses, 100							,  						, (						,	) 					, N												, M				, 1
-Construct	 , 100							, [						, 							,	] 					,	L 											,	I 			,	2
-Set 							, 110							, =						,								,								,	R												,	I				, 2
-SetDelayed , 110							, :=					,								,								,	R												, I				, 2
+NAME_STRING| PRECEDENCE| L_TOKEN| N_TOKEN| O_TOKEN| ASSOCIATIVITY| AFFIX| ARITY
+Construct  | 160       | [    |        | ]      |              | I    | 2
+Root       | 150       | √    |        |        | N            | I    | 2
+Power      | 140       | ^    |        |        | R            | I    | 2
+Times      | 130       | *    |        |        | F            | I    | 2
+Divide     | 130       | /    |        |        | L            | I    | 2
+Plus       | 120       | +    |        |        | F            | I    | 2
+Minus      | 120       | -    |        |        | F            | I    | 2
+Set        | 80        | =    |        |        | R            | I    | 2
+SetDelayed | 80        | :=   |        |        | R            | I    | 2
+Unset      | 80        | =.   |        |        | R            | I    | 2
+Slice      | 70        | ,    |        |        | F            | I    | 2
+Parentheses| 60        |      | (      | )      |              | M    | 1
