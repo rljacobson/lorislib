@@ -6,7 +6,6 @@
 
 use std::{
   cmp::Ordering,
-  fmt::Display,
   hash::Hasher,
 };
 use fnv::FnvHasher;

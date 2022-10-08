@@ -12,15 +12,9 @@ Thus, the operator table is a `HashMap` from `String` to `Operator`.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{
-  BufReader,
-  BufRead
-};
 use std::string::ToString;
 
-use strum::{AsRefStr};
-use csv::{ReaderBuilder, Reader, Trim, StringRecord, StringRecordIter};
+use csv::{ReaderBuilder, Trim, StringRecordIter};
 use crate::logging::{Channel, log, set_verbosity};
 
 use crate::parsing::Token;
@@ -281,9 +275,9 @@ pub fn get_operator_table() -> OperatorTable {
   let mut operator_table = OperatorTable::new();
   // let mut lines = reader.lines();
   // lines.next(); // Eat the column headers
-  let mut records =  csv_reader.records();
+  let records =  csv_reader.records();
   for result in records {
-    let mut record = result.unwrap();
+    let record = result.unwrap();
     let mut fields: StringRecordIter = record.iter();
 
     let new_op = Operator{
@@ -313,9 +307,9 @@ pub fn get_operator_table() -> OperatorTable {
     if let Some(tok) = &new_op.l_token {
       operator_table.insert(tok.clone(), new_op.clone());
     }
-    if let Some(tok) = &new_op.n_token {
-      let mut new_op = new_op.clone();
-      operator_table.insert(tok.clone(), new_op);
+    if let Some(n_token) = &new_op.n_token {
+      let new_op = new_op.clone();
+      operator_table.insert(n_token.clone(), new_op);
     }
 
     if let Some(tok) = &new_op.o_token {

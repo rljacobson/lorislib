@@ -49,7 +49,7 @@ impl Default for Function {
   fn default() -> Self {
     Function{
       cached_hash: Cell::new(0),
-      head       : Rc::new(Symbol::from("f").into()),
+      head       : Rc::new(Symbol::from("ƒ").into()),
       children   : vec![],
       attributes : Attributes::default()
     }
@@ -268,7 +268,8 @@ impl Formattable for Function {
   fn format(&self, formatter: &Formatter) -> String {
     format!(
       // "{}({})",
-      "{}❨{}❩",
+      // "{}❨{}❩",
+      "{}[{}]",
       self.head,
       self.children
       .iter()

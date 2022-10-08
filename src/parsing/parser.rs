@@ -44,33 +44,22 @@ There are other incidental differences:
 
 use core::iter::Peekable as TokenIterator;
 use std::{
-  ops::DerefMut,
   rc::Rc
 };
-use std::borrow::BorrowMut;
-use std::fmt::Debug;
 
 use logos::{Logos, Lexer};
 
 use crate::{
   atoms::{
     Function,
-    Integer,
-    Real,
-    Sequence,
-    SequenceVariable,
-    StringLiteral,
-    Symbol,
-    Variable,
   },
   expression::{
     Expression,
-    RcExpression
+    RcExpression,
   },
   logging::{
     log,
     Channel,
-    LogLevel
   },
   parsing::{
     lexer::Token,
@@ -144,11 +133,11 @@ impl<'t> Parser<'t> {
     // Parses the stuff that follows this token if this token is a null token (i.e. can begin an expression). If the
     // token is a leaf, this is a no-op. Modifies `current_root` in place.
     self.null_denotation(&mut current_root, &operator)
-        .map_err(|e| token.clone())?;
+        .map_err(|_| token.clone())?;
 
     // STEP 2: Parse left tokens, i.e. tokens that take an expression on their left. Includes all infix operators.
 
-    let mut r: i32 = INF;
+    // let mut r: i32 = INF;
     loop {
       // Don't consume in case binding power is out of bound.
       token = match self.get_current_token() {
@@ -180,7 +169,7 @@ impl<'t> Parser<'t> {
 
       // Parse the RHS of the expression.
       self.left_denotation(current_root, &mut new_root, &operator)
-          .map_err(|err| token)? ; // = c(tree, terminal)
+          .map_err(|_| token)? ;
       // r = operator.next_binding_power();
 
       current_root = new_root;
@@ -253,11 +242,11 @@ impl<'t> Parser<'t> {
       match self.parse_expression(0) {
         // The nonempty case
         Ok(child_expression) => {
-          push_child(expression, Rc::new(child_expression))?
+          push_child(expression, child_expression)?
         }
 
         // The empty case.
-        Err(token) => {
+        Err(_token) => {
           // log(
           //   Channel::Error,
           //   1,
@@ -277,7 +266,7 @@ impl<'t> Parser<'t> {
       match self.parse_expression(0) {
         // The nonempty case
         Ok(child_expression) => {
-          push_child(expression, Rc::new(child_expression))?;
+          push_child(expression, child_expression)?;
         }
 
         // The empty case.
@@ -339,8 +328,8 @@ impl<'t> Parser<'t> {
             return Err(());
           }
         };
-    push_child(root, Rc::new(lhs))?;
-    push_child(root, Rc::new(rhs))?;
+    push_child(root, lhs)?;
+    push_child(root, rhs)?;
     log(
       Channel::Debug,
       1,
@@ -363,24 +352,56 @@ impl<'t> Parser<'t> {
 }
 
 ///
-fn push_child(mut parent: &mut Expression, child: RcExpression) -> Result<(), ()> {
-  match &mut parent {
+fn push_child(parent: &mut Expression, child: Expression) -> Result<(), ()> {
+  // Fix up function construct.
+  let parent_is_construct  = (parent.name()=="Construct");
+  // Fix up in-line sequences.
+  let child_is_sequence    = (child.name()=="Sequence");
+  let child_is_parentheses = (child.name()=="Parentheses");
 
-    Expression::Function(exp) => {
-      exp.push(child);
+  // Destructure parent…
+  return match parent {
+    Expression::Function(expr) => {
+      if parent_is_construct && expr.children.is_empty() {
+        // The first argument to `Construct` is the head.
+        expr.head = Rc::new(child);
+        // Subsequent calls to `push_child()` will not execute this branch.
+        return Ok(());
+      }
+      if child_is_sequence || child_is_parentheses{
+        // Destructure child…
+        if let Expression::Function(mut child_expr) = child {
+          // Splice in the sequence's children.
+          expr.children.append(&mut child_expr.children);
+          return Ok(());
+        }
+      }
+
+      // If we get here it's just a normal child of a normal function.
+      expr.push(Rc::new(child));
       Ok(())
-    },
-
-    Expression::Sequence(exp) => {
-      exp.push(child);
-      Ok(())
-    },
-
-    _ => {
-      return Err(())
     }
 
+    Expression::Sequence(expr) => {
+      if child_is_sequence || child_is_parentheses {
+        // Destructure child…
+        if let Expression::Function(mut child_expr) = child {
+          // Splice in the sequence's children.
+          expr.children.append(&mut child_expr.children);
+          return Ok(());
+        }
+        // Is the child ever a true `Expression::Sequence` ? If so, change the if-let to a match.
+      }
+      // If we get here it's just a normal child of a normal function.
+      expr.push(Rc::new(child));
+      Ok(())
+    }
+
+    _ => {
+      Err(())
+    }
   }
+
 }
 
 
@@ -391,15 +412,80 @@ mod tests {
   use super::*;
 
   #[test]
-  fn parse_test() {
+  fn function_test() {
     let text = "3.8*f[1+x, y]";
     // let text = "f[1+3.8]";
-    set_verbosity(5);
+    // set_verbosity(5);
     let mut parser = Parser::new(text);
 
-    let expression = match parser.parse() {
-      Ok(e) => println!("Success: {}", *e),
-      Err(e) => assert!(false)
+    match parser.parse() {
+
+      Ok(e) => {
+        assert_eq!("Times[3.8, f[Plus[1, x], y]]", e.to_string().as_str());
+        println!("Success: {}", *e);
+      },
+
+      Err(_) => assert!(false)
+
+    };
+  }
+
+  #[test]
+  fn precedence_test() {
+    let text = "3.8*x^2 + 2*x^f[a+b, c*d, e]";
+    let mut parser = Parser::new(text);
+
+    match parser.parse() {
+
+      Ok(e) => {
+        assert_eq!(
+          "Plus[Times[3.8, Power[x, 2]], Times[2, Power[x, f[Plus[a, b], Times[c, d], e]]]]",
+          e.to_string().as_str()
+        );
+        println!("Success: {}", *e);
+      },
+
+      Err(_) => assert!(false)
+
+    };
+  }
+
+  #[test]
+  fn parentheses_test() {
+    let text = "2*(3+a)";
+    let mut parser = Parser::new(text);
+
+    match parser.parse() {
+
+      Ok(e) => {
+        assert_eq!(
+          "Times[2, Plus[3, a]]",
+          e.to_string().as_str()
+        );
+        println!("Success: {}", *e);
+      },
+
+      Err(_) => assert!(false)
+
+    };
+  }
+
+  #[test]
+  /// The parser fixes up artifacts of the parsing process, e.g. "evaluating" `Construct`s, eliding slices, etc.
+  fn fixup_test() {
+    let text = "a[b, c, d[e, f], g, h]";
+    // set_verbosity(5);
+    let mut parser = Parser::new(text);
+
+    match parser.parse() {
+
+      Ok(e) => {
+        assert_eq!(text, e.to_string());
+        println!("Success: {}", *e);
+      },
+
+      Err(_) => assert!(false)
+
     };
   }
 

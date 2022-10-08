@@ -6,24 +6,13 @@ already in the lexer, instead of later in the parser. We only do this for leaf n
 */
 
 use std::fmt::{Display, Formatter};
-use std::rc::Rc;
 
 use strum::{AsRefStr};
 use logos::{Logos, Lexer};
 // use inlinable_string::{InlinableString as SmallString, StringExt};
 
-use crate::atoms::{
-  Function,
-  Integer,
-  Real,
-  Sequence,
-  SequenceVariable,
-  StringLiteral,
-  Symbol,
-  Variable
-};
-use crate::expression::{Expression, RcExpression};
-use crate::parsing::lexer::Token::OpToken;
+use crate::atoms::{Integer, Real, SequenceVariable, Symbol, Variable};
+use crate::expression::{Expression};
 
 // ToDo: Get rid of these string copies.
 

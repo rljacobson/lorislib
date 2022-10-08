@@ -9,5 +9,5 @@ Minus      | 120       | -    |        |        | F            | I    | 2
 Set        | 80        | =    |        |        | R            | I    | 2
 SetDelayed | 80        | :=   |        |        | R            | I    | 2
 Unset      | 80        | =.   |        |        | R            | I    | 2
-Slice      | 70        | ,    |        |        | F            | I    | 2
+Sequence   | 70        | ,    |        |        | F            | I    | 2
 Parentheses| 60        |      | (      | )      |              | M    | 1
