@@ -22,6 +22,7 @@ use crate::{
   normal_form::NormalFormOrder,
   expression::Expression,
 };
+use crate::atoms::unwrap_atom_impl;
 
 use super::Atom;
 
@@ -29,6 +30,9 @@ use super::Atom;
 // Todo: Intern strings.
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub struct Variable(pub String);
+
+
+unwrap_atom_impl!(Variable);
 
 
 impl Variable {

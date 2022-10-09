@@ -19,7 +19,7 @@ use crate::logging::{Channel, log, set_verbosity};
 
 use crate::parsing::Token;
 
-static OPERATOR_DB_FILE: &str = "resources/operators.csv"; // Used in `get_operator_table()`
+static OPERATOR_DB_FILE: &str = "lorislib/resources/operators.csv"; // Used in `get_operator_table()`
 
 // Operator defined below.
 /// Non-operator tokens generally have the same properties. Instead of making an entry in the table for each

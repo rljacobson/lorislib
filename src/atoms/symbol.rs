@@ -15,6 +15,7 @@ use crate::{
   format::{Formattable, Formatter},
   normal_form::NormalFormOrder,
 };
+use crate::atoms::unwrap_atom_impl;
 
 use super::Atom;
 
@@ -77,3 +78,5 @@ impl From<Symbol> for Expression {
 }
 
 display_formattable_impl!(Symbol);
+
+unwrap_atom_impl!(Symbol);

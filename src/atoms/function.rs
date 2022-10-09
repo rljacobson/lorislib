@@ -19,6 +19,7 @@ use std::{
 };
 use fnv::FnvHasher;
 
+
 use crate::{
   expression::{
     RcExpression,
@@ -32,8 +33,8 @@ use crate::{
   },
   normal_form::NormalFormOrder
 };
+use super::{Atom, Symbol, Variable, unwrap_atom_impl};
 
-use super::{Atom, Symbol, Variable};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function{
@@ -56,6 +57,7 @@ impl Default for Function {
   }
 }
 
+unwrap_atom_impl!(Function);
 
 impl Function {
 

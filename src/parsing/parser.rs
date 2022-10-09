@@ -42,12 +42,16 @@ There are other incidental differences:
 */
 #![allow(dead_code)]
 
+// Todo: Error handling is a mess. There is no consistency. Need to distinguish errors that happen _inside_ the
+//       session and errors that happen when executing an otherwise valid session.
+
+
 use core::iter::Peekable as TokenIterator;
 use std::{
   rc::Rc
 };
 
-use logos::{Logos, Lexer};
+use logos::{Logos, Lexer as LogosLexer};
 
 use crate::{
   atoms::{
@@ -70,18 +74,26 @@ use crate::{
 };
 use crate::parsing::operator::{get_operator_table, OperatorTable};
 
+type Lexer<'t> = TokenIterator<LogosLexer<'t, Token>>;
+
 const INF: i32 = i32::MAX;
 
-pub struct Parser<'t> {
+pub struct Parser {
   pub root_node : Option<RcExpression>,
   operator_table: OperatorTable,
-  lexer         : TokenIterator<Lexer<'t, Token>>,
+  // lexer         : TokenIterator<Lexer<'t, Token>>,
   error_occurred: bool,
 }
 
-impl<'t> Parser<'t> {
+impl Default for Parser {
+  fn default() -> Self {
+    Self::new()
+  }
+}
 
-  pub fn new(text: &str) -> Parser {
+impl Parser {
+
+  pub fn new() -> Parser {
     // Load operator database from file.
     let op_table = get_operator_table();
     // println!("OpTable: {:?}", &op_table);
@@ -89,15 +101,27 @@ impl<'t> Parser<'t> {
     Parser{
       operator_table: op_table,
       root_node     : None,
-      lexer         : Token::lexer(text).peekable(),
+      // lexer         : Token::lexer(text).peekable(),
       error_occurred: false,
     }
   }
 
+  /// Resets the parser state before parsing the given string.
+  // pub fn parse_str(&mut self, input: &'t str) -> Result<RcExpression, ()> {
+  //   // Reset the parser state.
+  //   self.root_node = None;
+  //   self.error_occurred = false;
+  //   // self.lexer = Token::lexer(input).peekable();
+  //   // Parse the new string.
+  //   self.parse()
+  // }
 
-  pub fn parse(&mut self) -> Result<RcExpression, ()>{
+  /// Parses the string already provided to the parser at parser construction or in the last call to `parse_string()`.
+  pub fn parse(&mut self, input: &str) -> Result<RcExpression, ()>{
+    let mut lexer = Token::lexer(input).peekable();
+
     // Bootstrap the parsing algorithm...
-    match self.parse_expression(0) {
+    match self.parse_expression(0, &mut lexer) {
 
       Ok(exp) => {
         if self.error_occurred {
@@ -115,11 +139,11 @@ impl<'t> Parser<'t> {
   }
 
   #[allow(non_snake_case)]
-  fn parse_expression(&mut self, previous_binding_power: i32) -> Result<Expression, Token> {
+  fn parse_expression(&mut self, previous_binding_power: i32, lexer: &mut Lexer) -> Result<Expression, Token> {
 
     // STEP 1: Parse null tokens, i.e. tokens that can begin an expression. Includes leaf tokens.
 
-    let mut token = self.consume_token();
+    let mut token = consume_token(lexer);
     log(Channel::Debug, 5, format!("Consuming token: {}", &token).as_str());
 
     // Convert the token to an expression. The `current_root` holds the root of the expression we are currently
@@ -132,7 +156,7 @@ impl<'t> Parser<'t> {
 
     // Parses the stuff that follows this token if this token is a null token (i.e. can begin an expression). If the
     // token is a leaf, this is a no-op. Modifies `current_root` in place.
-    self.null_denotation(&mut current_root, &operator)
+    self.null_denotation(&mut current_root, &operator, lexer)
         .map_err(|_| token.clone())?;
 
     // STEP 2: Parse left tokens, i.e. tokens that take an expression on their left. Includes all infix operators.
@@ -140,7 +164,7 @@ impl<'t> Parser<'t> {
     // let mut r: i32 = INF;
     loop {
       // Don't consume in case binding power is out of bound.
-      token = match self.get_current_token() {
+      token = match get_current_token(lexer) {
         Some(tok) => tok.clone(),
         None => { return Ok(current_root); }
       };
@@ -164,11 +188,11 @@ impl<'t> Parser<'t> {
         break;
       }
 
-      self.consume_token();
+      consume_token(lexer);
       log(Channel::Debug, 5, format!("Found expression: {}. Consuming peeked token.", &new_root).as_str());
 
       // Parse the RHS of the expression.
-      self.left_denotation(current_root, &mut new_root, &operator)
+      self.left_denotation(current_root, &mut new_root, &operator, lexer)
           .map_err(|_| token)? ;
       // r = operator.next_binding_power();
 
@@ -216,22 +240,10 @@ impl<'t> Parser<'t> {
     } // end match token
   }
 
-  /// Fetches the next token and consumes it. This is the default `next` behavior. The alternative behavior is
-  /// `peek`, which does not consume the token from the iterator.
-  fn consume_token(&mut self) -> Token {
-    // This *should* be infallible, because errors should produce error tokens.
-    self.lexer.next().unwrap()
-  }
-
-  /// Fetches the next token but does not consume it. A call to either `get_current_token` or `consume_next_token`
-  /// will return the same token again.
-  fn get_current_token(&mut self) -> Option<&Token> {
-    self.lexer.peek()
-  }
-
   /// This method parses all expressions that have null tokens, that is, all expressions with tokens that can begin
   /// an expression.
-  fn null_denotation(&mut self, expression: &mut Expression, operator: &Operator) -> Result<(), ()> {
+  fn null_denotation(&mut self, expression: &mut Expression, operator: &Operator, lexer: &mut Lexer)
+      -> Result<(), ()> {
     // For tokens that don't begin an expression, do nothing.
     if operator.arity == 0 || operator.n_token.is_none() {
       return Ok(());
@@ -239,7 +251,7 @@ impl<'t> Parser<'t> {
 
     // todo: What do we do for, e.g. matchfix that is optionally empty?
     if let Some(expected_token) = &operator.o_token {
-      match self.parse_expression(0) {
+      match self.parse_expression(0, lexer) {
         // The nonempty case
         Ok(child_expression) => {
           push_child(expression, child_expression)?
@@ -258,12 +270,12 @@ impl<'t> Parser<'t> {
       }
 
 
-      self.expect(expected_token)?;
+      self.expect(expected_token, lexer)?;
     }
 
     // nt exp1 ot exp2
     if operator.arity == 2 {
-      match self.parse_expression(0) {
+      match self.parse_expression(0, lexer) {
         // The nonempty case
         Ok(child_expression) => {
           push_child(expression, child_expression)?;
@@ -286,8 +298,8 @@ impl<'t> Parser<'t> {
   }
 
 
-  fn expect(&mut self, token_text: &String) -> Result<(), ()> {
-    match self.consume_token() {
+  fn expect(&mut self, token_text: &String, lexer: &mut Lexer) -> Result<(), ()> {
+    match consume_token(lexer) {
 
       Token::OpToken(t) if t==*token_text => {
         Ok(())
@@ -303,7 +315,7 @@ impl<'t> Parser<'t> {
   }
 
   // Given the LHS expression and an operator, parse the RHS expression.
-  fn left_denotation(&mut self, lhs: Expression, root: &mut Expression, operator: &Operator)
+  fn left_denotation(&mut self, lhs: Expression, root: &mut Expression, operator: &Operator, lexer: &mut Lexer)
     -> Result<(), ()>{
     log(
       Channel::Debug,
@@ -316,7 +328,7 @@ impl<'t> Parser<'t> {
       ).as_str()
     );
     let rhs =
-        match self.parse_expression(operator.right_binding_power()) {
+        match self.parse_expression(operator.right_binding_power(), lexer) {
           Ok(exp) => exp,
           Err(token) => {
             log(
@@ -343,13 +355,28 @@ impl<'t> Parser<'t> {
         1,
         format!("Now \"expect\"ing O_TOKEN: {}", &o_token).as_str()
       );
-      self.expect(o_token)?;
+      self.expect(o_token, lexer)?;
     }
 
     Ok(())
   }
 
 }
+
+
+/// Fetches the next token and consumes it. This is the default `next` behavior. The alternative behavior is
+/// `peek`, which does not consume the token from the iterator.
+fn consume_token(lexer: &mut Lexer) -> Token {
+  // This *should* be infallible, because errors should produce error tokens.
+  lexer.next().unwrap()
+}
+
+/// Fetches the next token but does not consume it. A call to either `get_current_token` or `consume_next_token`
+/// will return the same token again.
+fn get_current_token<'a>(lexer: &'a mut Lexer) -> Option<&'a Token> {
+  lexer.peek()
+}
+
 
 ///
 fn push_child(parent: &mut Expression, child: Expression) -> Result<(), ()> {
@@ -416,9 +443,9 @@ mod tests {
     let text = "3.8*f[1+x, y]";
     // let text = "f[1+3.8]";
     // set_verbosity(5);
-    let mut parser = Parser::new(text);
+    let mut parser = Parser::new();
 
-    match parser.parse() {
+    match parser.parse(text) {
 
       Ok(e) => {
         assert_eq!("Times[3.8, f[Plus[1, x], y]]", e.to_string().as_str());
@@ -433,9 +460,9 @@ mod tests {
   #[test]
   fn precedence_test() {
     let text = "3.8*x^2 + 2*x^f[a+b, c*d, e]";
-    let mut parser = Parser::new(text);
+    let mut parser = Parser::new();
 
-    match parser.parse() {
+    match parser.parse(text) {
 
       Ok(e) => {
         assert_eq!(
@@ -453,9 +480,9 @@ mod tests {
   #[test]
   fn parentheses_test() {
     let text = "2*(3+a)";
-    let mut parser = Parser::new(text);
+    let mut parser = Parser::new();
 
-    match parser.parse() {
+    match parser.parse(text) {
 
       Ok(e) => {
         assert_eq!(
@@ -475,9 +502,9 @@ mod tests {
   fn fixup_test() {
     let text = "a[b, c, d[e, f], g, h]";
     // set_verbosity(5);
-    let mut parser = Parser::new(text);
+    let mut parser = Parser::new();
 
-    match parser.parse() {
+    match parser.parse(text) {
 
       Ok(e) => {
         assert_eq!(text, e.to_string());

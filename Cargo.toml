@@ -1,13 +1,13 @@
 [package]
-name        = "loris"
+name        = "lorislib"
 authors     = ["Robert Jacobson <rljacobson@gmail.com>"]
 version     = "0.1.0"
 edition     = "2021"
 description = "A pattern matching engine that supports commutative and associative theories."
 categories  = ["algorithms", "compilers", "parsing", "mathematics"]
 keywords    = ["computer algebra", "Mathematica", "pattern matching", "term rewriting"]
-homepage    = "http://www.github.com/rljacobson/lemur"
-repository  = "http://www.github.com/rljacobson/lemur"
+homepage    = "http://www.github.com/rljacobson/loris"
+repository  = "http://www.github.com/rljacobson/loris"
 license     = "BSD"
 
 
@@ -15,7 +15,7 @@ publish = false
 
 
 [dependencies]
-permutation-generator = {path = "../permutation_generator"}
+permutation-generator = {path = "../../permutation_generator"}
 
 strum        = {version = "0.23", features = ["derive"]}
 strum_macros = "0.23"   # Generates variant name  only enum.
@@ -35,3 +35,4 @@ default = ["strict-associativity"]
 
 strict-associativity     = []
 mathematica-compatibiity = []
+

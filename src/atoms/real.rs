@@ -14,14 +14,11 @@ use std::{
 use std::mem::transmute;
 use fnv::FnvHasher;
 
-use crate::{
-  format::{
-    Formattable,
-    Formatter
-  },
-  normal_form::NormalFormOrder,
-  expression::Expression
-};
+use crate::{format::{
+  Formattable,
+  Formatter
+}, normal_form::NormalFormOrder, expression::Expression, RcExpression};
+use crate::atoms::unwrap_atom_impl;
 
 use super::Atom;
 
@@ -29,6 +26,7 @@ use super::Atom;
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct Real(pub f64);
 
+unwrap_atom_impl!(Real);
 
 impl Formattable for Real {
   fn format(&self, _formatter: &Formatter) -> String {

@@ -1,5 +1,9 @@
 /*!
-  The attributes of a function, e.g. `Flat`, `Listable`, ….
+
+The attributes of a function, e.g. `Flat`, `Listable`, ….
+
+Attributes are implemented as a bitfield.
+
 */
 
 use std::ops::Index;
@@ -94,6 +98,10 @@ impl Attributes {
     Attributes::default()
   }
 
+  pub fn update(&mut self, attributes: Attributes) {
+    self.0 |= attributes.0;
+  }
+
   pub fn get(&self, attribute: Attribute) -> bool {
     (self.0 & (1 << attribute as u32)) != 0
   }
@@ -115,7 +123,7 @@ impl Attributes {
   }
 
   pub fn variadic(&self) -> bool {
-    self.get(Attribute::Variadic) 
+    self.get(Attribute::Variadic)
   }
 
   pub fn one_identity(&self) -> bool {

@@ -13,14 +13,11 @@ use std::{
 };
 use fnv::FnvHasher;
 
-use crate::{
-  format::{
-    Formattable,
-    Formatter
-  },
-  normal_form::NormalFormOrder,
-  expression::Expression
-};
+use crate::{format::{
+  Formattable,
+  Formatter
+}, normal_form::NormalFormOrder, expression::Expression, RcExpression};
+use crate::atoms::unwrap_atom_impl;
 
 use super::Atom;
 
@@ -28,6 +25,7 @@ use super::Atom;
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub struct Integer(pub i64);
 
+unwrap_atom_impl!(Integer);
 
 impl Formattable for Integer {
   fn format(&self, _formatter: &Formatter) -> String {

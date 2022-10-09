@@ -80,3 +80,19 @@ pub trait Atom: Clone + Formattable + NormalFormOrder + Into<Expression> {
   }
 
 }
+
+
+macro_rules! unwrap_atom_impl{
+  ($atom: ident) => {
+    impl $atom {
+      pub fn unwrap(expression: &Expression) -> &Self {
+        match expression {
+          Expression::$atom(a) => a,
+          _ => panic!("tried to unwrap {} as {}", expression.kind(), stringify!($atom))
+        }
+      }
+    }
+  }
+}
+
+pub(crate) use unwrap_atom_impl;

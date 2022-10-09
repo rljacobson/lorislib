@@ -11,6 +11,16 @@ mod atoms;
 mod matching;
 mod context;
 mod parsing;
+mod builtins;
+
+pub use context::Context;
+pub use expression::{
+  Expression,
+  RcExpression,
+};
+pub use parsing::{
+  Parser
+};
 
 
 /*

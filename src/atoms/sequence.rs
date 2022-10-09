@@ -38,6 +38,7 @@ use crate::{
   },
   normal_form::NormalFormOrder
 };
+use crate::atoms::unwrap_atom_impl;
 
 use super::Atom;
 
@@ -48,6 +49,7 @@ pub struct Sequence{
   pub children: Vec<RcExpression>,
 }
 
+unwrap_atom_impl!(Sequence);
 
 impl Sequence {
 
