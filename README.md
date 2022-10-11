@@ -10,6 +10,9 @@ An implementation of the pattern matching algorithms described in the paper:
 > [Variadic equational matching in associative and commutative theories](http://www3.risc.jku.at/publications/download/risc_6260/variadic-equational-matching-jsc-final-with-mma-versions.pdf)_, 
 > Journal of Symbolic Computation, vol 106, 2021, p. 78-109
 
+See the front end [Loris](https://github.com/rljacobson/loris) for more details. 
+
+
 # The Algorithm
 
 We implement algorithms **LM** (_Linear Matching_) and **LM**$_{\text{S}}$ (_Linear Matching with
