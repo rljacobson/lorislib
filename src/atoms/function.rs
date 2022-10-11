@@ -64,18 +64,25 @@ impl Function {
   /// Creates a new function having a head that is a symbol of the name `name`.
   pub fn with_symbolic_head(name: &str) -> Function {
     let head = Rc::new(Symbol(name.to_string()).to_expression());
-    Function::new(head).unwrap()
+    Function::new(head)
   }
 
   /// Creates a new function having a head that is a variable of the name `name`.
   pub fn with_variable_head(name: &str) -> Function {
     let head = Rc::new(Variable(name.to_string()).to_expression());
-    Function::new(head).unwrap()
+    Function::new(head)
   }
 
   /// Creates a new function or function variable. If an expression other than a
   /// symbol or variable is given for the head, an error is return.
-  pub fn new(head: RcExpression) -> Result<Function, ()> {
+  pub fn new(head: RcExpression) -> Function{ //Result<Function, ()> {
+    Function{
+      cached_hash: Cell::new(0),
+      head,
+      children: Vec::new(),
+      attributes: Attributes::default()
+    }
+    /*
     match (head.as_ref()).into() {
 
       | ExpressionKind::Symbol
@@ -95,6 +102,7 @@ impl Function {
       }
 
     }
+    */
   }
 
   pub fn duplicate_head(&self) -> Function {

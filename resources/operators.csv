@@ -7,7 +7,9 @@ Divide     | 130       | /    |        |        | L            | I    | 2
 Plus       | 120       | +    |        |        | F            | I    | 2
 Minus      | 120       | -    |        |        | F            | I    | 2
 Set        | 80        | =    |        |        | R            | I    | 2
+UpSet      | 80        | ^=   |        |        | R            | I    | 2
 SetDelayed | 80        | :=   |        |        | R            | I    | 2
+UpSetDelayed | 80      | ^:=  |        |        | R            | I    | 2
 Unset      | 80        | =.   |        |        | R            | I    | 2
 Sequence   | 70        | ,    |        |        | F            | I    | 2
 Parentheses| 60        |      | (      | )      |              | M    | 1

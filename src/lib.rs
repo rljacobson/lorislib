@@ -4,7 +4,7 @@
 #[macro_use]
 mod format;
 pub mod expression;
-mod logging;
+pub mod logging;
 mod normal_form;
 mod attributes;
 mod atoms;
@@ -12,7 +12,9 @@ mod matching;
 mod context;
 mod parsing;
 mod builtins;
+mod evaluate;
 
+pub use evaluate::evaluate;
 pub use context::Context;
 pub use expression::{
   Expression,

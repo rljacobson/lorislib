@@ -22,20 +22,25 @@ use crate::{
   builtins::BuiltinFn,
 };
 use crate::attributes::Attribute;
+use crate::builtins::register_builtins;
 
 pub struct Context{
   name   : String,
   path   : String, // todo: Should there be a context path object?
-  symbols: HashMap<String, SymbolRecord>
+  symbols: HashMap<String, SymbolRecord>,
+  next_fresh_variable: usize,
 }
 
 impl Context {
   pub fn new_global_context() -> Context {
-    Context{
+    let mut context = Context{
       name   : "".to_string(),
       path   : "".to_string(), // todo: Should there be a context path object?
-      symbols: HashMap::new()
-    }
+      symbols: HashMap::new(),
+      next_fresh_variable: 0,
+    };
+    register_builtins(&mut context);
+    context
   }
 
   pub fn get_symbol(&mut self, symbol: &str) ->  &mut SymbolRecord {
@@ -122,6 +127,27 @@ impl Context {
     self.symbols.remove(symbol) ;
     Ok(())
   }
+
+  pub fn get_up_values(&self, symbol: &str) -> Option<Vec<SymbolValue>> {
+    match self.symbols.get(symbol) {
+      None => None,
+      Some(record) => {
+        // todo: get rid of this clone.
+        Some(record.up_values.clone())
+      }
+    }
+  }
+
+  pub fn get_own_values(&self, symbol: &str) -> Option<Vec<SymbolValue>> {
+    match self.symbols.get(symbol) {
+      None => None,
+      Some(record) => {
+        // todo: get rid of this clone.
+        Some(record.own_values.clone())
+      }
+    }
+  }
+
 }
 
 pub struct SymbolRecord {
@@ -160,11 +186,15 @@ impl Default for SymbolRecord {
 
 /// A `SymbolValue` is a wrapper for `RuleDelayed` used for storing the rule in a symbol table as an own/up/down/sub
 /// value. The wrapper provides convenience methods and stores the expression that originally created the value.
+#[derive(Clone)]
 pub enum SymbolValue{
   Definitions {
     def: RcExpression, // The original (sub)expression used to create this `SymbolValue`.
     lhs: RcExpression, // Treated as if wrapped in HoldPattern
     rhs: RcExpression,
   },
-  Builtin(BuiltinFn)
+  BuiltIn {
+    pattern: RcExpression,
+    built_in: BuiltinFn
+  }
 }

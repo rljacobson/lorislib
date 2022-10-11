@@ -139,7 +139,7 @@ fn to_string(lex: &Lexer<Token>) -> String {
 
 #[cfg(test)]
 mod tests {
-  use logos::{Lexer, Logos};
+  use logos::{Logos};
   use crate::parsing::Token;
 
   #[test]

@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::string::ToString;
 
 use csv::{ReaderBuilder, Trim, StringRecordIter};
+#[allow(unused_imports)]
 use crate::logging::{Channel, log, set_verbosity};
 
 use crate::parsing::Token;

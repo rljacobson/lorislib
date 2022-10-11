@@ -42,6 +42,7 @@ There are other incidental differences:
 */
 #![allow(dead_code)]
 
+
 // Todo: Error handling is a mess. There is no consistency. Need to distinguish errors that happen _inside_ the
 //       session and errors that happen when executing an otherwise valid session.
 
@@ -377,8 +378,8 @@ fn get_current_token<'a>(lexer: &'a mut Lexer) -> Option<&'a Token> {
   lexer.peek()
 }
 
-
-///
+#[allow(unused_parens)]
+/// Push `child` onto `parent`, applying fix-ups for "Construct", "Sequence", and "Parentheses".
 fn push_child(parent: &mut Expression, child: Expression) -> Result<(), ()> {
   // Fix up function construct.
   let parent_is_construct  = (parent.name()=="Construct");
@@ -425,6 +426,7 @@ fn push_child(parent: &mut Expression, child: Expression) -> Result<(), ()> {
     }
 
     _ => {
+      // Tried to push a child onto an expression that cannot have children.
       Err(())
     }
   }
@@ -435,6 +437,7 @@ fn push_child(parent: &mut Expression, child: Expression) -> Result<(), ()> {
 
 #[cfg(test)]
 mod tests {
+  #[allow(unused_imports)]
   use crate::logging::set_verbosity;
   use super::*;
 

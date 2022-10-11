@@ -12,7 +12,7 @@ use fnv::FnvHasher;
 use crate::{format::{
   Formattable,
   Formatter,
-}, normal_form::NormalFormOrder, expression::Expression, RcExpression};
+}, normal_form::NormalFormOrder, expression::Expression};
 use crate::atoms::unwrap_atom_impl;
 
 use super::Atom;

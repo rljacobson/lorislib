@@ -17,7 +17,7 @@ use fnv::FnvHasher;
 use crate::{format::{
   Formattable,
   Formatter
-}, normal_form::NormalFormOrder, expression::Expression, RcExpression};
+}, normal_form::NormalFormOrder, expression::Expression};
 use crate::atoms::unwrap_atom_impl;
 
 use super::Atom;
@@ -30,7 +30,7 @@ unwrap_atom_impl!(Real);
 
 impl Formattable for Real {
   fn format(&self, _formatter: &Formatter) -> String {
-    format!("{}", self.0)
+    format!("{:.4}", self.0)
   }
 }
 
