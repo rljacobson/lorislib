@@ -192,9 +192,11 @@ pub enum SymbolValue{
     def: RcExpression, // The original (sub)expression used to create this `SymbolValue`.
     lhs: RcExpression, // Treated as if wrapped in HoldPattern
     rhs: RcExpression,
+    condition: Option<RcExpression>,
   },
   BuiltIn {
-    pattern: RcExpression,
-    built_in: BuiltinFn
+    pattern  : RcExpression,
+    condition: Option<RcExpression>,
+    built_in : BuiltinFn
   }
 }

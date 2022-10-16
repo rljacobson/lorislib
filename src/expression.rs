@@ -7,6 +7,13 @@ of `Atoms`, so every `Expression` _is_ an atom, that is, has an atom as its root
 is an enum whose variants wrap each `Atom` type. We use `EnumDiscriminants` from `strum` to derive the
 `ExpressionKind` enum whose variants are only the names (no data) of the variants in `Expression`.
 
+See the `atoms` module for concrete implementations of the `Expression` variants.
+
+    https://github.com/rust-lang/lang-team/issues/122#issuecomment-964459769
+    "[I]t is a common, and annoying, pattern in Rust today to have to make a struct for every enum variant and then
+    just have the enum wrap those structs. This gives you the ability to have a "type for an enum variant", but is
+    annoying and inconvenient."
+
 To implement matching on your own structures, implement a `get_expression`
 method or equivalent that returns the expression form of the type. Match on
 the expression, and transform the result back into your native types.
@@ -47,8 +54,6 @@ pub type RcExpression = Rc<Expression>;
 lazy_static!{
   static ref EMPTY_STRING: String = String::from("");
 }
-// static EMPTY_STRING: String = String::from("");
-
 
 
 #[derive(Clone, PartialEq, Eq, EnumDiscriminants, Debug)]

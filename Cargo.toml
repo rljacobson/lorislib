@@ -29,10 +29,14 @@ logos            = "0.12.1" # Scanner generator
 yansi            = "0.5.1"  # ANSI color support.
 fnv              = "1.0.7"  # FNV-1a hash.
 csv              = "1.1"    # Reading operators from a CSV file
+num-integer      = "0.1"    # Basic generic  math functions
 
 [features]
 default = ["strict-associativity"]
 
+# For matching in associative theories, associativity is "strict".
 strict-associativity     = []
+# Matching rules emulate the behavior of Mathematica, which does not give all
+# matches.
 mathematica-compatibiity = []
 

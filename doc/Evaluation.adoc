@@ -1,0 +1,98 @@
+# The Evaluation Sequence
+
+This is the sequence used by Mathematica to evaluate an expression
+`h[e1, e2, e3,…]`.
+
+1. If the expression is a raw object (e.g., `Integer`, `String`, etc.), leave
+it unchanged.
+2. Evaluate the head `h` of the expression.
+3. Evaluate each element `ei` of the expression in turn. If `h`
+is a symbol with attributes `HoldFirst`, `HoldRest`, `HoldAll`, or
+`HoldAllComplete`, then skip evaluation of certain elements.
+4. Unless `h` has attributes `SequenceHold` or `HoldAllComplete`, flatten out all
+Sequence objects that appear among the ei.
+5. Unless `h` has attribute `HoldAllComplete`, strip the outermost of any
+`Unevaluated` wrappers that appear among the ei.
+6. If `h` has attribute `Flat`, then flatten out all nested expressions with
+head `h`.
+7. If `h` has attribute `Listable`, then thread through any `ei` that are lists.
+8. If `h` has attribute `Orderless`, then sort the `ei` into order.
+9. Unless `h` has attribute `HoldAllComplete`, use any applicable
+transformation rules associated with `f` that you have defined for objects of the form `h[f[e1,…],…]`.
+10. Use any built‐in transformation rules associated with `f` for objects of
+the form `h[f[e1,…],…]`.
+11. Use any applicable transformation rules that you have defined for
+`h[f[e1,e2,…],…]` or for `h[…][…]`.
+12. Use any built‐in transformation rules for `h[e1,e2,…]` or for `h[…][…]`.
+
+
+## Evaluation
+
+Suppose node `A` has a child node `B`: `A[B]`.
+
+```
+A[.]
+  |
+  B
+```
+
+(Recall that a `Sequence` is not itself an expression, so only functions have
+children.)
+
+### "Normal" evaluation
+
+The active context is queried for ``A``'s `SymbolRecord`. If the `Attributes`
+found in the `SymbolRecord` for `A` do not have `HoldFirst` or `HoldRest`
+set, then "normal" evalaution is triggered.
+
+Evaluation proceeds in post-order: When a node A is evaluated, first all of
+A's children are evaluated, then A is evaluated. In particular, B is evaluated
+first. There are several possibilities:
+
+1. `B` is a `Real`, `Integer`, or `StringLiteral`. These evaluate to themselves, so
+their evaluation is a no-op.
+2. `B` is a `Variable` or `SequenceVariable`. These evaluate to themselves, so
+their evaluation is a no-op.
+
+3. `B` is a Symbol. The active context is queried for ``B``'s `SymbolRecord`.
+   If `B` has an `own_value`, `B` is substituted for the `own_value`,
+   and evaluation of `B` ends. If `B` has an `up_value`, the `up_value`
+   is pattern-matched against `A[B]`. If the pattern match succeeds,
+   it will result in a) a set of replacements for the RHS of the up_value,
+   and b) a replacement for `A[B]`. Once this replacement is performed, the
+   new expression is evaluated again.
+
+4. `B` is a function. Start these evaluation steps again, with `B` in the
+   role of `A`.
+
+Now assume `B` has been fully evaluated to become expression `C`. Then we have
+
+```
+A
+|
+C
+```
+
+The active context is queried for ``A``'s `SymbolRecord`. If `A` has any
+`up_alues` (and a parent), they are pattern-matched in analogy to `B` above.
+Otherwise, if `A` has any `down_values`, they are pattern-matched against `A`.
+
+## Substitution
+
+Imagine the function definition
+
+```
+f[x_, y_] := x + y^2
+```
+
+This function definition produces a `down_value` for `f`. Suppose we evaluate
+the expression `f[1, 2]`. The LHS of the `down_value` `f[x_, y_]` is pattern
+matched against `f[1, 2]` resulting in the solution set `{x_->1, y_->2}` This
+solution set is a set of substitutions. Note that these variables correspond
+to symbols on the RHS: the symbol `x` on the RHS is replaced with the
+replacement value for `x_` in the solution set.
+
+The RHS of the `down_value` is instantiated, and the substitutions are
+applied, yielding `1+2^2`. The original expression is finally replaced
+with this new expression. If the original and new expressions are equal,
+evaluation stops. Otherwise evaluation is restarted with the new expression.

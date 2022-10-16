@@ -12,6 +12,7 @@ Thus, the operator table is a `HashMap` from `String` to `Operator`.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
+use std::io::BufReader;
 use std::string::ToString;
 
 use csv::{ReaderBuilder, Trim, StringRecordIter};
@@ -21,6 +22,26 @@ use crate::logging::{Channel, log, set_verbosity};
 use crate::parsing::Token;
 
 static OPERATOR_DB_FILE: &str = "lorislib/resources/operators.csv"; // Used in `get_operator_table()`
+static OPERATOR_DB: &str =
+r#"NAME_STRING|PRECEDENCE|L_TOKEN| N_TOKEN| O_TOKEN| ASSOCIATIVITY| AFFIX| ARITY
+Construct  | 160       | [    |        | ]      | L            | I    | 2
+Root       | 150       | √    |        |        | N            | I    | 2
+Power      | 140       | ^    |        |        | R            | I    | 2
+Minus      | 135       |      | -      |        | R            | P    | 1
+Times      | 130       | *    |        |        | F            | I    | 2
+Divide     | 130       | /    |        |        | L            | I    | 2
+Plus       | 120       | +    |        |        | F            | I    | 2
+Subtract   | 125       | -    |        |        | R            | I    | 2
+SameQ		   | 90        | ==   |        |        | N            | I    | 2
+Set        | 80        | =    |        |        | R            | I    | 2
+UpSet      | 80        | ^=   |        |        | R            | I    | 2
+SetDelayed | 80        | :=   |        |        | R            | I    | 2
+UpSetDelayed | 80      | ^:=  |        |        | R            | I    | 2
+Unset      | 80        | =.   |        |        | R            | I    | 2
+Condition  | 70        | /;   |        |        | N            | I    | 2
+Sequence   | 60        | ,    |        |        | F            | I    | 2
+Parentheses| 50        |      | (      | )      |              | M    | 1
+"#;
 
 // Operator defined below.
 /// Non-operator tokens generally have the same properties. Instead of making an entry in the table for each
@@ -234,7 +255,7 @@ impl Operator {
 
 }
 
-/*
+/**
 Reads operator information from a CSV file.
 
 The CSV file is expected to have the following format.
@@ -260,20 +281,21 @@ Note that the first row is a header row and is discarded.
 | ARITY         | Nonnegative integer                                          | How many arguments the expression takes. Consider the ternary operator `a?b:c`. The arity is needed to know whether the `c` belongs with the expression. |
 
 */
-pub fn get_operator_table() -> OperatorTable {
-  // let f = File::open(OPERATOR_DB_FILE)
-  //     .expect(format!("Could not read from {}", OPERATOR_DB_FILE).as_str());
-  // let mut cvs_reader = csv::Reader::from_reader(BufReader::new(f));
+//                          (left_operator_table, null_operator_table, other_operator_table)
+pub fn get_operator_table() -> (OperatorTable, OperatorTable, OperatorTable) {
   let mut csv_reader
       = ReaderBuilder::new().delimiter(b'|')
                             .has_headers(true)
                             .trim(Trim::All)
-                            .from_path(OPERATOR_DB_FILE)
-                            .unwrap();
-                            // .from_reader(BufReader::new(f));
+                            .from_reader(OPERATOR_DB.as_bytes());
+                            // .from_path(OPERATOR_DB_FILE)
+                            // .unwrap();
 
   // let reader = BufReader::new(f);
-  let mut operator_table = OperatorTable::new();
+  let mut left_operator_table = OperatorTable::new();
+  let mut null_operator_table = OperatorTable::new();
+  let mut other_operator_table = OperatorTable::new();
+
   // let mut lines = reader.lines();
   // lines.next(); // Eat the column headers
   let records =  csv_reader.records();
@@ -304,21 +326,21 @@ pub fn get_operator_table() -> OperatorTable {
 
     // log(Channel::Debug, 5, format!("Read from CSV: {:?}", &new_op).as_str());
 
-    // todo: The following doesn't work if the same sigil is used both as an L_TOKEN and an N_TOKEN. Does it?
     if let Some(tok) = &new_op.l_token {
-      operator_table.insert(tok.clone(), new_op.clone());
+      let new_op = new_op.clone();
+      left_operator_table.insert(tok.clone(), new_op);
     }
     if let Some(n_token) = &new_op.n_token {
       let new_op = new_op.clone();
-      operator_table.insert(n_token.clone(), new_op);
+      null_operator_table.insert(n_token.clone(), new_op);
     }
 
     if let Some(tok) = &new_op.o_token {
       let mut new_op = new_op.clone();
       new_op.precedence = -2;
-      operator_table.insert(tok.clone(), new_op);
+      other_operator_table.insert(tok.clone(), new_op);
     }
   }
 
-  operator_table
+  (left_operator_table, null_operator_table, other_operator_table)
 }

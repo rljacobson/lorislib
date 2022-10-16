@@ -1,15 +1,18 @@
-NAME_STRING| PRECEDENCE| L_TOKEN| N_TOKEN| O_TOKEN| ASSOCIATIVITY| AFFIX| ARITY
-Construct  | 160       | [    |        | ]      |              | I    | 2
+NAME_STRING|PRECEDENCE|L_TOKEN| N_TOKEN| O_TOKEN| ASSOCIATIVITY| AFFIX| ARITY
+Construct  | 160       | [    |        | ]      | L            | I    | 2
 Root       | 150       | √    |        |        | N            | I    | 2
 Power      | 140       | ^    |        |        | R            | I    | 2
+Minus      | 135       |      | -      |        | R            | P    | 1
 Times      | 130       | *    |        |        | F            | I    | 2
 Divide     | 130       | /    |        |        | L            | I    | 2
 Plus       | 120       | +    |        |        | F            | I    | 2
-Minus      | 120       | -    |        |        | F            | I    | 2
+Subtract   | 125       | -    |        |        | R            | I    | 2
+SameQ		    | 90        | ==   |        |        | N            | I    | 2
 Set        | 80        | =    |        |        | R            | I    | 2
 UpSet      | 80        | ^=   |        |        | R            | I    | 2
 SetDelayed | 80        | :=   |        |        | R            | I    | 2
 UpSetDelayed | 80      | ^:=  |        |        | R            | I    | 2
 Unset      | 80        | =.   |        |        | R            | I    | 2
-Sequence   | 70        | ,    |        |        | F            | I    | 2
-Parentheses| 60        |      | (      | )      |              | M    | 1
+Condition  | 70        | /;   |        |        | N            | I    | 2
+Sequence   | 60        | ,    |        |        | F            | I    | 2
+Parentheses| 50        |      | (      | )      |              | M    | 1

@@ -94,19 +94,48 @@ pub fn evaluate(expression: RcExpression, context: &mut Context) -> RcExpression
   // Ok(new_expression)
 } // end evaluate.
 
+/**
+Evaluating rules with conditions is a bit meta, because evaluation is
+defined in terms of evaluation. That is, to evalaute a rule, one must first
+evaluate the condition. To break the infinite regress, most rules do not have
+conditions, and most conditions are either simple or do not themselves have
+conditions.
+*/
+fn check_condition(condition: RcExpression, substitutions: &SolutionSet, context: &mut Context)
+    -> bool
+{
+  let condition_expression = replace_all(condition, substitutions);
+  let condition_result = evaluate(condition_expression, context);
+  condition_result.name() == "True"
+}
 
 fn try_definitions(expression: RcExpression, definitions: &Vec<SymbolValue>, context: &mut Context)
   -> Option<RcExpression>
 {
   if let Some((symbol_value, substitutions)) = find_matching_definition(expression.clone(), definitions){
     match symbol_value {
-      SymbolValue::Definitions {rhs,..} => {
-        log(Channel::Debug, 5, format!("Doing substitutions for rhs = {}", rhs).as_str());
-        Some(replace_all(rhs.clone(), &substitutions))
+      SymbolValue::Definitions {rhs, condition,..} => {
+        // Only try if the side condition is true
+        if condition.is_none()
+            || check_condition(condition.clone().unwrap(), &substitutions, context)
+        {
+          log(Channel::Debug, 5, format!("Doing substitutions for rhs = {}", rhs).as_str());
+          Some(replace_all(rhs.clone(), &substitutions))
+        } else {
+          None
+        }
+
       }
-      SymbolValue::BuiltIn {built_in,..} => {
-        log(Channel::Debug, 5, format!("Passing {:?} to built-in N", substitutions).as_str());
-        Some(built_in(substitutions, context))
+      SymbolValue::BuiltIn {built_in, condition,..} => {
+        // Only try if the side condition is true
+        if let Some(condition) = condition {
+          if check_condition(condition.clone(), &substitutions, context) {
+            log(Channel::Debug, 5, format!("Passing {:?} to built-in N", substitutions).as_str());
+            Some(built_in(substitutions, expression, context))
+          } else { None }
+        } else {
+          None
+        }
       }
     }
   } else {

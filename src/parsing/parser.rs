@@ -80,9 +80,10 @@ type Lexer<'t> = TokenIterator<LogosLexer<'t, Token>>;
 const INF: i32 = i32::MAX;
 
 pub struct Parser {
-  pub root_node : Option<RcExpression>,
-  operator_table: OperatorTable,
-  // lexer         : TokenIterator<Lexer<'t, Token>>,
+  pub root_node       : Option<RcExpression>,
+  left_operator_table : OperatorTable,
+  null_operator_table : OperatorTable,
+  other_operator_table: OperatorTable,
   error_occurred: bool,
 }
 
@@ -95,27 +96,18 @@ impl Default for Parser {
 impl Parser {
 
   pub fn new() -> Parser {
-    // Load operator database from file.
-    let op_table = get_operator_table();
-    // println!("OpTable: {:?}", &op_table);
+    // Load operator database
+    let (left_operator_table, null_operator_table, other_operator_table)
+        = get_operator_table();
 
     Parser{
-      operator_table: op_table,
+      left_operator_table,
+      null_operator_table,
+      other_operator_table,
       root_node     : None,
-      // lexer         : Token::lexer(text).peekable(),
       error_occurred: false,
     }
   }
-
-  /// Resets the parser state before parsing the given string.
-  // pub fn parse_str(&mut self, input: &'t str) -> Result<RcExpression, ()> {
-  //   // Reset the parser state.
-  //   self.root_node = None;
-  //   self.error_occurred = false;
-  //   // self.lexer = Token::lexer(input).peekable();
-  //   // Parse the new string.
-  //   self.parse()
-  // }
 
   /// Parses the string already provided to the parser at parser construction or in the last call to `parse_string()`.
   pub fn parse(&mut self, input: &str) -> Result<RcExpression, ()>{
@@ -151,8 +143,23 @@ impl Parser {
     // parsing. Get the operator record for the token to drive the parsing algorithm. If the expression is a leaf, a
     // generic `NULLARY_OPERAND` operator record is returned. The `NULLARY_OPERAND` is distinguished by having an
     // arity of 0, as a leaf must.
-    let (mut current_root, operator): (Expression, Operator) = self.lookup_expression_operator(&token)?;
-    log(Channel::Debug, 5, format!("Parsed expression: {}", &current_root).as_str());
+    let (mut current_root, operator): (Expression, Operator) =
+        match Self::lookup_token(&token, &self.null_operator_table) {
+          Ok(v) => v,
+          Err(_) => Self::lookup_token(&token, &self.other_operator_table)?
+        };
+    log(
+      Channel::Debug,
+      5,
+      format!("Parsed expression: {}, rbp={} (prev={})",
+        &current_root,
+        match &token {
+          Token::OpToken(_) =>  operator.next_binding_power(),
+          _ => -1
+        },
+        previous_binding_power
+      ).as_str()
+    );
 
 
     // Parses the stuff that follows this token if this token is a null token (i.e. can begin an expression). If the
@@ -174,7 +181,11 @@ impl Parser {
       // based on the value of token. The operator knows it's left and
       // next binding power.
 
-      let (mut new_root, operator): (Expression, Operator) = self.lookup_expression_operator(&token)?;
+      let (mut new_root, operator): (Expression, Operator) =
+        match Self::lookup_token(&token, &self.left_operator_table) {
+          Ok(v) => v,
+          Err(_) => Self::lookup_token(&token, &self.other_operator_table)?
+        };
 
       if previous_binding_power > operator.left_binding_power() {
         log(
@@ -190,7 +201,15 @@ impl Parser {
       }
 
       consume_token(lexer);
-      log(Channel::Debug, 5, format!("Found expression: {}. Consuming peeked token.", &new_root).as_str());
+      log(
+        Channel::Debug,
+        5,
+        format!(
+          "Found expression: {}, rbp={}. Consuming peeked token.",
+          &new_root,
+          operator.next_binding_power()
+        ).as_str()
+      );
 
       // Parse the RHS of the expression.
       self.left_denotation(current_root, &mut new_root, &operator, lexer)
@@ -204,11 +223,11 @@ impl Parser {
 
   }
 
-  fn lookup_expression_operator(&self, token: &Token) -> Result<(Expression, Operator), Token> {
+  fn lookup_token(token: &Token, table: &OperatorTable) -> Result<(Expression, Operator), Token> {
     match &token {
 
       Token::OpToken(_) => {
-        match self.operator_table.look_up(token) {
+        match table.look_up(token) {
 
           Some(op) => {
             // Operators become function calls: `a+b` -> `Add[a, b]`.
@@ -234,6 +253,7 @@ impl Parser {
       any_other_token => {
         // This is the leaf node case.
         let exp = (*any_other_token).clone().unwrap_expression().unwrap();
+        log(Channel::Debug, 5, format!("Found leaf node: {}", exp).as_str());
         let op = Operator::nullary_operand();
         Ok((exp, op))
       }
@@ -249,28 +269,29 @@ impl Parser {
     if operator.arity == 0 || operator.n_token.is_none() {
       return Ok(());
     }
-
     // todo: What do we do for, e.g. matchfix that is optionally empty?
-    if let Some(expected_token) = &operator.o_token {
-      match self.parse_expression(0, lexer) {
-        // The nonempty case
-        Ok(child_expression) => {
-          push_child(expression, child_expression)?
-        }
-
-        // The empty case.
-        Err(_token) => {
-          // log(
-          //   Channel::Error,
-          //   1,
-          //   format!("Expected: {}, Found: {:?}", expected_token, &token).as_str()
-          // );
-          // self.error_occurred = true;
-          // return Err(());
-        }
+    match self.parse_expression(operator.next_binding_power(), lexer) {
+      // The nonempty case
+      Ok(child_expression) => {
+        push_child(expression, child_expression)?
       }
 
-
+      // The empty case.
+      Err(_token) => {
+        // If there is no o_token, the empty case is an error. For example, an empty unary minus: `f[-]`.
+        if operator.o_token.is_none() {
+          log(
+            Channel::Error,
+            1,
+            "Expected a new expression but found none."
+          );
+          self.error_occurred = true;
+          return Err(());
+        }
+      }
+    }
+    // todo: What do we do for, e.g. matchfix that is optionally empty?
+    if let Some(expected_token) = &operator.o_token {
       self.expect(expected_token, lexer)?;
     }
 
@@ -332,6 +353,7 @@ impl Parser {
         match self.parse_expression(operator.right_binding_power(), lexer) {
           Ok(exp) => exp,
           Err(token) => {
+            // If an o_token is found, we hit this execution path.
             log(
               Channel::Error,
               1,
@@ -356,6 +378,7 @@ impl Parser {
         1,
         format!("Now \"expect\"ing O_TOKEN: {}", &o_token).as_str()
       );
+      // Todo: To make operators that are _optionally_ ternary, make a `peek_expect`. Must enrich the table CSV format.
       self.expect(o_token, lexer)?;
     }
 
@@ -499,6 +522,29 @@ mod tests {
 
     };
   }
+
+
+  #[test]
+  fn unary_minus_test() {
+    let text = "2 - 2 + -3 * -4 * f[-5-6] - -7";
+    let expected = "Subtract[2, Plus[2, Minus[Times[3, Minus[Subtract[Times[4, f[Minus[Subtract[5, 6]]]], \
+    Minus[7]]]]]]]";
+    // let text = "2  -3";
+    set_verbosity(5);
+    let mut parser = Parser::new();
+
+    match parser.parse(text) {
+
+      Ok(e) => {
+        assert_eq!(expected, e.to_string().as_str());
+        println!("Success: {}", *e);
+      },
+
+      Err(_) => assert!(false)
+
+    };
+  }
+
 
   #[test]
   /// The parser fixes up artifacts of the parsing process, e.g. "evaluating" `Construct`s, eliding slices, etc.
