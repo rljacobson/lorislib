@@ -10,22 +10,10 @@ use std::{
   rc::Rc
 };
 
-use num_integer::gcd;
-
 use crate::{
-  Expression,
-  Parser,
-  RcExpression,
-  atoms::{
-    Function,
-    SequenceVariable,
-    Sequence,
-    Symbol,
-    Variable,
-    StringLiteral,
-    Integer,
-    Real,
-  },
+  expression::Expression,
+  parse,
+  atom::Atom,
   attributes::{Attribute, Attributes},
   context::*,
   evaluate::evaluate,
@@ -36,7 +24,7 @@ use crate::{
 
 
 //                        f(substitutions, original_expression, context) -> evaluated_expression
-pub(crate) type BuiltinFn = fn(SolutionSet, RcExpression, &mut Context) -> RcExpression;
+pub(crate) type BuiltinFn = fn(SolutionSet, Atom, &mut Context) -> Atom;
 
 /*
 pub static CONSTANTS: HashMap<&'static str, f64> = HashMap::from( [
@@ -79,7 +67,7 @@ pub static STANDARD_PREAMBLE: [&str; 14] = [
 /// Implements calls matching
 ///     `N[exp_] := built-in[exp_]`
 // N[x] := built-in[{exp_->x}, context]
-pub fn N(arguments: SolutionSet, _: RcExpression, _: &mut Context) -> RcExpression {
+pub fn N(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
   // The substitutions represent the parameters to `N`. In the case of `N`, there is only one variable in the lhs
   // pattern, so we're applying `N` to  whatever the rhs expression is.
   // `N` has already been threaded over expressions, so we only need to act on our one argument. Because of the
@@ -93,8 +81,8 @@ pub fn N(arguments: SolutionSet, _: RcExpression, _: &mut Context) -> RcExpressi
     // There is guaranteed to be one and only one substitution.
     match rhs.as_ref() {
 
-      Expression::Integer(Integer(n)) => {
-        return Rc::new(Expression::Real(Real(*n as f64)));
+      Atom::Integer(n) => {
+        return Rc::new(Atom::Real(*n as f64));
       }
 
       _other => {
@@ -108,23 +96,23 @@ pub fn N(arguments: SolutionSet, _: RcExpression, _: &mut Context) -> RcExpressi
 
 /// Implements calls matching
 ///     `Plus[exp___] := built-in[exp___]`
-pub fn Plus(arguments: SolutionSet, _: RcExpression, _: &mut Context) -> RcExpression {
+pub fn Plus(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
   let mut int_accumulator = 0i64;
   let mut real_accumulator = 0f64;
 
   // The argument should either be a `Sequence` or a single expression.
   for (lhs, rhs) in arguments {
-    let mut new_children: Vec<RcExpression> = Vec::new();
+    let mut new_children: Vec<Atom> = Vec::new();
 
     if let Expression::Sequence(sequence) = rhs.as_ref() {
       for expression in &sequence.children {
         match expression.as_ref() {
 
-          Expression::Integer(Integer(n)) => {
+          Atom::Integer(n) => {
             int_accumulator += n;
           }
 
-          Expression::Real(Real(r)) => {
+          Atom::Real(r) => {
             real_accumulator += r;
           }
 
@@ -135,12 +123,12 @@ pub fn Plus(arguments: SolutionSet, _: RcExpression, _: &mut Context) -> RcExpre
       } // end iter over children
 
       if int_accumulator != 0 && real_accumulator != 0f64 {
-        let sum = Expression::Real(Real(real_accumulator + int_accumulator as f64));
+        let sum = Atom::Real(real_accumulator + int_accumulator as f64);
         new_children.push(Rc::new(sum));
       } else if int_accumulator != 0 {
-        new_children.push(Rc::new(Expression::Integer(Integer(int_accumulator))));
+        new_children.push(Rc::new(Atom::Integer(int_accumulator)));
       } else if real_accumulator != 0f64 {
-        new_children.push(Rc::new(Expression::Real(Real(real_accumulator))));
+        new_children.push(Rc::new(Atom::Real(real_accumulator)));
       }
 
       if new_children.len() == 1 {
@@ -168,23 +156,23 @@ pub fn Plus(arguments: SolutionSet, _: RcExpression, _: &mut Context) -> RcExpre
 
 /// Implements calls matching
 ///     `Times[exp___] := built-in[exp___]`
-pub fn Times(arguments: SolutionSet, _: RcExpression, _: &mut Context) -> RcExpression {
+pub fn Times(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
   let mut int_accumulator = 1i64;
   let mut real_accumulator = 1f64;
 
   // The argument should either be a `Sequence` or a single expression.
   for (lhs, rhs) in arguments {
-    let mut new_children: Vec<RcExpression> = Vec::new();
+    let mut new_children: Vec<Atom> = Vec::new();
 
     if let Expression::Sequence(sequence) = rhs.as_ref() {
       for expression in &sequence.children {
         match expression.as_ref() {
 
-          Expression::Integer(Integer(n)) => {
+          Atom::Integer(n) => {
             int_accumulator *= n;
           }
 
-          Expression::Real(Real(r)) => {
+          Atom::Real(r) => {
             real_accumulator *= r;
           }
 
@@ -195,12 +183,12 @@ pub fn Times(arguments: SolutionSet, _: RcExpression, _: &mut Context) -> RcExpr
       } // end iter over children
 
       if int_accumulator != 1 && real_accumulator != 1f64 {
-        let sum = Expression::Real(Real(real_accumulator + int_accumulator as f64));
+        let sum = Atom::Real(real_accumulator + int_accumulator as f64);
         new_children.push(Rc::new(sum));
       } else if int_accumulator != 1 {
-        new_children.push(Rc::new(Expression::Integer(Integer(int_accumulator))));
+        new_children.push(Rc::new(Atom::Integer(int_accumulator)));
       } else if real_accumulator != 1f64 {
-        new_children.push(Rc::new(Expression::Real(Real(real_accumulator))));
+        new_children.push(Rc::new(Atom::Real(real_accumulator)));
       }
 
       if new_children.len() == 1 {
@@ -228,7 +216,7 @@ pub fn Times(arguments: SolutionSet, _: RcExpression, _: &mut Context) -> RcExpr
 
 /// Implements calls matching
 ///     `Divide[num_, denom_] := built-in[num_, denom_]`
-pub fn Divide(arguments: SolutionSet, original_expression: RcExpression, _: &mut Context) -> RcExpression {
+pub fn Divide(arguments: SolutionSet, original_expression: Atom, _: &mut Context) -> Atom {
   // Two arguments
   let arg_pairs: Vec<_> = arguments.into_iter().collect();
   let (_, numerator) = arg_pairs[0].clone();
@@ -236,20 +224,20 @@ pub fn Divide(arguments: SolutionSet, original_expression: RcExpression, _: &mut
 
   match numerator.as_ref() {
 
-    Expression::Real(Real(0f64))  => {
+    Atom::Real(0f64)  => {
       match denominator.as_ref() {
-        | Expression::Real(Real(0f64))
-        | Expression::Integer(Integer(0))
+        | Atom::Real(0f64)
+        | Atom::Integer(0)
           => Rc::new(Symbol::from("Indeterminate").into()),
 
         _ => Rc::new(Real(0f64).into()),
       }
     }
 
-    Expression::Integer(Integer(0)) => {
+    Atom::Integer(0) => {
       match denominator.as_ref() {
-        | Expression::Real(Real(0f64))
-        | Expression::Integer(Integer(0))
+        | Atom::Real(0f64)
+        | Atom::Integer(0)
           => { return Rc::new(Symbol::from("Indeterminate").into()); },
 
         Expression::Real(_)    => { return Rc::new(Real(0f64).into()); },
@@ -259,29 +247,29 @@ pub fn Divide(arguments: SolutionSet, original_expression: RcExpression, _: &mut
       }
     }
 
-    Expression::Real(Real(num)) if *num != 0f64 => {
+    Atom::Real(num) if *num != 0f64 => {
       match denominator.as_ref() {
-        | Expression::Real(Real(0f64))
+        | Atom::Real(0f64)
         | Expression::Integer((Integer(0)))
         => Rc::new(Symbol::from("ComplexInfinity").into()),
 
-        Expression::Real(Real(denom)) => Rc::new(Real(num/denom).into()),
+        Atom::Real(denom) => Rc::new(Real(num/denom).into()),
 
-        Expression::Integer(Integer(denom)) => Rc::new(Real(num/(*denom as f64)).into()),
+        Atom::Integer(denom) => Rc::new(Real(num/(*denom as f64)).into()),
 
         _ => { original_expression }
       }
     }
 
-    Expression::Integer(Integer(num)) if *num != 0 => {
+    Atom::Integer(num) if *num != 0 => {
       match denominator.as_ref() {
-        | Expression::Real(Real(0f64))
+        | Atom::Real(0f64)
         | Expression::Integer((Integer(0)))
         => Rc::new(Symbol::from("ComplexInfinity").into()),
 
-        Expression::Real(Real(denom)) => Rc::new(Real(*num as f64/denom).into()),
+        Atom::Real(denom) => Rc::new(Real(*num as f64/denom).into()),
 
-        Expression::Integer(Integer(denom)) => {
+        Atom::Integer(denom) => {
           let common_divisor = gcd(*num, *denom);
           let reduced_num = Rc::new(Integer(num/common_divisor).into());
           let reduced_denom = Rc::new(Integer(denom/common_divisor).into());
@@ -297,7 +285,7 @@ pub fn Divide(arguments: SolutionSet, original_expression: RcExpression, _: &mut
 
     other => {
       match denominator.as_ref() {
-        | Expression::Real(Real(0f64))
+        | Atom::Real(0f64)
         | Expression::Integer((Integer(0)))
           // This isn't very conservative, but it's what Mathematica does.
           => Rc::new(Symbol::from("ComplexInfinity").into()),
@@ -316,7 +304,7 @@ pub fn Divide(arguments: SolutionSet, original_expression: RcExpression, _: &mut
 
 /// Implements calls matching the pattern
 ///     `Set[x_, rhs_]`
-fn Set(arguments: SolutionSet, original: RcExpression, context: &mut Context) -> RcExpression {
+fn Set(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
   // Two arguments
   let arg_pairs: Vec<_> = arguments.into_iter().collect();
   let (_, pattern) = arg_pairs[0].clone();
@@ -342,7 +330,7 @@ fn Set(arguments: SolutionSet, original: RcExpression, context: &mut Context) ->
 
 /// Implements calls matching the pattern
 ///     `UpSet[f_[___], rhs_]`
-fn UpSet(arguments: SolutionSet, original: RcExpression, context: &mut Context) -> RcExpression {
+fn UpSet(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
   // Two arguments
   let arg_pairs: Vec<_> = arguments.into_iter().collect();
   let (_, pattern) = arg_pairs[0].clone();
@@ -460,7 +448,7 @@ pub(crate) fn register_builtins(context: &mut Context) {
 
 /// The `pattern_function` must be a function`. Finds all symbols or symbols that are heads of functions that are
 /// arguments to the given function.
-fn collect_symbol_or_head_symbol(pattern_function: RcExpression) -> Vec<RcExpression>{
+fn collect_symbol_or_head_symbol(pattern_function: Atom) -> Vec<Atom>{
   let f = Function::unwrap(pattern_function.as_ref());
   f.children.iter().filter_map(|c| {
     match c.as_ref() {

@@ -13,7 +13,7 @@ the stack, and the next `MatchGenerator` is queried for the next substitution.
 ToDo: Other state includes whether or not patterns are being held. A subexpression can
       be wrapped in `HoldPattern`. Inside of `HoldPattern`, pattern symbols are treated
       as literal symbols, not as patterns. Also, `Longest` and `Shortest` affect the order in
-      which sequence variables generate matches.
+      which sequence variables generate matches. None of this is implemented.
 
 */
 
@@ -72,13 +72,15 @@ use super::{
   SolutionSet
 };
 
+pub type BoxedMatchGenerator = Box<dyn MatchGenerator<Item=NextMatchResultList>>;
+
 /// Items that can be pushed onto the match stack.
 pub(crate) enum MatchStack {
 
   /// The match generator responsible for the operations sitting immediately above it on
   /// the stack. Those operations are undone in order to get back to the
   /// match generator to call `next()`.
-  MatchGenerator(Box<dyn MatchGenerator>),
+  MatchGenerator(BoxedMatchGenerator),
 
   /// A variable or sequence variable substitution. We only need to record the key
   /// (the expression) of the `SolutionSet` hashmap.
@@ -93,7 +95,7 @@ pub(crate) enum MatchStack {
 impl MatchStack {
 
   /// Wraps the given `MatchGenerator`.
-  pub fn rule(generator: Box<dyn MatchGenerator>) -> MatchStack {
+  pub fn rule(generator: BoxedMatchGenerator) -> MatchStack {
     MatchStack::MatchGenerator(generator)
   }
 
@@ -142,7 +144,7 @@ impl Matcher {
 
 
   /// Pushes the given `MatchGenerator`.
-  pub fn push_rule(&mut self, generator: Box<dyn MatchGenerator>) {
+  pub fn push_rule(&mut self, generator: BoxedMatchGenerator) {
     self.match_stack.push(MatchStack::MatchGenerator(generator));
   }
 
@@ -151,7 +153,7 @@ impl Matcher {
   /// the responsible match generator in the form of an `Rc<MatchGenerator>` object.
   /// Upon return the `MatchGenerator` will be active, i.e. on top of the match
   /// stack.
-  fn undo(&mut self) -> Box<dyn MatchGenerator> {
+  fn undo(&mut self) -> BoxedMatchGenerator {
     loop {
       match self.match_stack.pop().unwrap() {
 
@@ -252,7 +254,7 @@ impl Matcher {
       return Err(());
     }
 
-    let dfe =
+    let dfe = // the result of the following match.
     match DestructuredFunctionEquation::new(&me) {
 
       Ok(dfe) => {
@@ -271,7 +273,7 @@ impl Matcher {
 
     };
 
-    // Another opportunity to bail early. This indicates program state that should be impossible to.
+    // Another opportunity to bail early. This indicates program state that should be impossible.
     if dfe.pattern_function.head != dfe.ground_function.head {
       log(Channel::Debug, 5, "Both sides not functions.".to_string().as_str());
       // Return match equation.
@@ -452,7 +454,7 @@ impl Iterator for &mut Matcher {
           // matcher stack, undo the actions of the last match generated
           // from this match generator…
           log(Channel::Debug, 5, "Undoing the last match generator actions.".to_string().as_str());
-          let match_generator: Box<dyn MatchGenerator> = self.undo();
+          let match_generator: BoxedMatchGenerator = self.undo();
           // …but retain the active match generator.
           self.match_stack.push(MatchStack::MatchGenerator(match_generator));
           // Proceed to step 2.

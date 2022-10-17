@@ -197,10 +197,7 @@ impl Iterator for RuleIVEAC {
 mod tests {
   use super::*;
   use crate::{
-    atoms::{
-      Symbol,
-      Function, Variable
-    },
+    atom::Atom,
     expression::RcExpression
   };
 

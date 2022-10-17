@@ -19,7 +19,7 @@ use crate::{
     Expression,
     ExpressionKind
   },
-  atoms::Function
+  atom::Atom
 };
 
 use super::{

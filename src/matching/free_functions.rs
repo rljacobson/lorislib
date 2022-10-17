@@ -19,7 +19,7 @@ use smallvec::{
 };
 
 use crate::{
-  atoms::Sequence,
+  atom::Atom,
   expression::ExpressionKind,
   matching::decomposition::{
     NonAssociative,

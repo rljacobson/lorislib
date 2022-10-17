@@ -19,7 +19,7 @@ use smallvec::smallvec;
 use permutation_generator::PermutationGenerator32 as Permutations;
 
 use crate::{
-  atoms::Sequence,
+  atom::Atom,
   expression::ExpressionKind,
   matching::decomposition::{
     NonAssociative,

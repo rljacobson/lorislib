@@ -52,9 +52,8 @@ use permutation_generator::PermutationGenerator32 as Permutations;
 
 use crate::{
   expression::ExpressionKind,
-  atoms::{
-    Function,
-    Sequence
+  atom::{
+    Atom
   },
   logging::{
     Channel,
@@ -654,7 +653,10 @@ impl<T> RuleSVE<T>
 mod tests {
   use std::rc::Rc;
   use super::*;
-  use crate::{atoms::{Function, Symbol}, expression::RcExpression};
+  use crate::{
+    atom::Atom,
+    expression::RcExpression
+  };
 
 
   #[test]

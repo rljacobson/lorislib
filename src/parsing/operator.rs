@@ -12,54 +12,125 @@ Thus, the operator table is a `HashMap` from `String` to `Operator`.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
-use std::io::BufReader;
-use std::string::ToString;
+use crate::interner::{interned_static, InternedString};
 
-use csv::{ReaderBuilder, Trim, StringRecordIter};
+
 #[allow(unused_imports)]
-use crate::logging::{Channel, log, set_verbosity};
+use crate::logging::{
+  Channel,
+  log,
+  set_verbosity
+};
 
-use crate::parsing::Token;
 
-static OPERATOR_DB_FILE: &str = "lorislib/resources/operators.csv"; // Used in `get_operator_table()`
-static OPERATOR_DB: &str =
-r#"NAME_STRING|PRECEDENCE|L_TOKEN| N_TOKEN| O_TOKEN| ASSOCIATIVITY| AFFIX| ARITY
-Construct  | 160       | [    |        | ]      | L            | I    | 2
-Root       | 150       | √    |        |        | N            | I    | 2
-Power      | 140       | ^    |        |        | R            | I    | 2
-Minus      | 135       |      | -      |        | R            | P    | 1
-Times      | 130       | *    |        |        | F            | I    | 2
-Divide     | 130       | /    |        |        | L            | I    | 2
-Plus       | 120       | +    |        |        | F            | I    | 2
-Subtract   | 125       | -    |        |        | R            | I    | 2
-SameQ		   | 90        | ==   |        |        | N            | I    | 2
-Set        | 80        | =    |        |        | R            | I    | 2
-UpSet      | 80        | ^=   |        |        | R            | I    | 2
-SetDelayed | 80        | :=   |        |        | R            | I    | 2
-UpSetDelayed | 80      | ^:=  |        |        | R            | I    | 2
-Unset      | 80        | =.   |        |        | R            | I    | 2
-Condition  | 70        | /;   |        |        | N            | I    | 2
-Sequence   | 60        | ,    |        |        | F            | I    | 2
-Parentheses| 50        |      | (      | )      |              | M    | 1
-"#;
+pub struct OperatorTables{
+  pub(crate) left: OperatorTable,
+  pub(crate) null: OperatorTable
+}
 
-// Operator defined below.
-/// Non-operator tokens generally have the same properties. Instead of making an entry in the table for each
-/// kind of widget, we just return this prototype.
-// pub static NULLARY_OPERAND: Operator = Operator {
-//   name         : "".to_string(),
-//   precedence   : 1000i32,
-//   l_token      : None,
-//   n_token      : None,
-//   o_token      : None,
-//   associativity: Associativity::Null,
-//   affix        : Affix::Null,
-//   arity        : 0,
-// };
+
+/// An operator has a set of properties that determine how it is parsed. Other properties like commutativity that do
+/// not affect how an expression is parsed are not associated with the operator but rather with the function the
+/// operator is interpreted as.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Operator {
+  /// A placeholder for a leaf, such as a literal or symbol.
+  NullaryLeaf{
+    name: InternedString,
+    precedence: i32,
+    associativity: Associativity
+  },
+
+  /// Binary parenthesizing: `a[[i]]`, `f[a, b, c, …]`
+  /// Use for indexing into arrays or function calls.
+  /// Note: In this implementation, the head is required, but the parenthesized part is variadic, leaving validation
+  /// of arguments to be done by the resulting function expression it parses into.
+  Indexing{
+    name: InternedString,
+    precedence: i32,
+    associativity: Associativity,
+    l_token: InternedString,
+    o_token: InternedString
+  },
+
+  /// The most common type: `a+b`, `xy`
+  BinaryInfix{
+    name: InternedString,
+    precedence: i32,
+    /// If the associativity is "Full", the operator is chaining.
+    /// Chaining means automatically flattening, e.g. `a + b + c` -> `Plus[a, b, c]` instead of `Plus[a, Plus[b, c]]`.
+    associativity: Associativity,
+    l_token: InternedString
+  },
+
+  /// Unary minus or boolean NOT.
+  Prefix{
+    name: InternedString,
+    precedence: i32,
+    n_token: InternedString
+  },
+
+  /// Postfix: `4!`
+  Postfix{
+    name: InternedString,
+    precedence: i32,
+    l_token: InternedString
+  },
+
+  /// Operators with a parenthesized middle argument: `a?b:c`.
+  /// Note: In this implementation, we allow the middle argument to be empty.
+  Ternary{
+    name: InternedString,
+    precedence: i32,
+    associativity: Associativity,
+    l_token: InternedString,
+    o_token: InternedString
+  },
+
+  /// Operators with an optional "tail": `a:=b/;c`, where the `/;c` can optionally be left off, `a:=b`.
+  /// In this implementation, the `b` expression cannot be empty.
+  OptionalTernary{
+    name: InternedString,
+    precedence: i32,
+    associativity: Associativity,
+    l_token: InternedString,
+    /// The token present in the optional form.
+    o_token: InternedString
+  },
+
+  /// Parenthesizing operators: `(exp)`, `| -42 |`, `{a, c, b, …}`
+  /// This implementation is variadic, leaving validation of arguments to be done by the resulting function expression.
+  /// An alternative implementation could have an arity attribute or an arity range attribute.
+  Matchfix{
+    name: InternedString,
+    precedence: i32, // ignored
+    n_token: InternedString,
+    o_token: InternedString,
+  },
+
+  /*
+  // Parses the unusual case of the range operator, which can be any of `a;;b;;c`, `;;b;;c`, `;; ;;c`, `;;b;;`, etc.
+  ZeroOrOneTernary{
+    name: InternedString,
+    precedence: i32,
+    // In our only use case, the same token `;;` plays the role of Left, Null, and Other token.
+    l_token: InternedString,
+    n_token: InternedString,
+    o_token: InternedString,
+  }
+*/
+  /*
+  Other types of operators not included here are possible. For example:
+    * Nullary: leaves, e.g. `Null`, `ø`. We choose to not consider these operators.
+    * Quaternary: `a<|b|c|>d`
+    * MatchfixBinary: `<|x|y|>` (Dirac's Bra-Ket notation)
+    * MatchfixTernary: `<x:y:z>`
+  */
+}
 
 #[derive(Clone, Debug,  Default)]
 pub struct OperatorTable {
-  map: HashMap < String, Operator >,
+  map: HashMap < InternedString, Operator >,
 }
 
 impl OperatorTable {
@@ -69,33 +140,16 @@ impl OperatorTable {
   }
 
 
-  /// If `token` has a record in the operator table, return it. Otherwise, return `None`. We assume `None` is a leaf
-  /// token, but it might also be an error token.
-  pub fn look_up(&self, token: &Token) -> Option<&Operator> {
-    match token {
-      // An OpToken is anything that is not a leaf.
-      Token::OpToken(token) => {
-        self.map.get(token)
-      }
-
-      // Should error tokens be treated differently?
-      // Token::Error => {}
-
-      _ => {
-        // Must be a leaf token.
-        None
-      }
-    }
+  /// If `token` has a record in the operator table, return it. Otherwise, return `None`.
+  pub fn look_up(&self, token: InternedString) -> Option<&Operator> {
+    self.map.get(&token)
   }
 
-  pub fn insert(&mut self, name: String, operator: Operator) {
+  pub fn insert(&mut self, name: InternedString, operator: Operator) {
     self.map.insert(name, operator);
   }
 
 }
-
-
-
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum Associativity {
@@ -130,96 +184,54 @@ impl Associativity{
   }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum Affix {
-  Null,     // Things like constants or identifiers that have no affix or associativity.
-  Prefix,
-  Postfix,  // Synonym: suffix (but not used in computer science)
-  Infix,
-  Matchfix, // Synonyms: circumfix, confix, ambifix
-
-  // More are possible, but these are usually sufficient for most programming languages.
-  // Indeed, other linguistic affixes like transfix will be handled by one of the above.
-}
-
-
-impl Affix {
-  pub fn from_str(s: &str) -> Affix {
-    match s {
-
-      "N"
-      | "" => Affix::Null,
-
-      "P" => Affix::Prefix,
-
-      "S" => Affix::Postfix,
-
-      "I" => Affix::Infix,
-
-      "M" => Affix::Matchfix,
-
-      anything   => {
-        {
-          eprint!("Unreachable Affix: {}", anything);
-          unreachable!()
-        }
-      }
-
-    }
-  }
-}
-
-
-/// An operator has a set of properties that determine how it is parsed. Other properties like commutativity that do
-/// not affect how an expression is parsed are not associated with the operator but rather with the function the
-/// operator is interpreted as.
-#[derive(Clone, Eq, PartialEq, Hash, Debug)]
-pub struct Operator {                // Example Value
-  pub name         : String,         // "Multiplication"
-  pub precedence   : i32,            // 30
-  pub l_token      : Option<String>, // "*"
-  pub n_token      : Option<String>, // <None>
-  pub o_token      : Option<String>, // <None>
-  pub associativity: Associativity,  // "L"
-  pub affix        : Affix,          // "I"
-  pub arity        : u32,            // 2
-}
-
-
 impl Operator {
 
-  pub fn nullary_operand() -> Self {
-    Operator {
-      name         : "".to_string(),
-      precedence   : 0,
-      l_token      : None,
-      n_token      : None,
-      o_token      : None,
-      associativity: Associativity::Null,
-      affix        : Affix::Null,
-      arity        : 0,
+  pub fn nullary_leaf() -> Self {
+    Operator::NullaryLeaf {
+      name: interned_static("None"),
+      precedence: 0,
+      associativity: Associativity::Null
+    }
+  }
+
+  pub fn name(&self) -> InternedString{
+    match self {
+      | Operator::NullaryLeaf { name, .. }
+      | Operator::Indexing { name, .. }
+      | Operator::BinaryInfix { name, .. }
+      | Operator::Prefix { name, .. }
+      | Operator::Postfix { name, .. }
+      | Operator::Ternary { name, .. }
+      | Operator::OptionalTernary { name, .. }
+      | Operator::Matchfix { name, .. } => {
+        *name
+      }
     }
   }
 
   pub fn left_binding_power(&self) -> i32 {
-    match self.affix {
-
-      | Affix::Infix
-      | Affix::Postfix => self.precedence,
-
-      _ => -1
-
+    match self {
+      | Operator::NullaryLeaf { precedence, .. }
+      | Operator::Indexing { precedence, .. }
+      | Operator::BinaryInfix { precedence, .. }
+      | Operator::Prefix { precedence, .. }
+      | Operator::Postfix { precedence, .. }
+      | Operator::Ternary { precedence, .. }
+      | Operator::OptionalTernary { precedence, .. }
+      | Operator::Matchfix { precedence, .. } => *precedence
     }
   }
 
+  /// Right binding power is computed from precedence and associativity.
   pub fn right_binding_power(&self) -> i32 {
-    match self.associativity {
+    match self.associativity() {
 
       | Associativity::Left
       | Associativity::Non => self.left_binding_power() + 1,
 
       Associativity::Right => self.left_binding_power(),
 
+      // Fully associative means "chaining".
       Associativity::Full  => self.left_binding_power() - 1,
 
       Associativity::Null  => -1 // Technically, Matchfix is N/A.
@@ -228,119 +240,250 @@ impl Operator {
 
   }
 
-  pub fn next_binding_power(&self) -> i32 {
-    match self.associativity {
+  /// This property would be recorded for each operator type if the operator types themselves are to be read in from
+  /// a database dynamically.
+  fn associativity(&self) -> Associativity {
+    match self {
 
-      | Associativity::Left
-      | Associativity::Right => self.left_binding_power(),
+      | Operator::BinaryInfix { associativity, .. }
+      | Operator::Ternary { associativity, .. }
+      | Operator::OptionalTernary { associativity, .. }
+          => *associativity,
 
-      | Associativity::Non
-      | Associativity::Full  => self.left_binding_power() - 1,
+      // Even though associativity is meaningless for prefix operators, setting their associativity to right causes
+      // their right binding power to be their precedence as required.
+      Operator::Prefix { .. } => Associativity::Right,
 
-      _  => {
+        // Setting Postfix's associativity to null makes its right binding power -1, preventing it from taking an
+        // expression on the RHS.
+      | Operator::Postfix { .. }
+      // Indexing acts like an infix operator on the left and a postfix operator on the right.
+      | Operator::Indexing { .. }
+      | Operator::Matchfix { .. }
+      | Operator::NullaryLeaf { .. }  => Associativity::Null,
+    }
+  }
 
-        match self.affix {
+  pub fn l_token(&self) -> Option<InternedString> {
+    match self {
+      | Operator::Indexing { l_token, .. }
+      | Operator::BinaryInfix { l_token, .. }
+      | Operator::Ternary { l_token, .. }
+      | Operator::Postfix { l_token, .. }
+      | Operator::OptionalTernary { l_token, .. }
+        => Some(*l_token),
 
-          Affix::Prefix => self.precedence,
-          Affix::Matchfix => 0,
-          Affix::Postfix => -1,
-          _ => { unreachable!() }
-        }
-      }
+      | Operator::Prefix { .. }
+      | Operator::Matchfix { .. }
+      | Operator::NullaryLeaf { .. }
+        => None
+    }
+  }
 
+  pub fn n_token(&self) -> Option<InternedString> {
+    match self {
+      | Operator::Prefix { n_token, .. }
+      | Operator::Matchfix { n_token, .. }
+        => Some(*n_token),
+
+      | Operator::NullaryLeaf { .. }
+      | Operator::Indexing { .. }
+      | Operator::BinaryInfix { .. }
+      | Operator::Postfix { .. }
+      | Operator::Ternary { .. }
+      | Operator::OptionalTernary { .. }
+        => None
+    }
+  }
+
+  pub fn o_token(&self) -> Option<InternedString> {
+    match self {
+      | Operator::Indexing { o_token, .. }
+      | Operator::Ternary { o_token, .. }
+      | Operator::OptionalTernary { o_token, .. }
+      | Operator::Matchfix { o_token, .. }
+        => Some(*o_token),
+
+      | Operator::NullaryLeaf { .. }
+      | Operator::BinaryInfix { .. }
+      | Operator::Prefix { .. }
+      | Operator::Postfix { .. }
+        => None
     }
   }
 
   // The parse-time functionality of `Operator` lives in the `impl Parser`.
-
 }
 
-/**
-Reads operator information from a CSV file.
+// Todo: have this read from an external database.
+/// Read in a list of operators and their syntactic properties and generate a `left_operator_table` and
+/// `null_operator_table` for use in parsing.
+pub(crate) fn get_operator_tables() -> OperatorTables {
+  let OPERATORS: &[Operator] = &[
 
-The CSV file is expected to have the following format.
+    Operator::Postfix {
+      name: interned_static("BlankSequence"),
+      precedence: 160,
+      l_token: interned_static("___"),
+    },
 
-```csv
-NAME_STRING, PRECEDENCE, L_TOKEN, N_TOKEN, O_TOKEN, ASSOCIATIVITY, AFFIX, ARITY
-Base       , 5         , √      ,        ,        , N            , I    , 2
-Power      , 10        , ^      ,        ,        , R            , I    , 2
-  ⋮          ⋮            ⋮         ⋮         ⋮       ⋮              ⋮       ⋮
-```
+    Operator::Postfix {
+      name: interned_static("Sequence"),
+      precedence: 160,
+      l_token: interned_static("__"),
+    },
 
-Note that the first row is a header row and is discarded.
+    Operator::Postfix {
+      name: interned_static("Blank"),
+      precedence: 160,
+      l_token: interned_static("_"),
+    },
 
-| Field         | Possible Values                                              | Notes                                                        |
-| ------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| NAME_STRING   | An identifier as a string                                    | The name is the function the expression will be interpreted as. |
-| PRECEDENCE    | integer                                                      | The higher the precedence, the stronger the binding power.   |
-| L_TOKEN       | String                                                       | A token that accepts an argument on its left                 |
-| N_TOKEN       | String                                                       | Null token, a token that appears at the start of an expression |
-| O_TOKEN       | String                                                       | Other, a token that is neither an L_TOKEN or an N_TOKEN      |
-| ASSOCIATIVITY | "R" - right<br>"L" - left<br>"N" - non<br>"F" - full         | Empty means "null", which is for matchfix operators that have no meaningful notion of associativity. |
-| AFFIX         | "N" - Null<br/>"P" - Prefix<br/>"S" - Postfix<br/>"I" - Infix<br/>"M" - Matchfix | As with all strings, quotes are optional.                    |
-| ARITY         | Nonnegative integer                                          | How many arguments the expression takes. Consider the ternary operator `a?b:c`. The arity is needed to know whether the `c` belongs with the expression. |
+    Operator::Indexing {
+      name: interned_static("Part"),
+      precedence: 160,
+      associativity: Associativity::Left,
+      l_token: interned_static("[["),
+      o_token: interned_static("]]"),
+    },
 
-*/
-//                          (left_operator_table, null_operator_table, other_operator_table)
-pub fn get_operator_table() -> (OperatorTable, OperatorTable, OperatorTable) {
-  let mut csv_reader
-      = ReaderBuilder::new().delimiter(b'|')
-                            .has_headers(true)
-                            .trim(Trim::All)
-                            .from_reader(OPERATOR_DB.as_bytes());
-                            // .from_path(OPERATOR_DB_FILE)
-                            // .unwrap();
+    Operator::Indexing {
+      name: interned_static("Construct"),
+      precedence: 160,
+      associativity: Associativity::Null,
+      l_token: interned_static("["),
+      o_token: interned_static("]"),
+    },
 
-  // let reader = BufReader::new(f);
-  let mut left_operator_table = OperatorTable::new();
-  let mut null_operator_table = OperatorTable::new();
-  let mut other_operator_table = OperatorTable::new();
+    Operator::BinaryInfix {
+      name: interned_static("Power"),
+      precedence: 150,
+      associativity: Associativity::Right,
+      l_token: interned_static("^")
+    },
 
-  // let mut lines = reader.lines();
-  // lines.next(); // Eat the column headers
-  let records =  csv_reader.records();
-  for result in records {
-    let record = result.unwrap();
-    let mut fields: StringRecordIter = record.iter();
+    // Unary Minus
+    Operator::Prefix {
+      name: interned_static("Minus"),
+      precedence: 140,
+      n_token: interned_static("-")
+    },
 
-    let new_op = Operator{
-      // Fields filled according to csv column order which need not be declaration order.
-      name      : fields.next().unwrap().to_string(),
-      precedence: fields.next().unwrap().parse::<i32>().unwrap(),
-      l_token   : fields.next().map_or(
-                    None,
-                    |s| if s != "" { Some(s.to_string()) } else { None }
-                  ),
-      n_token   : fields.next().map_or(
-                    None,
-                    |s| if s != "" { Some(s.to_string()) } else { None }
-                  ),
-      o_token   : fields.next().map_or(
-                    None,
-                    |s| if s != "" { Some(s.to_string()) } else { None }
-                  ),
-      associativity : Associativity::from_str(fields.next().unwrap()),
-      affix     : Affix::from_str(fields.next().unwrap()),
-      arity     : fields.next().unwrap().parse::<u32>().unwrap(),
-    };
+    Operator::BinaryInfix {
+      name: interned_static("Times"),
+      precedence: 130,
+      associativity: Associativity::Full,
+      l_token: interned_static("*")
+    },
 
-    // log(Channel::Debug, 5, format!("Read from CSV: {:?}", &new_op).as_str());
+    Operator::BinaryInfix {
+      name: interned_static("Divide"),
+      precedence: 130,
+      associativity: Associativity::Left,
+      l_token: interned_static("/")
+    },
 
-    if let Some(tok) = &new_op.l_token {
-      let new_op = new_op.clone();
-      left_operator_table.insert(tok.clone(), new_op);
-    }
-    if let Some(n_token) = &new_op.n_token {
-      let new_op = new_op.clone();
-      null_operator_table.insert(n_token.clone(), new_op);
-    }
+    Operator::BinaryInfix {
+      name: interned_static("Subtract"),
+      precedence: 120,
+      associativity: Associativity::Left,
+      l_token: interned_static("-")
+    },
 
-    if let Some(tok) = &new_op.o_token {
-      let mut new_op = new_op.clone();
-      new_op.precedence = -2;
-      other_operator_table.insert(tok.clone(), new_op);
-    }
+    Operator::BinaryInfix {
+      name: interned_static("Plus"),
+      precedence: 110,
+      associativity: Associativity::Full,
+      l_token: interned_static("+")
+    },
+
+    Operator::BinaryInfix {
+      name: interned_static("SameQ"),
+      precedence: 90,
+      associativity: Associativity::Non,
+      l_token: interned_static("=="),
+    },
+
+    Operator::OptionalTernary {
+      name: interned_static("Set"),
+      precedence: 80,
+      associativity: Associativity::Right,
+      l_token: interned_static("="),
+      o_token: interned_static("/;")
+    },
+
+    Operator::OptionalTernary {
+      name: interned_static("UpSet"),
+      precedence: 80,
+      associativity: Associativity::Right,
+      l_token: interned_static("^="),
+      o_token: interned_static("/;")
+    },
+
+    Operator::OptionalTernary {
+      name: interned_static("SetDelayed"),
+      precedence: 80,
+      associativity: Associativity::Right,
+      l_token: interned_static(":="),
+      o_token: interned_static("/;")
+    },
+
+    Operator::OptionalTernary {
+      name: interned_static("UpSetDelayed"),
+      precedence: 80,
+      associativity: Associativity::Right,
+      l_token: interned_static("^:="),
+      o_token: interned_static("/;")
+    },
+
+    Operator::BinaryInfix {
+      name: interned_static("Unset"),
+      precedence: 80,
+      associativity: Associativity::Non,
+      l_token: interned_static("=."),
+    },
+
+    Operator::BinaryInfix {
+      name: interned_static("Sequence"),
+      precedence: 60,
+      associativity: Associativity::Full,
+      l_token: interned_static(",")
+    },
+
+    Operator::Postfix {
+      name: interned_static("ExpresionList"),
+      precedence: 50,
+      l_token: interned_static(";")
+    },
+
+    Operator::Matchfix {
+      name: interned_static("Sequence"), // A sequence of one expression will automatically be spliced into its
+      // parent.
+      precedence: 10,
+      n_token: interned_static("("),
+      o_token: interned_static(")")
+    },
+
+    Operator::Matchfix {
+      name: interned_static("List"),
+      precedence: 10,
+      n_token: interned_static("{"),
+      o_token: interned_static("}")
+    },
+  ];
+
+  let mut n_command_table = OperatorTable::new();
+  for op in OPERATORS.iter().filter(|op| op.n_token().is_some()) {
+    n_command_table.insert(op.n_token().unwrap(), *op);
   }
 
-  (left_operator_table, null_operator_table, other_operator_table)
+  let mut l_command_table = OperatorTable::new();
+  for op in OPERATORS.iter().filter(|op| op.l_token().is_some()) {
+    l_command_table.insert(op.l_token().unwrap(), *op);
+  }
+
+  OperatorTables{
+    left: l_command_table,
+    null: n_command_table
+  }
 }

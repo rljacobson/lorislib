@@ -5,14 +5,11 @@ The attributes of a function, e.g. `Flat`, `Listable`, ….
 Attributes are implemented as a bitfield.
 
 */
+#![allow(dead_code)]
 
 use std::ops::Index;
 
-use strum::{
-  Display,
-  IntoStaticStr
-};
-
+use strum_macros::{Display, IntoStaticStr};
 
 #[derive(Copy, Clone, PartialEq, Eq, Display, IntoStaticStr, Debug)]
 #[repr(u32)]
@@ -28,13 +25,19 @@ pub enum Attribute {
   ReadOnly,
   /// Attributes of the symbol cannot be changed.
   AttributesReadOnly,
-  SequenceHold
+  SequenceHold,
 
-  /*
-  Orderless = 0, // Commutative
-  Flat, // Associative
-  OneIdentity,
-  Listable,
+  /// This is an S-expression representing a variable.
+  Variable,
+  /// This is an S-expression representing a sequence variable.
+  SequenceVariable,
+  /// This is a real or an integer
+  Numeric,
+
+  //Orderless = 0, // Commutative
+  //Flat, // Associative
+  // OneIdentity,
+  // Listable,
   Constant,
   NumericFunction,
   Protected,
@@ -47,43 +50,40 @@ pub enum Attribute {
   NHoldFirst,
   NHoldRest,
   NHoldAll,
-  SequenceHold,
+  // SequenceHold,
   Temporary,
-  Stub
-  */
-
-
+  Stub,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct Attributes(u32);
 
-// These exist solely to be static references.
-const ATTRIBUTE_SET  : bool = true;
-const ATTRIBUTE_UNSET: bool = false;
+// These exist solely to be static references, which the `Index` trait insists on requiring.
+static ATTRIBUTE_SET: bool = true;
+static ATTRIBUTE_UNSET: bool = false;
 
 impl Index<u32> for Attributes {
-    type Output = bool;
+  type Output = bool;
 
-    fn index(&self, index: u32) -> &Self::Output {
-      if (self.0 & (1 << index as u32)) != 0 {
-        &ATTRIBUTE_UNSET
-      } else {
-        &ATTRIBUTE_SET
-      }
+  fn index(&self, index: u32) -> &Self::Output {
+    if (self.0 & (1 << index as u32)) != 0 {
+      &ATTRIBUTE_UNSET
+    } else {
+      &ATTRIBUTE_SET
     }
+  }
 }
 
 impl Index<Attribute> for Attributes {
-    type Output = bool;
+  type Output = bool;
 
-    fn index(&self, index: Attribute) -> &Self::Output {
-      if (self.0 & (1 << index as u32)) != 0 {
-        &ATTRIBUTE_UNSET
-      } else {
-        &ATTRIBUTE_SET
-      }
+  fn index(&self, index: Attribute) -> &Self::Output {
+    if (self.0 & (1 << index as u32)) != 0 {
+      &ATTRIBUTE_UNSET
+    } else {
+      &ATTRIBUTE_SET
     }
+  }
 }
 
 impl Default for Attributes {
@@ -92,8 +92,13 @@ impl Default for Attributes {
   }
 }
 
-impl Attributes {
+impl From<Attribute> for Attributes {
+  fn from(attribute: Attribute) -> Self {
+    Attributes(1u32 << attribute as u32)
+  }
+}
 
+impl Attributes {
   pub fn new() -> Self {
     Attributes::default()
   }
@@ -101,6 +106,8 @@ impl Attributes {
   pub fn update(&mut self, attributes: Attributes) {
     self.0 |= attributes.0;
   }
+
+  // region Convenience getters and setters
 
   pub fn get(&self, attribute: Attribute) -> bool {
     (self.0 & (1 << attribute as u32)) != 0
@@ -126,6 +133,14 @@ impl Attributes {
     self.get(Attribute::Variadic)
   }
 
+  pub fn variable(&self) -> bool {
+    self.get(Attribute::Variable)
+  }
+
+  pub fn sequence_variable(&self) -> bool {
+    self.get(Attribute::SequenceVariable)
+  }
+
   pub fn one_identity(&self) -> bool {
     self.get(Attribute::OneIdentity)
   }
@@ -145,8 +160,19 @@ impl Attributes {
   pub fn sequence_hold(&self) -> bool {
     self.get(Attribute::SequenceHold)
   }
-}
 
+  pub fn numeric_function(&self) -> bool {
+    self.get(Attribute::NumericFunction)
+  }
+
+  pub fn protected(&self) -> bool {
+    self.get(Attribute::Protected)
+  }
+
+
+  // endregion
+
+}
 
 #[cfg(test)]
 mod tests {
@@ -193,6 +219,5 @@ mod tests {
     assert!(!attributes.read_only());
     assert!(!attributes.attributes_read_only());
     assert!(!attributes.sequence_hold());
-
   }
 }

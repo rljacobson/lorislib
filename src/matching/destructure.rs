@@ -2,12 +2,16 @@
 
 A utility struct that destructures a match equation into its component parts.
 
+Most rules have the form ƒ(a,b)≪ᴱƒ(c,d), and matchers for these rules need to
+destructure this equation in the same way. This destructuring is factored out
+into `DestructuredFunctionEquation` and its constructor.
+
 */
 
 use std::rc::Rc;
 
 use crate::{
-  atoms::Function,
+  atom::Atom,
   expression::{
     RcExpression,
     Expression
@@ -19,9 +23,7 @@ use super::{
 
 /**
 
-Most rules have the form ƒ(a,b)≪ᴱƒ(c,d), and matchers for these rules need to
-destructure this equation in the same way. This destructuring is factored out
-into `DestructuredFunctionEquation` and its constructor.
+
 
 */
 #[derive(Clone)]
@@ -29,13 +31,13 @@ pub struct DestructuredFunctionEquation {
   /// The original match equation as given.
   pub match_equation: MatchEquation,
   /// The original pattern function.
-  pub pattern_function: Function,
+  pub pattern_function: Atom, // Must be `Atom::SExpression(..)`
   /// The immutable first term in the pattern.
   pub pattern_first: RcExpression,
   /// The immutable ƒ(s̃) that is always the LHS of the resulting match equation.
   pub pattern_rest: RcExpression,
   /// Literally the destructured ground function.
-  pub ground_function: Function,
+  pub ground_function: Atom, // Must be `Atom::SExpression(..)`
 }
 
 impl DestructuredFunctionEquation{

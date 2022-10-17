@@ -44,30 +44,30 @@ impl Default for DisplayForm {
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 /// Parameters used in methods that transform expressions into strings.
 // Todo: This will probably need to include context at some point.
-pub struct Formatter {
+pub struct ExpressionFormatter {
   pub form: DisplayForm,
 }
 
-static DEFAULT_FORMATTER: Cow<Formatter> = Cow::Owned(Formatter {
+static DEFAULT_FORMATTER: Cow<ExpressionFormatter> = Cow::Owned(ExpressionFormatter {
   form: DisplayForm::Input
 });
 
-impl Formatter {
-  pub fn default() -> Cow<'static, Formatter> {
+impl ExpressionFormatter {
+  pub fn default() -> Cow<ExpressionFormatter> {
     DEFAULT_FORMATTER.clone()
   }
 }
 
-impl From<DisplayForm> for Formatter {
+impl From<DisplayForm> for ExpressionFormatter {
   fn from(form: DisplayForm) -> Self {
-    Formatter {
+    ExpressionFormatter {
       form
     }
   }
 }
 
 pub trait Formattable {
-  fn format(&self, formatter: &Formatter) -> String;
+  fn format(&self, formatter: Cow<ExpressionFormatter>) -> String;
 }
 
 
@@ -75,7 +75,7 @@ macro_rules! display_formattable_impl {
   ($type_name:ty) => {
     impl std::fmt::Display for $type_name {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.format(&Formatter::default()))
+        write!(f, "{}", self.format(ExpressionFormatter::default().clone()))
       }
     }
   }

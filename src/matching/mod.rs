@@ -8,8 +8,6 @@ mod common;
 mod matcher;
 mod match_generator;
 mod decomposition;
-mod substitutions;
-
 
 /*
 
@@ -78,7 +76,10 @@ SUCCESS: To obtain additional matches, proceed from Step 3.b to Step 1.a.ii.
 use std::{collections::HashMap, fmt::Display};
 
 pub use matcher::{Matcher};
-use crate::expression::RcExpression;
+use crate::{
+  expression::RcExpression,
+  atom::SExpression
+};
 
 /// A map from a variable / sequence variable to the ground term is it bound to.
 pub type SolutionSet = HashMap<RcExpression, RcExpression>;
@@ -118,24 +119,24 @@ impl Display for Substitution {
 #[cfg(test)]
 mod tests {
   use std::rc::Rc;
-
+  
   use crate::{
-    atoms::{
-      Function,
-      SequenceVariable,
-      Symbol, Variable
+    atom::{
+      Atom,
+      SExpression,
+      Symbol,
     },
     attributes::Attribute,
-    logging::set_verbosity
+    logging::set_verbosity,
+    matching::matcher::display_solutions
   };
-  use crate::matching::matcher::display_solutions;
-
+  
   use super::*;
 
   #[test]
   /// Solve ƒ()≪ᴱƒ(), ƒ is A or AC
   fn match_empty_functions(){
-    let mut f = Function::with_symbolic_head("ƒ");
+    let mut f = SExpression::with_str_head("ƒ");
     f.attributes.set(Attribute::Associative);
     let g = f.duplicate_head();
 
@@ -155,13 +156,13 @@ mod tests {
   /// Solve ƒ(x̅)≪ᴱƒ(a), ƒ is A or AC
   fn problem5() {
     // set_verbosity(5);
-    let mut f = Function::with_symbolic_head("ƒ");
+    let mut f = SExpression::with_str_head("ƒ");
     f.attributes.set(Attribute::Associative);
-    let x = Rc::new(SequenceVariable("x".into()).into());
+    let x = Rc::new(SExpression::sequence_variable("x").into());
     f.push(x);
 
     let mut g = f.duplicate_head();
-    let a = Rc::new(Symbol("a".into()).into());
+    let a = Rc::new(Symbol::from_static_str("a").into());
     g.push(a);
 
     let me = MatchEquation{
@@ -180,18 +181,18 @@ mod tests {
   fn problem7() {
     // set_verbosity(5);
 
-    let mut f = Function::with_symbolic_head("ƒ");
+    let mut f = SExpression::with_str_head("ƒ");
     f.attributes.set(Attribute::Associative);
     f.attributes.set(Attribute::Commutative);
-    let x = Rc::new(Variable("x".into()).into());
+    let x = Rc::new(SExpression::variable("x").into());
     f.push(x);
-    let y = Rc::new(Variable("y".into()).into());
+    let y = Rc::new(SExpression::variable("y").into());
     f.push(y);
 
     let mut g = f.duplicate_head();
-    let a = Rc::new(Symbol("a".into()).into());
+    let a = Rc::new(Symbol::from_static_str("a").into());
     g.push(a);
-    let b = Rc::new(Symbol("b".into()).into());
+    let b = Rc::new(Symbol::from_static_str("b").into());
     g.push(b);
 
     let me = MatchEquation{
@@ -235,10 +236,10 @@ mod tests {
   fn match_empty_associative_function() {
     // set_verbosity(5);
 
-    let mut f = Function::with_symbolic_head("ƒ");
+    let mut f = SExpression::with_str_head("ƒ");
     f.attributes.set(Attribute::Associative);
     f.attributes.set(Attribute::Commutative);
-    let x = Rc::new(Variable("x".into()).into());
+    let x = Rc::new(SExpression::variable("x").into());
     f.push(x);
 
     let g = f.duplicate_head();

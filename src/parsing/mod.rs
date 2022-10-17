@@ -1,16 +1,14 @@
 /*!
 
+Parsing strings to expressions.
 
+*/
 
- */
-mod parser;
-mod operator;
 mod lexer;
+mod operator;
+mod parser;
 
-// Re-export `Parser`.
-pub use parser::Parser;
-use lexer::Token;
-
+pub use parser::parse;
 
 
 #[cfg(test)]

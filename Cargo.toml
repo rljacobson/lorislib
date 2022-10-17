@@ -18,25 +18,38 @@ publish = false
 permutation-generator = {path = "../../permutation_generator"}
 
 strum        = {version = "0.23", features = ["derive"]}
-strum_macros = "0.23"   # Generates variant name  only enum.
+strum_macros = "0.23"   # Generates variant-name-only enum.
 lazy_static  = "1.4.0"
-# Vecs on the stack in the matcher
-smallvec     = {version = "1.8.0", features = ["union"]}
-# Strings On the stack in the lexer/parser.
-#inlinable_string = "0.1.15"
-unicode-xid      = "0.2.2"  # Unicode support for identifiers.
-logos            = "0.12.1" # Scanner generator
-yansi            = "0.5.1"  # ANSI color support.
-fnv              = "1.0.7"  # FNV-1a hash.
-csv              = "1.1"    # Reading operators from a CSV file
-num-integer      = "0.1"    # Basic generic  math functions
+smallvec     = {version = "1.8.0", features = ["union"]} # Vecs on the stack in the matcher
+regex        = {version = "1.6.0", default-features = false, features = ["perf", "std"]} # Lexer
+aho-corasick    = "0.7.19" # Lexer
+string-interner = "0.14.0" # Used throughout
+yansi           = "0.5.1"  # ANSI color support
+fnv             = "1.0.7"  # FNV-1a hash
+
+# Arbitrary Precision Library
+# Uses:
+#   GMP  for integers and rational numbers,
+#   MPFR for floating-point numbers, and
+#   MPC  for complex numbers.
+[dependencies.rug]
+version = "1.17"
+default-features = false
+features = [
+    "integer",
+    "float",
+    "rational",
+    #    "complex",
+    #    "rand",
+    #    "serde"
+]
+
 
 [features]
 default = ["strict-associativity"]
 
 # For matching in associative theories, associativity is "strict".
 strict-associativity     = []
-# Matching rules emulate the behavior of Mathematica, which does not give all
-# matches.
+# Matching rules emulate the behavior of Mathematica, which does not give all matches. This feature is unimplemented.
 mathematica-compatibiity = []
 

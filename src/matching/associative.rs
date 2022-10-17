@@ -265,11 +265,7 @@ impl RuleIVEA {
 mod tests {
   use super::*;
   use crate::{
-    atoms::{
-      SequenceVariable,
-      Symbol,
-      Function, Variable
-    },
+    atom::Atom,
     expression::RcExpression
   };
 

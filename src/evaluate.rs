@@ -18,10 +18,12 @@ use std::{
 };
 use crate::{
   context::SymbolValue,
-  atoms::{Atom, Function, Symbol},
+  atom::Atom,
   Context,
-  Expression,
-  RcExpression,
+  expression::{
+    Expression,
+    RcExpression,
+  },
   matching::{Matcher, SolutionSet},
   logging::{log, Channel}
 };
