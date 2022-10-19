@@ -36,7 +36,7 @@ use std::fmt::Display;
 
 use smallvec::SmallVec;
 
-use crate::expression::RcExpression;
+use crate::atom::Atom;
 use super::{
   MatchEquation,
   Substitution
@@ -74,7 +74,7 @@ pub enum NextMatchResult {
 }
 
 impl NextMatchResult{
-  pub fn eq(pattern: RcExpression, ground: RcExpression) -> NextMatchResult {
+  pub fn eq(pattern: Atom, ground: Atom) -> NextMatchResult {
 
     NextMatchResult::MatchEquation(
       MatchEquation{
@@ -85,7 +85,7 @@ impl NextMatchResult{
 
   }
 
-  pub fn sub(variable: RcExpression, ground: RcExpression) -> NextMatchResult {
+  pub fn sub(variable: Atom, ground: Atom) -> NextMatchResult {
     NextMatchResult::Substitution(
       Substitution{
         variable,

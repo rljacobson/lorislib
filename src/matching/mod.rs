@@ -1,13 +1,12 @@
-mod destructure;
-mod associative_commutative;
-mod function_application;
 mod associative;
-mod commutative;
-mod free_functions;
+mod associative_commutative;
 mod common;
-mod matcher;
-mod match_generator;
+mod commutative;
 mod decomposition;
+mod free_functions;
+mod function_application;
+mod match_generator;
+mod matcher;
 
 /*
 
@@ -77,18 +76,30 @@ use std::{collections::HashMap, fmt::Display};
 
 pub use matcher::{Matcher};
 use crate::{
-  expression::RcExpression,
-  atom::SExpression
+  atom::{
+    SExpression,
+    Atom,
+  }
 };
 
 /// A map from a variable / sequence variable to the ground term is it bound to.
-pub type SolutionSet = HashMap<RcExpression, RcExpression>;
+pub type SolutionSet = HashMap<Atom, Atom>;
 
 
 #[derive(Clone)]
 pub struct MatchEquation {
-  pub(crate) pattern: RcExpression,
-  pub(crate) ground : RcExpression
+  pub(crate) pattern: Atom, // The pattern function
+  pub(crate) ground : Atom  // The ground function
+}
+
+impl MatchEquation {
+  pub fn pattern_first(&self) -> Atom {
+    SExpression::part(&self.pattern, 1)
+  }
+
+  pub fn pattern_rest(&self) -> Atom {
+    SExpression::duplicate_with_rest(&self.pattern)
+  }
 }
 
 impl Display for MatchEquation {
@@ -103,8 +114,8 @@ impl Display for MatchEquation {
 #[derive(Clone)]
 pub struct Substitution{
   /// Variable or sequence variable.
-  variable: RcExpression,
-  ground  : RcExpression
+  variable: Atom,
+  ground  : Atom
 }
 
 
@@ -119,34 +130,30 @@ impl Display for Substitution {
 #[cfg(test)]
 mod tests {
   use std::rc::Rc;
-  
-  use crate::{
-    atom::{
-      Atom,
-      SExpression,
-      Symbol,
-    },
-    attributes::Attribute,
-    logging::set_verbosity,
-    matching::matcher::display_solutions
-  };
-  
+  use crate::{atom::{
+    Atom,
+    SExpression,
+    Symbol,
+  }, attributes::Attribute, Context, logging::set_verbosity, matching::matcher::display_solutions};
+  use crate::interner::interned_static;
+
   use super::*;
 
   #[test]
   /// Solve ƒ()≪ᴱƒ(), ƒ is A or AC
   fn match_empty_functions(){
-    let mut f = SExpression::with_str_head("ƒ");
+    let f: Atom = SExpression::with_str_head("ƒ");
     f.attributes.set(Attribute::Associative);
-    let g = f.duplicate_head();
+    let g: Atom = f.duplicate_head();
 
     let me = MatchEquation{
-      pattern: Rc::new(f.into()),
-      ground: Rc::new(g.into()),
+      pattern: f,
+      ground: g,
     };
 
-    let mut matcher = Matcher::new(me.pattern.clone(), me.ground);
-    let result: Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let mut context: Context     = Context::new_global_context();
+    let mut matcher: Matcher     = Matcher::new(me.pattern.clone(), me.ground, &mut context);
+    let result     : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
     assert_eq!("EMPTY", result.join(", "));
   }
 
@@ -156,22 +163,36 @@ mod tests {
   /// Solve ƒ(x̅)≪ᴱƒ(a), ƒ is A or AC
   fn problem5() {
     // set_verbosity(5);
-    let mut f = SExpression::with_str_head("ƒ");
-    f.attributes.set(Attribute::Associative);
-    let x = Rc::new(SExpression::sequence_variable("x").into());
-    f.push(x);
+    let mut context: Context = Context::new_global_context();
 
-    let mut g = f.duplicate_head();
-    let a = Rc::new(Symbol::from_static_str("a").into());
-    g.push(a);
+    let mut f: Atom =
+        Atom::SExpression(
+          Rc::new(
+            [
+              Symbol::from_static_str("ƒ"),
+              SExpression::sequence_variable("x")
+            ].to_vec()
+          )
+        );
+
+    context.set_attribute(interned_static("ƒ"), Attribute::Associative).unwrap();
+
+    let mut g: Atom = Atom::SExpression(
+      Rc::new(
+        [
+          Symbol::from_static_str("ƒ"),
+          Symbol::from_static_str("x")
+        ].to_vec()
+      )
+    );
 
     let me = MatchEquation{
-      pattern: Rc::new(f.into()),
-      ground: Rc::new(g.into()),
+      pattern: f,
+      ground : g,
     };
 
-    let mut matcher = Matcher::new(me.pattern.clone(), me.ground);
-    let result: Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let mut matcher: Matcher      = Matcher::new(me.pattern.clone(), me.ground, &context);
+    let result     : Vec<String>  = matcher.map(|s| display_solutions(&s)).collect();
 
     assert_eq!("{«x» = a, «x» = ƒ[a]}", format!("{{{}}}", result.join(", ")));
   }
@@ -180,33 +201,43 @@ mod tests {
   /// Solve ƒ(x,y)≪ᴱƒ(a,b), ƒ is AC
   fn problem7() {
     // set_verbosity(5);
+    let mut context = Context::new_global_context();
 
-    let mut f = SExpression::with_str_head("ƒ");
-    f.attributes.set(Attribute::Associative);
-    f.attributes.set(Attribute::Commutative);
-    let x = Rc::new(SExpression::variable("x").into());
-    f.push(x);
-    let y = Rc::new(SExpression::variable("y").into());
-    f.push(y);
+    let mut f =
+        Atom::SExpression(
+          Rc::new(
+            [
+              Symbol::from_static_str("ƒ"),
+              SExpression::variable("x"),
+              SExpression::variable("y")
+            ].to_vec()
+          )
+        );
 
-    let mut g = f.duplicate_head();
-    let a = Rc::new(Symbol::from_static_str("a").into());
-    g.push(a);
-    let b = Rc::new(Symbol::from_static_str("b").into());
-    g.push(b);
+    context.set_attribute(interned_static("ƒ"), Attribute::Associative)
+           .expect("Symbol is read_only");
+    context.set_attribute(interned_static("ƒ"), Attribute::Commutative)
+           .expect("Symbol is read_only");
+
+    let mut g =
+        Atom::SExpression(
+          Rc::new(
+            [
+              Symbol::from_static_str("ƒ"),
+              Symbol::from_static_str("a"),
+              Symbol::from_static_str("b")
+            ].to_vec()
+          )
+        );
 
     let me = MatchEquation{
-      pattern: Rc::new(f.into()),
-      ground: Rc::new(g.into()),
+      pattern: f,
+      ground : g,
     };
 
     // println!("{}", me);
 
-    let mut matcher = Matcher::new(me.pattern.clone(), me.ground);
-
-    // for result in &mut Matcher::new(me.pattern.clone(), me.ground) {
-    //   println!("{}", display_solutions(&result));
-    // }
+    let mut matcher = Matcher::new(me.pattern.clone(), me.ground, context.clone());
 
     let expected = [
       #[cfg(not(feature = "strict-associativity"))]
@@ -236,22 +267,32 @@ mod tests {
   fn match_empty_associative_function() {
     // set_verbosity(5);
 
-    let mut f = SExpression::with_str_head("ƒ");
-    f.attributes.set(Attribute::Associative);
-    f.attributes.set(Attribute::Commutative);
-    let x = Rc::new(SExpression::variable("x").into());
-    f.push(x);
+    let mut f =
+        Atom::SExpression(
+          Rc::new(
+            [
+              Symbol::from_static_str("ƒ"),
+              Symbol::from_static_str("x")
+            ].to_vec()
+          )
+        );
+
+    let mut context: Context = Context::new_global_context();
+
+    context.set_attribute(interned_static("ƒ"), Attribute::Associative)
+           .expect("Symbol is read_only");
+    context.set_attribute(interned_static("ƒ"), Attribute::Commutative)
+           .expect("Symbol is read_only");
 
     let g = f.duplicate_head();
 
     let me = MatchEquation{
-      pattern: Rc::new(f.into()),
-      ground: Rc::new(g.into()),
+      pattern: f,
+      ground: g,
     };
 
-    let mut matcher = Matcher::new(me.pattern.clone(), me.ground);
-
-    let result: Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let mut matcher: Matcher     = Matcher::new(me.pattern.clone()                  , me.ground, &context);
+    let result     : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
 
     #[cfg(not(feature = "strict-associativity"))]
     assert_eq!("‹x› = ƒ[]", result.join(", "));

@@ -25,15 +25,18 @@ use std::{
 };
 
 use crate::{
-  expression::{
-    ExpressionKind,
-    RcExpression
-  },
   logging::{
     Channel,
     log
-  }
+  },
+  context::Context,
 };
+use crate::atom::{
+  Atom,
+  AtomKind
+};
+use crate::attributes::Attributes;
+use crate::context::SymbolRecord;
 
 use super::{
   associative::{
@@ -57,7 +60,6 @@ use super::{
     RuleDecC,
     RuleSVEC
   },
-  destructure::DestructuredFunctionEquation,
   free_functions::{
     RuleDecF,
     RuleSVEF
@@ -84,7 +86,7 @@ pub(crate) enum MatchStack {
 
   /// A variable or sequence variable substitution. We only need to record the key
   /// (the expression) of the `SolutionSet` hashmap.
-  Substitution(RcExpression),
+  Substitution(Atom),
 
   /// An operation representing pushing matching equations onto the equation stack.
   ProducedMatchEquations(u32),
@@ -103,7 +105,7 @@ impl MatchStack {
 
 
 /// Holds the state of the in-process pattern matching attempt.
-pub struct Matcher {
+pub struct Matcher<'c> {
   /// The match_stack is where operations that change the state are recorded.
   /// Operations are pushed when they are done and popped when they are undone.
   match_stack: Vec<MatchStack>,
@@ -111,10 +113,12 @@ pub struct Matcher {
   equation_stack: Vec<MatchEquation>,
   /// The symbol table recording all veriable/sequence variable bindings.
   substitutions: SolutionSet,
+  /// The matcher needs to be able to look up the attributes of functions from the context.
+  context: &'c Context
 }
 
 
-impl Display for Matcher {
+impl<'c> Display for Matcher<'c> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let equations = self.equation_stack
                         .iter()
@@ -131,14 +135,15 @@ impl Display for Matcher {
 }
 
 
-impl Matcher {
+impl<'c> Matcher<'c> {
 
   /// Create a new `MatchGenerator` for the match equation `pattern`≪`subject`.
-  pub fn new(pattern: RcExpression, subject: RcExpression) -> Matcher {
+  pub fn new(pattern: Atom, subject: Atom, context: &'c Context) -> Matcher {
     Matcher {
       match_stack: Vec::new(),
       equation_stack: vec![MatchEquation{pattern, ground: subject}],
       substitutions: HashMap::new(),
+      context
     }
   }
 
@@ -165,7 +170,7 @@ impl Matcher {
 
         MatchStack::Substitution(expression) => {
           // Remove it.
-          self.substitutions.remove(expression.as_ref());
+          self.substitutions.remove(&expression);
         },
 
         MatchStack::ProducedMatchEquations(added) => {
@@ -194,7 +199,7 @@ impl Matcher {
 
 
   /// If the variable is already bound, returns the value. Otherwise returns `None`.
-  fn is_bound(&self, expression: RcExpression) -> Option<&RcExpression> {
+  fn is_bound(&self, expression: Atom) -> Option<&Atom> {
     self.substitutions.get(&expression)
   }
 
@@ -246,154 +251,128 @@ impl Matcher {
 
     // A prerequisite for creating a `DestructuredFunctionEquation` and good
     // place to bail early.
-    if me.pattern.kind()!=ExpressionKind::Function
-        || me.ground.kind()!=ExpressionKind::Function
+    if me.pattern.kind() != AtomKind::SExpression
+        || me.ground.kind() != AtomKind::SExpression
     {
       // Return match equation.
       self.equation_stack.push(me);
       return Err(());
     }
 
-    let dfe = // the result of the following match.
-    match DestructuredFunctionEquation::new(&me) {
-
-      Ok(dfe) => {
-        // log(Channel::Debug, 5, format!("Destructuring during rule selection. Destructured to").as_str());
-        // log(Channel::Debug, 5, format!("PATTERN FN: {}\nGROUND: {}\nPATERN FIRST: {}\nGROUND FN: {}\n", dfe.pattern_function, dfe.match_equation.ground, dfe.pattern_first, dfe.ground_function).as_str());
-        dfe
-      },
-
-      Err(_) => {
-        log(Channel::Debug, 5, "Could not deconstruct.".to_string().as_str());
-
-        // Return match equation.
-        self.equation_stack.push(me);
-        return Err(());
-      }
-
-    };
-
     // Another opportunity to bail early. This indicates program state that should be impossible.
-    if dfe.pattern_function.head != dfe.ground_function.head {
+    if me.pattern.head() != me.ground.head() {
       log(Channel::Debug, 5, "Both sides not functions.".to_string().as_str());
       // Return match equation.
       self.equation_stack.push(me);
       return Err(());
     }
 
-    match (dfe.ground_function.commutative(), dfe.ground_function.associative()) {
+    let ground_attributes: Attributes = self.context.get_attributes(me.ground.name().unwrap());
+
+    match (ground_attributes.commutative(), ground_attributes.associative()) {
 
       // Rules for Free Functions (neither associative nor commutative)
       (false, false) => {
         // Dec-F
-        if let Some(rule) = RuleDecF::try_rule(&dfe){
-          log(Channel::Debug, 5, format!("Creating Dec-F for {}", dfe.match_equation).as_str());
+        if let Some(rule) = RuleDecF::try_rule(&me) {
+          log(Channel::Debug, 5, format!("Creating Dec-F for {}", me).as_str());
           self.push_rule(Box::new(rule));
-
         }
         // SVE-F
-        else if let Some(rule) = RuleSVEF::try_rule(&dfe){
-          log(Channel::Debug, 5, format!("Creating DVE-F for {}", dfe.match_equation).as_str());
+        else if let Some(rule) = RuleSVEF::try_rule(&me) {
+          log(Channel::Debug, 5, format!("Creating DVE-F for {}", me).as_str());
           self.push_rule(Box::new(rule));
-        }
-        else {
+        } else {
           // Return match equation.
           self.equation_stack.push(me);
           log(Channel::Debug, 5, format!("No applicable (free) rule found.").as_str());
           return Err(());
         }
-        return Ok(());
+        Ok(())
       }
 
       // Rules for commutative functions
       (true, false) => {
 
         // Dec-C
-        if let Some(rule) = RuleDecC::try_rule(&dfe) {
-          log(Channel::Debug, 5, format!("Creating Dec-C for {}", dfe.match_equation).as_str());
+        if let Some(rule) = RuleDecC::try_rule(&me) {
+          log(Channel::Debug, 5, format!("Creating Dec-C for {}", me).as_str());
           self.push_rule(Box::new(rule));
         }
         // SVE-C
-        else if let Some(rule) = RuleSVEC::try_rule(&dfe) {
-          log(Channel::Debug, 5, format!("Creating SVE-C for {}", dfe.match_equation).as_str());
+        else if let Some(rule) = RuleSVEC::try_rule(&me) {
+          log(Channel::Debug, 5, format!("Creating SVE-C for {}", me).as_str());
           self.push_rule(Box::new(rule));
-        }
-        else {
+        } else {
           // Return match equation.
           self.equation_stack.push(me);
           log(Channel::Debug, 5, format!("No applicable (commutative) rule found.").as_str());
           return Err(());
         }
-        return Ok(());
-
+        Ok(())
       },
 
       // Rules for associative functions
       (false, true) => {
 
         // SVE-A
-        if let Some(rule) = RuleSVEA::try_rule(&dfe) {
-          log(Channel::Debug, 5, format!("Creating SVE-A for {}", dfe.match_equation).as_str());
+        if let Some(rule) = RuleSVEA::try_rule(&me) {
+          log(Channel::Debug, 5, format!("Creating SVE-A for {}", me).as_str());
           self.push_rule(Box::new(rule));
         }
         // FVE-A
-        else if let Some(rule) = RuleFVEA::try_rule(&dfe) {
-          log(Channel::Debug, 5, format!("Creating FVE-A for {}", dfe.match_equation).as_str());
+        else if let Some(rule) = RuleFVEA::try_rule(&me) {
+          log(Channel::Debug, 5, format!("Creating FVE-A for {}", me).as_str());
           self.push_rule(Box::new(rule));
         }
         // IVE-A
-        else if let Some(rule) = RuleIVEA::try_rule(&dfe) {
-          log(Channel::Debug, 5, format!("Creating IVE-A for {}", dfe.match_equation).as_str());
+        else if let Some(rule) = RuleIVEA::try_rule(&me) {
+          log(Channel::Debug, 5, format!("Creating IVE-A for {}", me).as_str());
           self.push_rule(Box::new(rule));
         }
         // Dec-A
-        else if let Some(rule) = RuleDecA::try_rule(&dfe){
-          log(Channel::Debug, 5, format!("Creating Dec-A for {}", dfe.match_equation).as_str());
+        else if let Some(rule) = RuleDecA::try_rule(&me) {
+          log(Channel::Debug, 5, format!("Creating Dec-A for {}", me).as_str());
           self.push_rule(Box::new(rule));
-        }
-        else {
+        } else {
           log(Channel::Debug, 5, format!("No applicable (associative) rule found.").as_str());
           // Return match equation.
           self.equation_stack.push(me);
           return Err(());
         }
-        return Ok(());
-
+        Ok(())
       },
 
       // Rules for associative-commutative symbols.
       (true, true) => {
 
         // SVE-AC
-        if let Some(rule) = RuleSVEAC::try_rule(&dfe) {
-          log(Channel::Debug, 5, format!("Creating SVE-AC for {}", dfe.match_equation).as_str());
+        if let Some(rule) = RuleSVEAC::try_rule(&me) {
+          log(Channel::Debug, 5, format!("Creating SVE-AC for {}", me).as_str());
           self.push_rule(Box::new(rule));
         }
         // FVE-AC
-        else if let Some(rule) = RuleFVEAC::try_rule(&dfe) {
-          log(Channel::Debug, 5, format!("Creating FVE-AC for {}", dfe.match_equation).as_str());
+        else if let Some(rule) = RuleFVEAC::try_rule(&me) {
+          log(Channel::Debug, 5, format!("Creating FVE-AC for {}", me).as_str());
           self.push_rule(Box::new(rule));
         }
         // IVE-AC
-        else if let Some(rule) = RuleIVEAC::try_rule(&dfe) {
-          log(Channel::Debug, 5, format!("Creating IVE-AC for {}", dfe.match_equation).as_str());
+        else if let Some(rule) = RuleIVEAC::try_rule(&me) {
+          log(Channel::Debug, 5, format!("Creating IVE-AC for {}", me).as_str());
           self.push_rule(Box::new(rule));
         }
         // Dec-AC
-        else if let Some(rule) = RuleDecAC::try_rule(&dfe){
-          log(Channel::Debug, 5, format!("Creating Dec-AC for {}", dfe.match_equation).as_str());
+        else if let Some(rule) = RuleDecAC::try_rule(&me) {
+          log(Channel::Debug, 5, format!("Creating Dec-AC for {}", me).as_str());
           self.push_rule(Box::new(rule));
-        }
-        else {
+        } else {
           log(Channel::Debug, 5, format!("No applicable (associative-commutative) rule found.").as_str());
           // Return match equation.
           self.equation_stack.push(me);
           return Err(());
         }
-        return Ok(());
-
+        Ok(())
       }
-
     } // end match on (commutative, associative)
 
   } // end fetch_rule
@@ -428,7 +407,7 @@ impl Matcher {
 }
 
 
-impl Iterator for &mut Matcher {
+impl<'c> Iterator for &mut Matcher<'c> {
   type Item = SolutionSet;
 
   fn next(&mut self) -> Option<Self::Item> {
@@ -453,7 +432,7 @@ impl Iterator for &mut Matcher {
           // Step 1.a.ii. If there is an active match generator on top of the
           // matcher stack, undo the actions of the last match generated
           // from this match generator…
-          log(Channel::Debug, 5, "Undoing the last match generator actions.".to_string().as_str());
+          log(Channel::Debug, 5, "Undoing the last match generator actions.");
           let match_generator: BoxedMatchGenerator = self.undo();
           // …but retain the active match generator.
           self.match_stack.push(MatchStack::MatchGenerator(match_generator));

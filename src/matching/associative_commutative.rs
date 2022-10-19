@@ -23,7 +23,6 @@ associative-commutative and S={X≈ƒ}.
 */
 
 
-use std::rc::Rc;
 use smallvec::smallvec;
 use crate::{
   matching::{
@@ -31,7 +30,6 @@ use crate::{
       Associative,
       RuleDecCommutative
     },
-    destructure::DestructuredFunctionEquation,
     MatchEquation,
     match_generator::{
       MatchGenerator,
@@ -40,8 +38,9 @@ use crate::{
       NextMatchResultList
     }
   },
-  expression::ExpressionKind,
+  atom::SExpression,
 };
+
 use super::{
   function_application::{
     AFACGenerator,
@@ -79,7 +78,7 @@ pub type RuleFVEAC = RuleFVEA;
 /// Note that `RuleIVEAC` automatically chains with `RuleDecAC`, because rule Dec-AC always applies
 /// when rule IVE-AC applies.
 pub struct RuleIVEAC {
-  dfe: DestructuredFunctionEquation,
+  match_equation: MatchEquation,
   /// Bit positions indicate which subset of the ground's children are currently
   /// being matched against. You'd be crazy to try to match against all
   /// subsets of a set with more than 32 elements. We use `u32::MAX` ==
@@ -93,7 +92,7 @@ impl RuleIVEAC {
   /// Create a new `RuleIVEAC`.
   pub fn new(me: MatchEquation) -> Self {
     RuleIVEAC {
-      dfe: DestructuredFunctionEquation::new(&me).unwrap(),
+      match_equation: me.clone(),
       #[cfg(not(feature = "strict-associativity"))]
       subset: 0,
       #[cfg(feature = "strict-associativity")]
@@ -102,24 +101,24 @@ impl RuleIVEAC {
     }
   }
 
-  pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<RuleIVEAC> {
-    if dfe.pattern_function.len() > 0
-        && dfe.pattern_function.part(0).kind() == ExpressionKind::Variable
+  pub fn try_rule(me: &MatchEquation) -> Option<RuleIVEAC> {
+    if me.pattern.len() > 1
+        && SExpression::part(&me.pattern, 1).is_variable().is_some()
     {
       // Additional condition for strict associativity
       #[cfg(feature = "strict-associativity")]
-      if dfe.ground_function.len() == 0{
+      if me.ground.len() <= 1{
         return None;
       }
 
       Some(
         RuleIVEAC {
-          dfe: dfe.clone(),
+          match_equation: me.clone(),
           #[cfg(not(feature = "strict-associativity"))]
           subset: 0,
           #[cfg(feature = "strict-associativity")]
           subset: 1, // Cannot match the empty set under strict associativity.
-          rule_decac: RuleDecAC::new(dfe.match_equation.clone())
+          rule_decac: RuleDecAC::new(me.clone())
         }
       )
     } else {
@@ -130,7 +129,7 @@ impl RuleIVEAC {
 
 impl MatchGenerator for RuleIVEAC {
   fn match_equation(&self) -> MatchEquation {
-    self.dfe.match_equation.clone()
+    self.match_equation.clone()
   }
 }
 
@@ -139,7 +138,7 @@ impl Iterator for RuleIVEAC {
   type Item = NextMatchResultList;
 
   fn next(&mut self) -> MaybeNextMatchResult {
-    let mut n = self.dfe.ground_function.len();
+    let mut n = self.match_equation.ground.len();
     n = if n > 31 { 31 } else { n };
     let max_subset_state: u32 = ((1 << n) - 1) as u32;
 
@@ -151,7 +150,11 @@ impl Iterator for RuleIVEAC {
     // complement, which will go in the new match equation.
     let mut subset = vec![];
     let mut complement = vec![];
-    for (k, c) in self.dfe.ground_function.children.iter().enumerate(){
+    let ground_children = SExpression::children(&self.match_equation.ground);
+    let mut child_iter = ground_children.iter();
+    // Skip the head
+    child_iter.next();
+    for (k, c) in child_iter.enumerate(){
       if k == 31 {
         break;
       }
@@ -162,20 +165,16 @@ impl Iterator for RuleIVEAC {
       }
     }
 
-    let mut new_function = self.dfe.ground_function.duplicate_head();
-    new_function.children = subset;
-
+    let mut new_function = SExpression::new(self.match_equation.ground.head(), subset);
     let substitution = NextMatchResult::sub(
-      self.dfe.pattern_first.clone(),
-      Rc::new(new_function.into())
+      self.match_equation.pattern_first(),
+      new_function
     );
-
-    let mut new_ground_function = self.dfe.ground_function.duplicate_head();
-    new_ground_function.children = complement;
+    let mut new_ground_function = SExpression::new(self.match_equation.ground.head(), complement);
 
     let match_equation = NextMatchResult::eq(
-      self.dfe.pattern_rest.clone(),
-      Rc::new(new_ground_function.into()),
+      self.match_equation.pattern_rest(),
+      new_ground_function,
     );
 
     self.subset += 1;
@@ -191,33 +190,41 @@ impl Iterator for RuleIVEAC {
 }
 
 
-
-
 #[cfg(test)]
 mod tests {
+  use std::rc::Rc;
   use super::*;
   use crate::{
-    atom::Atom,
-    expression::RcExpression
+    atom::{
+      Atom,
+      SExpression,
+      Symbol
+    },
   };
 
 
   /// Solve ƒ❨‹x›, u, v, w❩ ≪ ƒ❨a, b, c❩
   #[test]
   fn generate_rule_ivea() {
-    let x: RcExpression = Rc::new(Variable::from("x").into());
-    let mut rest = ["u", "v", "w"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
-    let mut f = Function::with_symbolic_head("ƒ");
 
-    f.push(x);
-    f.children.append(&mut rest);
+    let f = {
+      let mut children = vec![
+        Symbol::from_static_str("ƒ"),
+        SExpression::variable("x"),
+      ];
+      let mut rest = ["u", "v", "w"].iter().map(|&n| Symbol::from_static_str(n)).collect::<Vec<Atom>>();
+      children.append(&mut rest);
+      Atom::SExpression(Rc::new(children))
+    };
 
-    let mut g = Function::with_symbolic_head("ƒ");
-    g.children = ["a", "b", "c"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
+    let mut g = {
+      let mut children = ["ƒ", "a", "b", "c"].iter().map(|&n| Symbol::from_static_str(n)).collect::<Vec<Atom>>();
+      Atom::SExpression(Rc::new(children))
+    };
 
     let me = MatchEquation{
-      pattern: Rc::new(f.into()),
-      ground: Rc::new(g.into()),
+      pattern: f,
+      ground: g,
     };
 
     let rule_iveac = RuleIVEAC::new(me);

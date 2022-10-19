@@ -8,19 +8,17 @@ SVE-F: Sequence variable elimination under free head ƒ(̅x,s̃)≪ᴱƒ(t̃₁,
 
 */
 
-use std::{
-  rc::Rc,
-  default::Default
-};
 
+use std::rc::Rc;
 use smallvec::{
   smallvec,
-  SmallVec
 };
 
 use crate::{
-  atom::Atom,
-  expression::ExpressionKind,
+  atom::{
+    Atom,
+    SExpression,
+  },
   matching::decomposition::{
     NonAssociative,
     RuleDecNonCommutative
@@ -28,7 +26,6 @@ use crate::{
 };
 
 use super::{
-  destructure::DestructuredFunctionEquation,
   MatchEquation,
   match_generator::{
     MatchGenerator,
@@ -39,12 +36,13 @@ use super::{
   Substitution
 };
 
-
 pub type RuleDecF = RuleDecNonCommutative<NonAssociative>;
+
+type Sequence = Vec<Atom>;
 
 // ƒ(x̅,s̃)≪ᴱƒ(t̃₁,t̃₂) ⇝ₛ {ƒ(s̃)≪ᴱ ƒ(t̃₂)}, where ƒ is free and S={x̅≈t̃₁}
 pub struct RuleSVEF {
-  pub(crate) dfe: DestructuredFunctionEquation,
+  pub(crate) match_equation: MatchEquation,
 
   /*
     In Dundua, the strict associativity axiom is
@@ -71,7 +69,7 @@ pub struct RuleSVEF {
 
 impl MatchGenerator for RuleSVEF {
   fn match_equation(&self) -> MatchEquation {
-    self.dfe.match_equation.clone()
+    self.match_equation.clone()
   }
 }
 
@@ -88,16 +86,17 @@ impl Iterator for RuleSVEF {
     }
 
     // Are there any more terms to take?
-    if self.dfe.ground_function.len() == self.ground_sequence.len() {
+    if self.match_equation.ground.len() == self.ground_sequence.len()+1 { // minus the head of ground.
       // No more terms.
       return None;
     }
 
     // Take the next term from the ground function.
-    self.ground_sequence.children.push(
-      self.dfe.ground_function.children[
-        self.ground_sequence.len()
-      ].clone()
+    self.ground_sequence.push(
+      SExpression::part(
+        &self.match_equation.ground,
+        self.ground_sequence.len() + 1 // skipping the head/
+      )
     );
 
     // Construct the result.
@@ -108,8 +107,8 @@ impl Iterator for RuleSVEF {
 impl RuleSVEF {
   pub fn new(me: MatchEquation) -> RuleSVEF {
     RuleSVEF{
-      dfe            : DestructuredFunctionEquation::new(&me).unwrap(),
-      ground_sequence: Sequence::default(),
+      match_equation: me,
+      ground_sequence: Vec::new(),
       // Se note in the struct definition.
       #[cfg(not(feature = "strict-associativity"))]
       empty_produced : false
@@ -117,27 +116,29 @@ impl RuleSVEF {
   } // end new RuleSVEF
 
   // Constructs the next result using components of `self`.
-  fn make_next(&self) -> SmallVec<[NextMatchResult; 3]> {
-    let mut match_equation_ground = self.dfe.ground_function.duplicate_head();
-    // Todo: Does this do the right thing when `ground_function.len()==ground_sequence.len()`?
-    self.dfe.ground_function
-        .children[self.ground_sequence.len()..]
-        .clone_into(
-          &mut match_equation_ground.children
-        );
+  fn make_next(&self) -> NextMatchResultList {
+
+    let mut match_equation_ground = { // scope of extras
+      let mut match_equation_ground_children = vec![self.match_equation.ground.head()];
+      match_equation_ground_children.extend(
+        // Todo: Does this do the right thing when `ground_function.len()==ground_sequence.len()`?
+        SExpression::children(&self.match_equation.ground)[self.ground_sequence.len()+1..].iter().cloned()
+      );
+      Atom::SExpression(Rc::new(match_equation_ground_children))
+    };
 
     let result_equation =
       NextMatchResult::MatchEquation(
         MatchEquation{
-          pattern: self.dfe.pattern_rest.clone(),
-          ground: Rc::new(match_equation_ground.into())
+          pattern: self.match_equation.pattern_rest(),
+          ground: match_equation_ground
         }
       );
 
     let result_substitution = NextMatchResult::Substitution(
       Substitution{
-        variable: self.dfe.pattern_first.clone(),
-        ground: Rc::new(self.ground_sequence.clone().into()),
+        variable: self.match_equation.pattern_first(),
+        ground: SExpression::sequence(self.ground_sequence.clone()),
       }
     );
 
@@ -145,17 +146,17 @@ impl RuleSVEF {
   }
 
 
-  pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<Self> {
-    if dfe.pattern_function.len() > 0
-        && dfe.pattern_function.part(0).kind() == ExpressionKind::SequenceVariable
-        && dfe.ground_function.len() > 0 {
+  pub fn try_rule(me: &MatchEquation) -> Option<Self> {
+    if me.pattern.len() > 1
+        && SExpression::part(&me.pattern, 1).is_sequence_variable().is_some()
+        && me.ground.len() > 1 {
 
       Some(
         RuleSVEF {
-          dfe            : dfe.clone(),
+          match_equation : me.clone(),
           #[cfg(not(feature = "strict-associativity"))]
           empty_produced : false,
-          ground_sequence: Sequence::default()
+          ground_sequence: Vec::new()
         }
       )
 
@@ -170,33 +171,39 @@ impl RuleSVEF {
 
 #[cfg(test)]
 mod tests {
+  use std::rc::Rc;
   use super::*;
   use crate::{
-    atoms::{
-      SequenceVariable,
-      Symbol,
-      Function,
-      Variable
+    atom::{
+      Atom,
+      SExpression,
+      Symbol
     },
-    expression::RcExpression
   };
 
 
   #[test]
   fn generate_rule_svef() {
-    let x: RcExpression = Rc::new(SequenceVariable::from("x").into());
-    let mut rest = ["u", "v", "w"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
-    let mut f = Function::with_symbolic_head("ƒ");
+    let f = { // scope of children
+      let mut children = vec![
+        Symbol::from_static_str("ƒ"),
+        SExpression::sequence_variable("x")
+      ];
+      let mut rest = ["u", "v", "w"].iter()
+                                    .map(|&n| Symbol::from_static_str(n))
+                                    .collect::<Vec<Atom>>();
+      children.append(&mut rest);
+      Atom::SExpression(Rc::new(children))
+    };
 
-    f.push(x);
-    f.children.append(&mut rest);
-
-    let mut g = Function::with_symbolic_head("ƒ");
-    g.children = ["a", "b", "c"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
+    let g = { // scope of children
+      let children = ["ƒ", "a", "b", "c"].iter().map(|&n| Symbol::from_static_str(n)).collect::<Vec<Atom>>();
+      Atom::SExpression(Rc::new(children))
+    };
 
     let me = MatchEquation{
-        pattern: Rc::new(f.into()),
-        ground: Rc::new(g.into()),
+      pattern: f,
+      ground : g,
     };
 
     // println!("{}", me);
@@ -230,19 +237,28 @@ mod tests {
 
   #[test]
   fn generate_rule_decf() {
-    let s: RcExpression = Rc::new(Variable::from("s").into());
-    let mut rest = ["u", "v", "w"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
-    let mut f = Function::with_symbolic_head("ƒ");
+    let f = { // scope of children, rest
+      let mut children = vec![
+        Symbol::from_static_str("ƒ"),
+        SExpression::variable("s")
+      ];
+      let mut rest = ["u", "v", "w"].iter()
+                                    .map(|&n| Symbol::from_static_str(n))
+                                    .collect::<Vec<Atom>>();
+      children.append(&mut rest);
+      Atom::SExpression(Rc::new(children))
+    };
 
-    f.push(s);
-    f.children.append(&mut rest);
-
-    let mut g = Function::with_symbolic_head("ƒ");
-    g.children = ["a", "b", "c", "d"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
+    let mut g = { // scope of children
+      let mut children = ["ƒ", "a", "b", "c", "d"].iter()
+                                                  .map(|&n| Symbol::from_static_str(n))
+                                                  .collect::<Vec<Atom>>();
+      Atom::SExpression(Rc::new(children))
+    };
 
     let me = MatchEquation{
-        pattern: Rc::new(f.into()),
-        ground: Rc::new(g.into()),
+      pattern: f,
+      ground : g,
     };
     let rule_decf = RuleDecF::new(me);
 

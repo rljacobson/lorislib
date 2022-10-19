@@ -18,10 +18,6 @@ See the `atoms` module for concrete implementations of the `Expression` variants
     just have the enum wrap those structs. This gives you the ability to have a "type for an enum variant", but is
     annoying and inconvenient."
 
-To implement matching on your own structures, implement a `get_expression`
-method or equivalent that returns the expression form of the type. Match on
-the expression, and transform the result back into your native types.
-
 */
 
 use std::{

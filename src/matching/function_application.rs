@@ -43,17 +43,18 @@
 
 use std::{
   marker::PhantomData,
-  rc::Rc
 };
+use std::cmp::min;
+use std::rc::Rc;
 
 use smallvec::smallvec;
 
 use permutation_generator::PermutationGenerator32 as Permutations;
 
 use crate::{
-  expression::ExpressionKind,
   atom::{
-    Atom
+    Atom,
+    SExpression,
   },
   logging::{
     Channel,
@@ -69,7 +70,6 @@ use super::{
     NextMatchResultList
   },
   MatchEquation,
-  destructure::DestructuredFunctionEquation
 };
 
 
@@ -82,22 +82,23 @@ pub struct EnumerateOne;
 /// Enumerates every pattern in which every term is an argument to the function.
 pub struct EnumerateNoUnapplied;
 
+type Sequence = Vec<Atom>;
 
 pub trait FunctionApplicationGenerator: Iterator<Item=Sequence>{
-  fn new(function: Function) -> Self;
+  fn new(function: Atom) -> Self;
 }
 
 /// Associative Function Application Generator. We can match up to 33
 /// arguments, which is already borderline computationally infeasible with this
 /// implementation on present-day hardware.
 pub struct AFAGenerator<EnumerationType> {
-  function       : Function,
+  function         : Atom,
   /// A bit vector encoding which terms are outside of any function application;
   /// `singleton_state` is also recycled as a flag indicating exhaustion.
-  singleton_state: u32,
+  singleton_state  : u32,
   /// A bit vector encoding how terms are grouped into function applications.
-  application_state   : u32,
-  phantom        : PhantomData<EnumerationType>
+  application_state: u32,
+  phantom          : PhantomData<EnumerationType>
 }
 
 
@@ -105,7 +106,7 @@ pub struct AFAGenerator<EnumerationType> {
 impl<T> FunctionApplicationGenerator for AFAGenerator<T>
     where AFAGenerator<T>: Iterator<Item=Sequence>
 {
-  fn new(function: Function) -> AFAGenerator<T> {
+  fn new(function: Atom) -> AFAGenerator<T> {
     AFAGenerator::<T>{
       function,
       singleton_state  : 0,
@@ -119,19 +120,24 @@ impl Iterator for AFAGenerator<EnumerateAll> {
   type Item = Sequence;
 
   fn next(&mut self) -> Option<Sequence> {
-    let mut n = self.function.len();
-    n = if n > 32 {
-      32
-    } else if n==0 {
+    let mut n = min(self.function.len(), 32);
+
+    if n==0 {
       return None;
-    } else {
-       n
-    };
+    }
     // The (n-1) in the formula below is because there are (n-1) spaces between n
     // elements.
     let max_application_state: u32 = ((1 << (n-1)) - 1) as u32;
-    log(Channel::Debug, 5, format!("application state: {}, n: {}, max_application_state: {}", self
-        .application_state, n, max_application_state).as_str());
+    log(
+      Channel::Debug,
+      5,
+      format!(
+        "application state: {}, n: {}, max_application_state: {}",
+        self.application_state,
+        n,
+        max_application_state
+      ).as_str()
+    );
 
     if self.singleton_state == u32::MAX {
       return None;
@@ -158,26 +164,35 @@ impl Iterator for AFAGenerator<EnumerateAll> {
         // If last boundary position isn't the previous position checked, then
         // we just completed a run of a single function application.
         if position - last_boundary_position > 1 {
+          let function_children = SExpression::children(&self.function);
+          let mut new_function_children = vec![function_children[0].clone()];
+          new_function_children.extend(
+            (last_boundary_position..position).map(|child_idx| {function_children[child_idx+1].clone()})
+          );
+          let mut new_function = Atom::SExpression(Rc::new(new_function_children));
 
-          let mut new_function = self.function.duplicate_head();
-          for child_idx in last_boundary_position..position {
-            new_function.children.push(self.function.part(child_idx));
-          }
-
-          result_sequence.push(Rc::new(new_function.into()));
+          result_sequence.push(new_function);
         }
         // If last boundary position is the last position checked, then we have a singleton.
         else {
           if (1 << singleton_count) & self.singleton_state > 0 {
-            log(Channel::Debug, 5, format!("Singleton state is high. Wrapping in function. STATE: {}, COUNT: {}", self.singleton_state, singleton_count).as_str());
+            log(
+              Channel::Debug,
+              5,
+              format!(
+                "Singleton state is high. Wrapping in function. STATE: {}, COUNT: {}",
+                self.singleton_state,
+                singleton_count).as_str()
+            );
             // Wrap it in a function.
-            let mut new_function = self.function.duplicate_head();
-            new_function.push(self.function.part(position-1));
+            let mut new_function = Atom::SExpression(Rc::new(
+              vec![self.function.head(), SExpression::part(&self.function, position - 1)]
+            ));
+            result_sequence.push(new_function);
 
-            result_sequence.push(Rc::new(new_function.into()));
           } else {
             log(Channel::Debug, 5, "Singleton state is low. Not wrapping in function.".to_string().as_str());
-            result_sequence.push(self.function.part(position-1));
+            result_sequence.push(SExpression::part(&self.function, position-1));
           }
 
           singleton_count += 1;
@@ -189,7 +204,6 @@ impl Iterator for AFAGenerator<EnumerateAll> {
         // Not a boundary. We are currently iterating over a run that will be inside a function.
         // Nothing to do.
       }
-
 
     }
 
@@ -208,7 +222,11 @@ impl Iterator for AFAGenerator<EnumerateAll> {
         // last result. Next call will return None.
         // self.singleton_state is recycled as a flag indicating
         // exhaustion.
-        log(Channel::Debug, 5, "Setting singleton state to MAX, because application state is maximum.");
+        log(
+          Channel::Debug,
+          5,
+          "Setting singleton state to MAX, because application state is maximum."
+        );
         self.singleton_state = u32::MAX;
       } else {
         // We haven't exhausted the generator yet.
@@ -237,7 +255,9 @@ impl Iterator for AFAGenerator<EnumerateOne> {
       }
       self.singleton_state = u32::MAX;
 
-      Some(Sequence::from_children(self.function.children.clone()))
+      Some(
+        SExpression::children(&self.function)[1..].to_vec()
+      )
     }
 }
 
@@ -247,8 +267,7 @@ impl Iterator for AFAGenerator<EnumerateNoUnapplied> {
 
   fn next(&mut self) -> Option<Sequence> {
     // Very similar to EnumerateAll, except there is no `self.singleton_state`.
-    let mut n = self.function.len();
-    n = if n > 32 { 32 } else { n };
+    let mut n = min(self.function.len(), 32);
     // The (n-1) in the formula below is because there are (n-1) spaces between n
     // elements.
     let max_application_state: u32 = ((1 << (n-1)) - 1) as u32;
@@ -274,13 +293,14 @@ impl Iterator for AFAGenerator<EnumerateNoUnapplied> {
     for position in 1..n+1 {
       if position == n || ((1 << (position-1)) & application_state) > 0 {
         // Boundary.
-        let mut new_function = self.function.duplicate_head();
+        let function_children = SExpression::children(&self.function);
+        let mut new_function_children = vec![function_children[0].clone()];
+        new_function_children.extend(
+          (last_boundary_position..position).map(|child_idx| {function_children[child_idx+1].clone()})
+        );
+        let mut new_function = Atom::SExpression(Rc::new(new_function_children));
 
-        for child_idx in last_boundary_position..position {
-          new_function.push(self.function.part(child_idx));
-        }
-
-        result_sequence.push(Rc::new(new_function.into()));
+        result_sequence.push(new_function);
 
         last_boundary_position = position;
       } // end if boundary
@@ -306,17 +326,17 @@ impl Iterator for AFAGenerator<EnumerateNoUnapplied> {
 
 /// Associative-Commutative Function Application Generator
 pub struct AFACGenerator<EnumerationType> {
-  function     : Function,
+  function     : Atom,
   afa_generator: AFAGenerator<EnumerationType>,
   permutations : Permutations
 }
 
 
 impl FunctionApplicationGenerator for AFACGenerator<EnumerateAll> {
-  fn new(function: Function) -> AFACGenerator<EnumerateAll> {
+  fn new(function: Atom) -> AFACGenerator<EnumerateAll> {
     log(Channel::Debug, 5, format!("Creating AF-AC for {}", function).as_str());
 
-    let mut permutations = Permutations::new(function.len() as u8).unwrap();
+    let mut permutations = Permutations::new(function.len() as u8 - 1u8).unwrap(); // skip the head
     // The first permutation is the identity, so just clone the function.
     permutations.next();
     let afa_generator    = AFAGenerator::<EnumerateAll>::new(function.clone());
@@ -346,11 +366,10 @@ impl Iterator for AFACGenerator<EnumerateAll> {
           },
 
           Some(permutation) => {
-            let ordered_children =
-              permutation.map(|n| self.function.part(n as usize))
+            let ordered_children: Vec<Atom> =
+              permutation.map(|n| SExpression::part(&self.function, n as usize))
                          .collect::<Vec<_>>();
-            let mut permuted_function = self.function.duplicate_head();
-            permuted_function.children = ordered_children;
+            let permuted_function: Atom = SExpression::new(self.function.head(), ordered_children);
             self.afa_generator = AFAGenerator::<EnumerateAll>::new(permuted_function);
 
             self.afa_generator.next()
@@ -360,8 +379,8 @@ impl Iterator for AFACGenerator<EnumerateAll> {
       } // end branch self.afa_generator.next()==None
 
 
-      _some => {
-        _some
+      some => {
+        some
       }
 
     } // end match on self.afa_generator.next()
@@ -370,7 +389,7 @@ impl Iterator for AFACGenerator<EnumerateAll> {
 }
 
 impl FunctionApplicationGenerator for AFACGenerator<EnumerateOne> {
-  fn new(function: Function) -> AFACGenerator<EnumerateOne> {
+  fn new(function: Atom) -> AFACGenerator<EnumerateOne> {
     let permutations  = Permutations::new(1).unwrap();
     let afa_generator = AFAGenerator::<EnumerateOne>::new(function.clone());
 
@@ -392,8 +411,8 @@ impl Iterator for AFACGenerator<EnumerateOne> {
 
 
 impl FunctionApplicationGenerator for AFACGenerator<EnumerateNoUnapplied> {
-  fn new(function: Function) -> AFACGenerator<EnumerateNoUnapplied> {
-    let mut permutations = Permutations::new(function.len() as u8).unwrap();
+  fn new(function: Atom) -> AFACGenerator<EnumerateNoUnapplied> {
+    let mut permutations = Permutations::new(function.len() as u8 - 1u8).unwrap(); // skip the head
     // The first permutation is the identity, so just clone the function.
     permutations.next();
     let afa_generator    = AFAGenerator::<EnumerateNoUnapplied>::new(function.clone());
@@ -406,7 +425,7 @@ impl FunctionApplicationGenerator for AFACGenerator<EnumerateNoUnapplied> {
   }
 }
 
-
+// todo: Implement this in `AFACGenerator<EnumerationType>` (generically) if possible.
 impl Iterator for AFACGenerator<EnumerateNoUnapplied> {
   type Item = Sequence;
 
@@ -427,11 +446,10 @@ impl Iterator for AFACGenerator<EnumerateNoUnapplied> {
           },
 
           Some(permutation) => {
-            let ordered_children =
-              permutation.map(|n| self.function.part(n as usize))
-                         .collect::<Vec<_>>();
-            let mut permuted_function = self.function.duplicate_head();
-            permuted_function.children = ordered_children;
+            let ordered_children: Vec<Atom> =
+                permutation.map(|n| SExpression::part(&self.function, n as usize))
+                           .collect::<Vec<_>>();
+            let permuted_function: Atom = SExpression::new(self.function.head(), ordered_children);
             self.afa_generator = AFAGenerator::<EnumerateNoUnapplied>::new(permuted_function);
 
             self.afa_generator.next()
@@ -441,8 +459,8 @@ impl Iterator for AFACGenerator<EnumerateNoUnapplied> {
       } // end branch self.afa_generator.next()==None
 
 
-      _some => {
-        _some
+      some => {
+        some
       }
 
     } // end match on self.afa_generator.next()
@@ -454,7 +472,7 @@ impl Iterator for AFACGenerator<EnumerateNoUnapplied> {
 
 pub struct RuleSVE<T>
   where T: FunctionApplicationGenerator {
-  dfe: DestructuredFunctionEquation,
+  match_equation: MatchEquation,
   /// A `Sequence`, holds the terms of the ground that we have attempted to match
   /// against so far.
   ground_sequence: Sequence,
@@ -483,7 +501,7 @@ impl<T> MatchGenerator for RuleSVE<T>
     where T: FunctionApplicationGenerator
 {
   fn match_equation(&self) -> MatchEquation {
-    self.dfe.match_equation.clone()
+    self.match_equation.clone()
   }
 }
 
@@ -494,10 +512,11 @@ impl<T> Iterator for RuleSVE<T>
 
   fn next(&mut self) -> MaybeNextMatchResult {
     // Have we produced the empty sequence?
+
     #[cfg(not(feature = "strict-associativity"))]
     match &mut self.afa_generator {
       None => {
-        self.afa_generator = Some(Box::new(T::new(self.dfe.ground_function.duplicate_head())));
+        self.afa_generator = Some(Box::new(T::new(SExpression::duplicate_with_head(self.match_equation.ground))));
         // Return the empty sequence.
         self.make_next(Sequence::default())
       },
@@ -507,21 +526,21 @@ impl<T> Iterator for RuleSVE<T>
             match afa_generator.next() {
               None => {
                 // Are there any more terms to take?
-                if self.dfe.ground_function.len() == self.ground_sequence.len() {
+                if self.match_equation.ground.len() == self.ground_sequence.len() + 1 { // adjust for head
                   // No more terms.
                   return None;
                 }
 
                 // Take the next term from the ground function.
-                self.ground_sequence.children.push(
-                  self.dfe.ground_function.children[
-                      self.ground_sequence.len()
-                      ].clone()
+                self.ground_sequence.push(
+                  SExpression::part(
+                    self.match_equation.ground,
+                    self.ground_sequence.len() + 1 // add 1 to skip head
+                  )
                 );
 
                 // Create a new AFAGenerator.
-                let mut afa_function = self.dfe.ground_function.duplicate_head();
-                afa_function.children = self.ground_sequence.children.clone();
+                let mut afa_function = SExpression::new(self.match_equation.ground.head(), self.ground_sequence.clone());
 
                 let mut new_afa_generator = T::new(afa_function);
                 let next_result = new_afa_generator.next().unwrap();
@@ -544,26 +563,24 @@ impl<T> Iterator for RuleSVE<T>
       match self.afa_generator.next() {
         None => {
           // Are there any more terms to take?
-          if self.dfe.ground_function.len() == self.ground_sequence.len() {
+          if self.match_equation.ground.len() == self.ground_sequence.len() + 1 { // adjust for head
             // No more terms.
             return None;
           }
 
           // Take the next term from the ground function.
-          self.ground_sequence.children.push(
-            self.dfe.ground_function.children[
-                self.ground_sequence.len()
-                ].clone()
+          self.ground_sequence.push(
+            SExpression::part(
+              &self.match_equation.ground,
+              self.ground_sequence.len() + 1 // add 1 to skip head
+            )
           );
 
           // Create a new AFAGenerator.
-          let mut afa_function = self.dfe.ground_function.duplicate_head();
-          afa_function.children = self.ground_sequence.children.clone();
+          let mut afa_function = SExpression::new(self.match_equation.ground.head(), self.ground_sequence.clone());
 
           let mut new_afa_generator = T::new(afa_function);
           let next_result = new_afa_generator.next().unwrap();
-
-
           self.afa_generator = Box::new(new_afa_generator);
 
           next_result
@@ -582,13 +599,12 @@ impl<T> RuleSVE<T>
     where T: FunctionApplicationGenerator
 {
   pub fn new(me: MatchEquation) -> RuleSVE<T> {
-    let dfe = DestructuredFunctionEquation::new(&me).unwrap();
 
     #[cfg(feature = "strict-associativity")]
-    let afa_generator = Box::new(T::new(dfe.ground_function.duplicate_head()));
+    let afa_generator = Box::new(T::new(SExpression::duplicate_with_head(&me.ground)));
 
     RuleSVE{
-      dfe,
+      match_equation: me,
       ground_sequence: Sequence::default(),
       #[cfg(not(feature = "strict-associativity"))]
       afa_generator  : None,
@@ -599,44 +615,46 @@ impl<T> RuleSVE<T>
 
   // Constructs the next result using components of `self`.
   fn make_next(&self, ordered_sequence: Sequence) -> MaybeNextMatchResult {
-    let mut match_equation_ground = self.dfe.ground_function.duplicate_head();
-    // Todo: Does this do the right thing when `ground_function.len()==ground_sequence.len()`?
-    self.dfe.ground_function
-        .children[self.ground_sequence.len()..]
-        .clone_into(
-          &mut match_equation_ground.children
-        );
+
+    let mut match_equation_ground = { // scope of extras
+      let mut match_equation_ground_children = vec![self.match_equation.ground.head()];
+      match_equation_ground_children.extend(
+        // Todo: Does this do the right thing when `ground_function.len()==ground_sequence.len()`?
+        SExpression::children(&self.match_equation.ground)[self.ground_sequence.len()..].iter().cloned()
+      );
+      Atom::SExpression(Rc::new(match_equation_ground_children))
+    };
 
     let result_equation =
       NextMatchResult::MatchEquation(
         MatchEquation{
-          pattern: self.dfe.pattern_rest.clone(),
-          ground: Rc::new(match_equation_ground.into())
+          pattern: self.match_equation.pattern_rest(),
+          ground: match_equation_ground
         }
       );
 
     let result_substitution = NextMatchResult::sub(
-      self.dfe.pattern_first.clone(),
-      Rc::new(ordered_sequence.into())
+      self.match_equation.pattern_first(),
+      SExpression::sequence(ordered_sequence)
     );
 
     Some(smallvec![result_equation, result_substitution])
   }
 
 
-  pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<Self> {
+  pub fn try_rule(me: &MatchEquation) -> Option<Self> {
     // The only requirement is that pattern's first child is a sequence variable.
-    if dfe.pattern_function.len() > 0
-      && dfe.pattern_function.part(0).kind() == ExpressionKind::SequenceVariable {
+    if me.pattern.len() > 1
+      && SExpression::part(&me.pattern, 1).is_sequence_variable().is_some() {
 
       Some(
         Self{
-          dfe            : dfe.clone(),
+          match_equation : me.clone(),
           ground_sequence: Sequence::default(),
           #[cfg(not(feature = "strict-associativity"))]
           afa_generator  : None,
           #[cfg(feature = "strict-associativity")]
-          afa_generator  : Box::new(T::new(dfe.ground_function.duplicate_head())),
+          afa_generator  : Box::new(T::new(SExpression::duplicate_with_head(&me.ground))),
         }
       )
     } else {
@@ -654,16 +672,18 @@ mod tests {
   use std::rc::Rc;
   use super::*;
   use crate::{
-    atom::Atom,
+    atom::{
+      Atom,
+      Symbol
+    },
     expression::RcExpression
   };
 
 
   #[test]
   fn generate_all_afa_applications() {
-    let children = vec!["a", "b", "c"].iter().map(|x| Rc::new(Symbol::from(*x).into())).collect::<Vec<RcExpression>>();
-    let mut f = Function::with_symbolic_head("ƒ");
-    f.children = children;
+    let children = vec!["ƒ", "a", "b", "c"].iter().map(|x| Symbol::from_static_str(x)).collect::<Vec<Atom>>();
+    let mut f = Atom::SExpression(Rc::new(children));
 
     let mut afa_generator = AFAGenerator::<EnumerateAll>::new(f);
 
@@ -691,16 +711,14 @@ mod tests {
 
   #[test]
   fn generate_all_afac_applications() {
-    let children = vec!["a", "b", "c"].iter().map(|x| Rc::new(Symbol::from(*x).into())).collect::<Vec<RcExpression>>();
-    let mut f = Function::with_symbolic_head("ƒ");
-    f.children = children;
+    let children = vec!["ƒ", "a", "b", "c"].iter().map(|x| Symbol::from_static_str(x)).collect::<Vec<Atom>>();
+    let mut f = Atom::SExpression(Rc::new(children));
 
     let mut afac_generator = AFACGenerator::<EnumerateAll>::new(f);
 
     // for result in afac_generator {
     //   println!("{}", result);
     // }
-
     assert_eq!("(a, b, c)", afac_generator.next().unwrap().to_string());
     assert_eq!("(ƒ❨a❩, b, c)", afac_generator.next().unwrap().to_string());
     assert_eq!("(a, ƒ❨b❩, c)", afac_generator.next().unwrap().to_string());
@@ -785,22 +803,19 @@ mod tests {
 
   #[test]
   fn generate_one_afa_application() {
-    let children = vec!["a", "b", "c"].iter().map(|x| Rc::new(Symbol::from(*x).into())).collect::<Vec<RcExpression>>();
-    let mut f = Function::with_symbolic_head("ƒ");
-    f.children = children;
+    let children = vec!["ƒ", "a", "b", "c"].iter().map(|x| Rc::new(Symbol::from_static_str(x).into())).collect::<Vec<Atom>>();
+    let mut f = Atom::SExpression(Rc::new(children));
 
     let mut afa_generator = AFAGenerator::<EnumerateOne>::new(f);
 
     assert_eq!("(a, b, c)", afa_generator.next().unwrap().to_string());
     assert_eq!(None, afa_generator.next());
-
   }
 
   #[test]
   fn generate_one_afac_application() {
-    let children = vec!["a", "b", "c"].iter().map(|x| Rc::new(Symbol::from(*x).into())).collect::<Vec<RcExpression>>();
-    let mut f = Function::with_symbolic_head("ƒ");
-    f.children = children;
+    let children = vec!["ƒ", "a", "b", "c"].iter().map(|x| Rc::new(Symbol::from_static_str(x).into())).collect::<Vec<Atom>>();
+    let mut f = Atom::SExpression(Rc::new(children));
 
     let mut afac_generator = AFACGenerator::<EnumerateOne>::new(f);
 
@@ -811,9 +826,8 @@ mod tests {
 
   #[test]
   fn generate_no_unapplied_afa_applications() {
-    let children = vec!["a", "b", "c"].iter().map(|x| Rc::new(Symbol::from(*x).into())).collect::<Vec<RcExpression>>();
-    let mut f = Function::with_symbolic_head("ƒ");
-    f.children = children;
+    let children = vec!["ƒ", "a", "b", "c"].iter().map(|x| Rc::new(Symbol::from_static_str(x).into())).collect::<Vec<Atom>>();
+    let mut f = Atom::SExpression(Rc::new(children));
 
     let mut afa_generator = AFAGenerator::<EnumerateNoUnapplied>::new(f);
 
@@ -828,9 +842,8 @@ mod tests {
 
   #[test]
   fn generate_no_unapplied_afac_applications() {
-    let children = vec!["a", "b", "c"].iter().map(|x| Rc::new(Symbol::from(*x).into())).collect::<Vec<RcExpression>>();
-    let mut f = Function::with_symbolic_head("ƒ");
-    f.children = children;
+    let children = vec!["ƒ", "a", "b", "c"].iter().map(|x| Rc::new(Symbol::from_static_str(x).into())).collect::<Vec<Atom>>();
+    let mut f = Atom::SExpression(Rc::new(children));
 
     let mut afac_generator = AFACGenerator::<EnumerateNoUnapplied>::new(f);
 

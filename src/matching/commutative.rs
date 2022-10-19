@@ -13,14 +13,12 @@ non-associative, and S = {x&#773; ≈ ❴t₁,…,tₙ❵ }.
 
 */
 
-use std::rc::Rc;
-
+use std::cmp::min;
 use smallvec::smallvec;
 use permutation_generator::PermutationGenerator32 as Permutations;
 
 use crate::{
-  atom::Atom,
-  expression::ExpressionKind,
+  atom::SExpression,
   matching::decomposition::{
     NonAssociative,
     RuleDecCommutative
@@ -28,7 +26,6 @@ use crate::{
 };
 
 use super::{
-  destructure::DestructuredFunctionEquation,
   MatchEquation,
   match_generator::{
     MatchGenerator,
@@ -41,7 +38,7 @@ use super::{
 pub type RuleDecC = RuleDecCommutative<NonAssociative>;
 
 pub struct RuleSVEC {
-  dfe: DestructuredFunctionEquation,
+  match_equation: MatchEquation,
   /// Bit positions indicate which subset of the ground's children are currently
   /// being matched against. You'd be crazy to try to match against all
   /// subsets of a set with more than 32 elements. We use `u32::MAX` ==
@@ -55,7 +52,7 @@ pub struct RuleSVEC {
 impl RuleSVEC {
   pub fn new(me: MatchEquation) -> RuleSVEC {
     RuleSVEC{
-      dfe         : DestructuredFunctionEquation::new(&me).unwrap(),
+      match_equation: me,
       #[cfg(feature = "strict-associativity")]      // Skip the empty subset
       subset      : 1,
       #[cfg(not(feature = "strict-associativity"))] // Include the empty subset
@@ -64,14 +61,15 @@ impl RuleSVEC {
     }
   }
 
-  pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<Self> {
-    if dfe.pattern_function.len() > 0
-        && dfe.pattern_function.part(0).kind() == ExpressionKind::SequenceVariable
-        && dfe.ground_function.len() > 0 {
-
+  pub fn try_rule(me: &MatchEquation) -> Option<Self> {
+    // Patter: f[«x»]
+    // Ground: g[a,…]
+    if me.pattern.len() > 1
+        && SExpression::part(&me.pattern, 1).is_sequence_variable().is_some()
+        && me.ground.len() > 1 {
       Some(
         RuleSVEC {
-          dfe         : dfe.clone(),
+          match_equation: me.clone(),
           #[cfg(feature = "strict-associativity")]      // Skip the empty subset
           subset      : 1,
           #[cfg(not(feature = "strict-associativity"))] // Include the empty subset
@@ -79,7 +77,6 @@ impl RuleSVEC {
           permutations: Permutations::new(1).unwrap(),
         }
       )
-
     } else {
       None
     }
@@ -92,10 +89,8 @@ impl Iterator for RuleSVEC {
   type Item = NextMatchResultList;
 
   fn next(&mut self) -> MaybeNextMatchResult {
-    let mut n = self.dfe.ground_function.len();
-    n = if n > 31 { 31 } else { n };
+    let mut n = min(self.match_equation.ground.len(), 31);
     let max_subset_state: u32 = ((1 << n) - 1) as u32;
-
 
     /*
       In Dundua, the strict associativity axiom is
@@ -116,12 +111,12 @@ impl Iterator for RuleSVEC {
       self.subset += 1;
       self.permutations = Permutations::new(1).unwrap();
       let substitution = NextMatchResult::sub(
-        self.dfe.pattern_first.clone(),
-        Rc::new(Sequence::default().into())
+        self.match_equation.pattern_first(),
+        SExpression::empty_sequence()
       );
       let match_equation = NextMatchResult::eq(
-        self.dfe.pattern_rest.clone(),
-        self.dfe.match_equation.ground.clone(),
+        self.match_equation.pattern_rest(),
+        self.match_equation.ground.clone(),
       );
       return Some(
         smallvec![
@@ -130,7 +125,6 @@ impl Iterator for RuleSVEC {
         ]
       );
     }
-
 
     let permutation = // the value of this match
     match self.permutations.next() {
@@ -159,7 +153,11 @@ impl Iterator for RuleSVEC {
     // complement, which will go in the new match equation.
     let mut subset = vec![];
     let mut complement = vec![];
-    for (k, c) in self.dfe.ground_function.children.iter().enumerate(){
+    let ground_children = SExpression::children(&self.match_equation.ground);
+    let mut child_iter = ground_children.iter();
+    // Skip the head
+    child_iter.next();
+    for (k, c) in child_iter.enumerate(){
       if k == 31 {
         break;
       }
@@ -169,19 +167,17 @@ impl Iterator for RuleSVEC {
         complement.push(c.clone());
       }
     }
-    let ordered_children = permutation.map(|idx| subset[idx as usize].clone()).collect::<Vec<_>>();
 
+    let ordered_children = permutation.map(|idx| subset[idx as usize].clone()).collect::<Vec<_>>();
     let substitution = NextMatchResult::sub(
-      self.dfe.pattern_first.clone(),
-      Rc::new(Sequence::from_children(ordered_children).into())
+      self.match_equation.pattern_first(),
+      SExpression::sequence(ordered_children)
     );
 
-    let mut new_ground_function = self.dfe.ground_function.duplicate_head();
-    new_ground_function.children = complement;
-
+    let new_ground_function = SExpression::new(self.match_equation.ground.head(), complement);
     let match_equation = NextMatchResult::eq(
-      self.dfe.pattern_rest.clone(),
-      Rc::new(new_ground_function.into()),
+      self.match_equation.pattern_rest(),
+      new_ground_function,
     );
 
     Some(
@@ -196,40 +192,46 @@ impl Iterator for RuleSVEC {
 
 impl MatchGenerator for RuleSVEC {
   fn match_equation(&self) -> MatchEquation {
-    self.dfe.match_equation.clone()
+    self.match_equation.clone()
   }
 }
 
-
+// todo: I think these tests should fail unless g/f are commutative. Indeed, the rule under test should never fire
+//       otherwise.
 #[cfg(test)]
 mod tests {
+  use std::rc::Rc;
   use super::*;
   use crate::{
-    atoms::{
-      SequenceVariable,
+    atom::{
+      Atom,
+      SExpression,
       Symbol,
-      Function,
-      Variable
-    },
-    expression::RcExpression
+    }
   };
-
 
   #[test]
   fn generate_rule_svec() {
-    let x: RcExpression = Rc::new(SequenceVariable::from("x").into());
-    let mut rest = ["u", "v", "w"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
-    let mut f = Function::with_symbolic_head("ƒ");
+    let f = { // scope of children
+      let mut children = vec![
+        Symbol::from_static_str("ƒ"),
+        SExpression::sequence_variable("x")
+      ];
+      let mut rest = ["u", "v", "w"].iter()
+                                    .map(|&n| Symbol::from_static_str(n))
+                                    .collect::<Vec<Atom>>();
+      children.append(&mut rest);
+      Atom::SExpression(Rc::new(children))
+    };
 
-    f.push(x);
-    f.children.append(&mut rest);
-
-    let mut g = Function::with_symbolic_head("ƒ");
-    g.children = ["a", "b", "c"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
+    let g = { // scope of children
+      let children = ["ƒ", "a", "b", "c"].iter().map(|&n| Symbol::from_static_str(n)).collect::<Vec<Atom>>();
+      Atom::SExpression(Rc::new(children))
+    };
 
     let me = MatchEquation{
-        pattern: Rc::new(f.into()),
-        ground: Rc::new(g.into()),
+        pattern: f,
+        ground : g,
     };
 
     let rule_svec = RuleSVEC::new(me);
@@ -283,19 +285,28 @@ mod tests {
 
   #[test]
   fn generate_rule_decc() {
-    let s: RcExpression = Rc::new(Variable::from("s").into());
-    let mut rest = ["u", "v", "w"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
-    let mut f = Function::with_symbolic_head("ƒ");
+    let f: Atom = { // scope of children, rest
+      let mut children = vec![
+        Symbol::from_static_str("ƒ"),
+        SExpression::variable("s")
+      ];
+      let mut rest = ["u", "v", "w"].iter()
+                                    .map(|&n| Symbol::from_static_str(n))
+                                    .collect::<Vec<Atom>>();
+      children.append(&mut rest);
+      Atom::SExpression(Rc::new(children))
+    };
 
-    f.push(s);
-    f.children.append(&mut rest);
-
-    let mut g = Function::with_symbolic_head("ƒ");
-    g.children = ["a", "b", "c", "d"].iter().map(|&n| Rc::new(Symbol::from(n).into())).collect::<Vec<RcExpression>>();
+    let mut g: Atom = { // scope of children
+      let mut children = ["ƒ", "a", "b", "c", "d"].iter()
+                                         .map(|&n| Symbol::from_static_str(n))
+                                         .collect::<Vec<Atom>>();
+      Atom::SExpression(Rc::new(children))
+    };
 
     let me = MatchEquation{
-        pattern: Rc::new(f.into()),
-        ground: Rc::new(g.into()),
+        pattern: f,
+        ground : g,
     };
     let rule_decc = RuleDecC::new(me);
 

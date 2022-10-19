@@ -3,7 +3,7 @@
 Facilities for evaluating expressions within a context.
 
 Evaluating an instance of `Replace` or `ReplaceAll` is equivalent to evaluating with a Context that is empty except
-for the `own_values` the replacements represent.
+for the `OwnValues` the replacements represent.
 
 `*Set` evaluates its RHS at definition time, while `*SetDelayed` evaluates its RHS at substitution time. All are
 stored in the form `RuleDelayed[ HoldPattern[ lhs ], rhs ]`
@@ -13,53 +13,43 @@ Todo: implement scoping.
  */
 
 use std::{
-  iter,
   rc::Rc
 };
 use crate::{
   context::SymbolValue,
   atom::Atom,
-  Context,
-  expression::{
-    Expression,
-    RcExpression,
-  },
   matching::{Matcher, SolutionSet},
-  logging::{log, Channel}
+  logging::{log, Channel},
+  context::Context
 };
+use crate::context::ContextValueStore;
+use crate::interner::InternedString;
 
 /// Evaluates `expression` in `context`.
-pub fn evaluate(expression: RcExpression, context: &mut Context) -> RcExpression {
-  // This function assumes the caller has already taken care of any `up_values`.
-  // Numbers and variables evaluate to themselves, and sequences should not exist (except possibly as the sequence
-  // function `Sequence[…]`). It suffices to only take care of the `Symbol` and `Function` cases.
-  let original_hash = expression.hash();
+pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
+  // This function assumes the caller has already taken care of any `UpValues`.
+  // Numbers and variables evaluate to themselves. It suffices to only take care
+  // of the `Symbol` and `Function` cases.
+  // let original_hash = expression.hash();
 
-  match expression.as_ref() {
-    | Expression::Sequence(_)
-    | Expression::Variable(_)
-    | Expression::SequenceVariable(_)
-    | Expression::StringLiteral(_)
-    | Expression::Integer(_)
-    | Expression::Real(_) => { expression }
+  match &expression {
+    Atom::Symbol(symbol) => {
+      // Look for OwnValues.
 
-    Expression::Symbol(symbol) => {
-      // Look for own_values.
-      if let Some(own_values) = context.get_own_values(expression.name().as_str()) {
-        if let Some(exp) = try_definitions(expression.clone(), &own_values, context) {
-          return exp;
-        }
+      if let Some(exp) = try_definitions(expression.clone(), *symbol, ContextValueStore::OwnValues, context) {
+        return exp;
       }
-      return expression;
+      expression
     }
 
-    Expression::Function(function) => {
-      // Step 1: Look for `up_values` for each child.
-      // For up_values, we match on the parent instead of the expression itself.
+    Atom::SExpression(children) => {
+      // Step 1: Look for `UpValues` for each child.
+      // For UpValues, we match on the parent instead of the expression itself.
       log(Channel::Debug, 5, "Evaluating function. Checking for upvalues.");
-      for child in function.children.iter() {
-        if let Some(up_values) = context.get_up_values(child.name().as_str()) {
-          if let Some(exp) = try_definitions(expression.clone(), &up_values, context) {
+      for child in children[1..].iter() {
+        if let Some(name) = child.name() {
+          if let Some(exp) = try_definitions(expression.clone(), name, ContextValueStore::UpValues, context) {
+            // todo: Return here or..?
             return exp;
           }
         }
@@ -67,54 +57,54 @@ pub fn evaluate(expression: RcExpression, context: &mut Context) -> RcExpression
 
       // Step 2: Evaluate all children.
       log(Channel::Debug, 5, "Evaluating children.");
-      let mut f = function.duplicate_head();
-      f.children = function.children.iter().map(|child| evaluate(child.clone(), context)).collect();
-      if original_hash != f.hash() {
-        // We have changed the expression somehow, which might affect the application of up_values. Abort this
+      let mut new_children: Vec<Atom>
+          = children.iter().map(|child| evaluate(child.clone(), context)).collect();
+      // if original_hash != f.hash() {
+      if new_children == *children.as_ref() {
+        // We have changed the expression somehow, which might affect the application of UpValues. Abort this
         // evaluation in favor of evaluation of the new function.
-        return evaluate(Rc::new(f.into()), context);
+        return evaluate(Atom::SExpression(Rc::new(new_children)), context);
       }
 
-      // Step 3: Evaluate down_values
+      // Step 3: Evaluate DownValues
       log(Channel::Debug, 5, "Looking for down values.");
-      let symbol_record = context.get_symbol(expression.name().as_str());
-      if !symbol_record.down_values.is_empty() {
-        log(Channel::Debug, 5, "Found down values.");
-        // todo: Get rid of this copy.
-        let down_values = symbol_record.down_values.clone();
-        if let Some(exp) = try_definitions(expression.clone(), &down_values, context) {
+      if let Some(name) = expression.name() {
+        if let Some(exp) = try_definitions(expression.clone(), name, ContextValueStore::DownValues, context) {
           return exp;
         }
       }
 
       // Step 4: Done?
-      return expression;
+      expression
+    } // end Atom::SExpression arm.
 
-    } // end Expression::Function arm.
-  } // end match on Expression enum.
+    any_other_expression => expression
+  } // end match on Atom enum.
 
   // Ok(new_expression)
 } // end evaluate.
 
 /**
 Evaluating rules with conditions is a bit meta, because evaluation is
-defined in terms of evaluation. That is, to evalaute a rule, one must first
+defined in terms of evaluation. That is, to evaluate a rule, one must first
 evaluate the condition. To break the infinite regress, most rules do not have
 conditions, and most conditions are either simple or do not themselves have
 conditions.
 */
-fn check_condition(condition: RcExpression, substitutions: &SolutionSet, context: &mut Context)
+fn check_condition(condition: Atom, substitutions: &SolutionSet, context: &mut Context)
     -> bool
 {
   let condition_expression = replace_all(condition, substitutions);
   let condition_result = evaluate(condition_expression, context);
-  condition_result.name() == "True"
+  condition_result.is_true()
 }
 
-fn try_definitions(expression: RcExpression, definitions: &Vec<SymbolValue>, context: &mut Context)
-  -> Option<RcExpression>
+fn try_definitions(expression: Atom, symbol: InternedString, value_store: ContextValueStore, context: &mut Context)
+  -> Option<Atom>
 {
-  if let Some((symbol_value, substitutions)) = find_matching_definition(expression.clone(), definitions){
+
+  if let Some((symbol_value, substitutions))
+    = find_matching_definition(expression.clone(), symbol, value_store, context){
     match symbol_value {
       SymbolValue::Definitions {rhs, condition,..} => {
         // Only try if the side condition is true
@@ -147,8 +137,27 @@ fn try_definitions(expression: RcExpression, definitions: &Vec<SymbolValue>, con
 }
 
 /// If any of the patterns in the vector of ``SymbolValue``'s match, return the RHS and the substitutions for the match.
-fn find_matching_definition(ground: RcExpression, definitions: &Vec<SymbolValue>)
-  -> Option<(&SymbolValue, SolutionSet)> {
+fn find_matching_definition(ground: Atom, symbol: InternedString, value_store: ContextValueStore, context: &mut Context)
+    -> Option<(SymbolValue, SolutionSet)>
+{
+
+  let definitions = {
+    let record = context.get_symbol_mut(symbol);
+    match value_store {
+      ContextValueStore::OwnValues => &record.own_values,
+      ContextValueStore::UpValues => &record.up_values,
+      ContextValueStore::DownValues => &record.down_values,
+      ContextValueStore::SubValues => &record.sub_values,
+      _ => unimplemented!()
+      // ContextValueStore::NValues => {}
+      // ContextValueStore::DisplayFunction => {}
+    }.clone() // todo: Get rid of this egregious clone.
+  };
+
+  if !definitions.is_empty() {
+    log(Channel::Debug, 5, format!("Found {:?}.", value_store).as_str());
+  }
+
   for symbol_value in definitions.iter() {
     log(Channel::Debug, 5, "Value found: ");
     let pattern =
@@ -166,11 +175,11 @@ fn find_matching_definition(ground: RcExpression, definitions: &Vec<SymbolValue>
         }
 
       };
-    log(Channel::Debug, 5, format!("pattern = {}", pattern).as_str());
-    let mut matcher = Matcher::new(pattern.clone(), ground.clone());
+    log(Channel::Debug, 5, format!("pattern = {}", (*pattern).to_string()).as_str());
+    let mut matcher = Matcher::new(pattern.clone(), ground.clone(), context);
     if let Some(substitutions) = (&mut matcher).next() {
       log(Channel::Debug, 5, format!("Pattern matched!").as_str());
-      return Some((symbol_value, substitutions));
+      return Some((symbol_value.clone(), substitutions));
     }
   } // end iterate over definitions
   None
@@ -178,74 +187,76 @@ fn find_matching_definition(ground: RcExpression, definitions: &Vec<SymbolValue>
 
 
 /// Performs all substitutions in the given solution set on expression.
-pub fn replace_all(expression: RcExpression, substitutions: &SolutionSet) -> RcExpression {
-  match expression.as_ref() {
+pub fn replace_all(expression: Atom, substitutions: &SolutionSet) -> Atom {
+  match &expression {
 
-    | Expression::Variable(_)
-    | Expression::SequenceVariable(_) => {
-      match substitutions.get(expression.as_ref()) {
+    Atom::SExpression(children) => {
+      // Do a `ReplaceAll` on the children
+      let new_children =
+          children.iter()
+                  .map(|c| replace_all(c.clone(), substitutions))
+                  .collect();
+
+      Atom::SExpression(Rc::new(new_children))
+    }
+
+
+    expr if expr.is_any_variable_kind() => {
+      match substitutions.get(&expression) {
         Some(e) => e.clone(),
         None    => expression
       }
     },
 
-    Expression::Function(function) => {
-      // Do a `ReplaceAll` on the children
-      let head = replace_all(function.head.clone(), substitutions);
-      // Do a `ReplaceAll` on the children
-      let children = function.children.iter().map(|c| replace_all(c.clone(), substitutions)).collect();
-      Rc::new(Function{
-        head,
-        children,
-        attributes: function.attributes,
-        .. Function::default()
-      }.into())
-    }
-
-    _ => {
-      expression
-    }
+    _ => expression
   }
 }
 
 
-pub fn apply(function: RcExpression, expression: RcExpression) -> RcExpression {
-  let mut f = Function::new(function);
-  f.children.push(expression);
-  Rc::new(f.into())
-}
+// pub fn apply(function: Atom, expression: Atom) -> Atom {
+//   let mut f = Function::new(function);
+//   f.children.push(expression);
+//   Rc::new(f.into())
+// }
 
-/// Threads `Listable` functions, evaluates the `OneIdentity` property. Note that these two attributes cannot be set
-/// simultaneously.
-pub fn propogate_attributes(expression: RcExpression, context: &mut Context) -> RcExpression {
-  match expression.as_ref() {
+/// Threads `Listable` functions, evaluates the `OneIdentity` property. Note that these two attributes are
+/// mutually exclusive.
+pub fn propogate_attributes(expression: Atom, context: &mut Context) -> Atom {
+  match &expression {
 
-    Expression::Function(function) => {
-      let record = context.get_symbol(expression.name());
+    Atom::SExpression(children) => {
+      let outer_head = children[0].clone();
+      let record = context.get_symbol_mut(outer_head.name().unwrap());
 
-      if record.attributes.listable() && function.children.len()==1{
-        match function.children.first().unwrap().as_ref() {
-          Expression::Function(inner_function) => {
-
-            let mut f = inner_function.duplicate_head();
-            f.children = inner_function.children
-                .iter()
-                .map(|e| {
-                  // apply function.head to e.
-                  propogate_attributes(apply(function.head.clone(), e.clone()), context)
-                }).collect();
-            return Rc::new(f.into());
+      if record.attributes.listable() && children.len() == 2 {
+        match &children[1] {
+          Atom::SExpression(inner_children) => {
+            let mut new_children = inner_children[0..1].to_vec();
+            new_children.extend(
+              inner_children[1..].iter()
+                                 .map(|e| {
+                                   // apply outer_head to e and recurse.
+                                   propogate_attributes(
+                                     Atom::SExpression(Rc::new(
+                                       vec![outer_head.clone(), e.clone()]
+                                     )),
+                                     context
+                                   )
+                                 })
+            );
+            Atom::SExpression(Rc::new(new_children))
           } // end match to function
 
-          _other => { return expression; }
+          _ => expression
         } // end match on only child.
       } // end if listable
-
-      if record.attributes.one_identity() && function.children.len()==1 {
-        return propogate_attributes(function.children.first().unwrap().clone(), context);
+      // OneIdentity
+      else if record.attributes.one_identity() && children.len()==2 {
+        propogate_attributes(children[0].clone(), context)
+      } else {
+        expression
       }
 
-      expression
     }
 
     _ => expression

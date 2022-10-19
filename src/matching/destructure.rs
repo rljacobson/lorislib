@@ -8,13 +8,10 @@ into `DestructuredFunctionEquation` and its constructor.
 
 */
 
-use std::rc::Rc;
-
 use crate::{
-  atom::Atom,
-  expression::{
-    RcExpression,
-    Expression
+  atom::{
+    Atom,
+    SExpression
   }
 };
 use super::{
@@ -33,46 +30,27 @@ pub struct DestructuredFunctionEquation {
   /// The original pattern function.
   pub pattern_function: Atom, // Must be `Atom::SExpression(..)`
   /// The immutable first term in the pattern.
-  pub pattern_first: RcExpression,
+  pub pattern_first: Atom,
   /// The immutable ƒ(s̃) that is always the LHS of the resulting match equation.
-  pub pattern_rest: RcExpression,
+  pub pattern_rest: Atom,
   /// Literally the destructured ground function.
   pub ground_function: Atom, // Must be `Atom::SExpression(..)`
 }
 
 impl DestructuredFunctionEquation{
-  pub fn new(me: &MatchEquation) -> Result<DestructuredFunctionEquation,()> {
-    // let mut  pattern = me.pattern.make_mut();
-    // let mut ground = Rc::<Expression>::make_mut(&mut me.ground);
+  pub fn new(me: &MatchEquation) -> DestructuredFunctionEquation {
 
-    // Destructure pattern
-    if let Expression::Function(pattern_function) = me.pattern.as_ref() {
+    // todo: Should `duplicate_with_rest` and `part` return `Result`? Right now they panic if given the wrong variant.
+    //       But everything that calls it immediately `unwrap`s it anyway.
+    let pattern_first = SExpression::part(me.pattern.clone(), 1);
+    let pattern_rest = SExpression::duplicate_with_rest(me.pattern.clone());
 
-      let pattern_rest = Rc::new(pattern_function.duplicate_with_rest().into());
-      let pattern_first = pattern_function.first().ok_or(())?;
-
-      // Destructure ground
-      if let Expression::Function(ground_function) = me.ground.as_ref() {
-        // let ground_function = f.clone();
-
-        let dfe =
-        DestructuredFunctionEquation{
-          match_equation: me.clone(),
-          pattern_function: pattern_function.clone(),
-          pattern_first,
-          pattern_rest,
-          ground_function: ground_function.clone(),
-        };
-
-        Ok(dfe)
-
-      } // end destructure ground
-      else {
-        Err(())
-      }
-    } // end destructure pattern
-    else {
-      Err(())
+    DestructuredFunctionEquation{
+      match_equation: me.clone(),
+      pattern_function: me.pattern.clone(),
+      pattern_first,
+      pattern_rest,
+      ground_function: me.ground.clone(),
     }
   }
 }

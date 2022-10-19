@@ -2,24 +2,22 @@
 #![allow(dead_code)]
 
 #[macro_use]
-mod format;
-pub mod expression;
-pub mod logging;
-mod normal_form;
-mod attributes;
 mod atom;
-mod matching;
-mod context;
-mod parsing;
+mod attributes;
 mod builtins;
+mod context;
 mod evaluate;
+#[macro_use]
+mod format;
 mod interner;
+mod matching;
+mod normal_form;
+mod parsing;
+pub mod logging;
 
-pub use evaluate::evaluate;
 pub use context::Context;
-pub use parsing::{
-  parse
-};
+pub use evaluate::evaluate;
+pub use parsing::parse;
 
 
 #[cfg(test)]

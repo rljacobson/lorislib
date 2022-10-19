@@ -1,21 +1,24 @@
 /*!
 
 The code for Dec-F and Dec-A are nearly identical. Likewise for the code for Dec-C and Dec-AC. It
-is factored out here.
+is factored out here. A few marker types distinguish the cases.
 
- */
+*/
 
-use std::rc::Rc;
 
 use smallvec::smallvec;
 
 use crate::{
   matching::{
-    match_generator::{MatchGenerator, MaybeNextMatchResult, NextMatchResult, NextMatchResultList},
-    destructure::DestructuredFunctionEquation,
+    match_generator::{
+      MatchGenerator,
+      MaybeNextMatchResult,
+      NextMatchResult,
+      NextMatchResultList
+    },
     MatchEquation
   },
-  expression::ExpressionKind,
+  atom::SExpression,
 };
 
 /// Marker types for the different decomposition types.
@@ -32,7 +35,7 @@ impl DecompositionType for NonAssociative {}
 /// Decomposition under free/associative head.
 /// ƒ(s,s̃)≪ᴱƒ(t,t̃) ⇝ᵩ {s≪ᴱt, ƒ(s̃)≪ᴱƒ(t̃)}, where ƒ is free and s∉Ꮙₛₑ.
 pub struct RuleDecNonCommutative<T> where T: DecompositionType {
-  match_equation: MatchEquation,
+  me: MatchEquation,
   exhausted     : bool,
   phantom       : std::marker::PhantomData<T>
 }
@@ -40,7 +43,7 @@ pub struct RuleDecNonCommutative<T> where T: DecompositionType {
 impl<T> RuleDecNonCommutative<T> where T: DecompositionType {
   pub fn new(match_equation: MatchEquation) -> RuleDecNonCommutative<T> {
     RuleDecNonCommutative {
-      match_equation,
+      me: match_equation,
       exhausted: false,
       phantom  : std::marker::PhantomData::<T>::default()
     }
@@ -49,79 +52,59 @@ impl<T> RuleDecNonCommutative<T> where T: DecompositionType {
 
 // Dec-F: Decomposition under free head.
 impl RuleDecNonCommutative<NonAssociative> {
-  pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<Self> {
+  pub fn try_rule(me: &MatchEquation) -> Option<Self> {
+    // Pattern: f[x,…], x not sequence variable
+    // Ground:  g[a,…]
     // Identical to criteria for other Dec-type functions. The first of pattern_function cannot be a
-    // sequence variable. It must be a function or a symbol, i.e. a non-sequence "term".
+    // sequence variable. It must be a non-sequence "term".
 
-    if dfe.pattern_function.len() > 0
-        && dfe.ground_function.len() > 0
+    if me.pattern.len() > 1
+        && me.ground.len() > 1
+        && SExpression::part(&me.pattern, 1).is_sequence_variable().is_none()
     {
-      let first = dfe.pattern_function.part(0);
-
-      // Cannot be function variable.
-      // if let Expression::Function(function) = first.as_ref() {
-      //   if function.is_function_variable() {
-      //     return None;
-      //   }
-      // }
-
-      // Cannot be a sequence variable.
-      let expr_kind = first.kind();
-      if expr_kind != ExpressionKind::SequenceVariable {
-        return Some(
-          RuleDecNonCommutative {
-            match_equation: dfe.match_equation.clone(),
-            exhausted     : false,
-            phantom       : std::marker::PhantomData::<NonAssociative>::default()
-          }
-        )
-      }
+      Some(
+        RuleDecNonCommutative {
+          me: me.clone(),
+          exhausted     : false,
+          phantom       : std::marker::PhantomData::<NonAssociative>::default()
+        }
+      )
+    } else {
+      None
     }
-
-    None
   }
 }
 
 
 // Dec-A: Decomposition under associative head.
 impl RuleDecNonCommutative<Associative> {
-  pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<Self> {
+  pub fn try_rule(me: &MatchEquation) -> Option<Self> {
     // The first of pattern_function cannot be a sequence variable or individual variable. It must
     // be a function or a symbol, i.e. a non-sequence "term".
+    // todo: In original code, we didn't check != is_variable. Was this a bug?
 
-    if dfe.pattern_function.len() > 0
-        && dfe.ground_function.len() > 0
+    if me.pattern.len() > 1
+        && me.ground.len() > 1
+        && SExpression::part(&me.pattern, 1).is_sequence_variable().is_none()
+        && SExpression::part(&me.pattern, 1).is_variable().is_none()
     {
-      let first = dfe.pattern_function.part(0);
-
-      // Cannot be function variable.
-      // if let Expression::Function(function) = first.as_ref() {
-      //   if function.is_function_variable() {
-      //     return None;
-      //   }
-      // }
-
-      // Cannot be a variable-kind: function variable, sequence variable, variable.
-      let expr_kind = first.kind();
-      if expr_kind != ExpressionKind::SequenceVariable {
-        return Some(
-          RuleDecNonCommutative {
-            match_equation: dfe.match_equation.clone(),
-            exhausted     : false,
-            phantom       : std::marker::PhantomData::default()
-          }
-        )
-      }
+      Some(
+        RuleDecNonCommutative {
+          me: me.clone(),
+          exhausted     : false,
+          phantom       : std::marker::PhantomData::default()
+        }
+      )
+    } else {
+      None
     }
-
-    None
   }
 }
 
 
 impl<T> MatchGenerator for RuleDecNonCommutative<T> where T: DecompositionType {
   fn match_equation(&self) -> MatchEquation {
-    self.match_equation.clone()
+    self.me.clone()
   }
 }
 
@@ -134,33 +117,31 @@ impl<T> Iterator for RuleDecNonCommutative<T> where T: DecompositionType {
     } else {
       self.exhausted = true;
 
-      let dfe = DestructuredFunctionEquation::new(&self.match_equation).unwrap();
 
       let result_variable_equation =
           NextMatchResult::eq(
-            dfe.pattern_first,
-            dfe.ground_function.first().unwrap()
+            self.me.pattern_first(),
+            SExpression::part(&self.me.ground, 2)
           );
 
-      let match_equation_ground = dfe.ground_function.duplicate_with_rest();
+      let match_equation_ground = SExpression::duplicate_with_rest(&self.me.ground);
       let result_function_equation =
           NextMatchResult::eq(
-            dfe.pattern_rest,
-            Rc::new(match_equation_ground.into())
+            self.me.pattern_rest(),
+            match_equation_ground
           );
 
-
       Some(smallvec![
-            result_variable_equation,
-            result_function_equation
-          ])
+        result_variable_equation,
+        result_function_equation
+      ])
     } // end else not exhausted
   }
 }
 
 
 pub struct RuleDecCommutative<T> where T: DecompositionType {
-  dfe: DestructuredFunctionEquation,
+  match_equation: MatchEquation,
   /// Which child of the ground function we are matching on.
   term_idx: u32,
   phantom: std::marker::PhantomData<T>
@@ -168,7 +149,7 @@ pub struct RuleDecCommutative<T> where T: DecompositionType {
 
 impl<T> MatchGenerator for RuleDecCommutative<T> where T: DecompositionType {
   fn match_equation(&self) -> MatchEquation {
-    self.dfe.match_equation.clone()
+    self.match_equation.clone()
   }
 }
 
@@ -178,30 +159,30 @@ impl<T> Iterator for RuleDecCommutative<T> where T: DecompositionType {
   fn next(&mut self) -> MaybeNextMatchResult {
 
     // Is there another term?
-    if self.term_idx as usize == self.dfe.ground_function.len() {
+    if self.term_idx as usize == self.match_equation.ground.len() {
       return None;
     }
 
     // Construct the result.
     let term_equation = NextMatchResult::eq(
-      self.dfe.pattern_first.clone(),
-      self.dfe.ground_function
-          .children[self.term_idx as usize]
-          .clone()
+      self.match_equation.pattern_first(),
+      SExpression::part(&self.match_equation.ground, self.term_idx as usize)
     );
 
-    let mut new_ground_function = self.dfe.ground_function.duplicate_head();
-    new_ground_function.children =
-        self.dfe.ground_function
-            .children
-            .iter()
-            .enumerate()
-            .filter_map(|(k, v)| if k != self.term_idx as usize { Some(v.clone()) } else { None })
-            .collect::<Vec<_>>();
+    let mut new_ground_function = { // scope of children
+      let children
+          = SExpression::children(
+            &self.match_equation.ground
+          )[1..].iter()
+                .enumerate() // enumerate starts at 0, term_idx starts at 1.
+                .filter_map(|(k, v)| if k+1 != self.term_idx as usize { Some(v.clone()) } else { None })
+                .collect::<Vec<_>>();
+      SExpression::new(self.match_equation.ground.head(), children)
+    };
 
     let function_equation = NextMatchResult::eq(
-      self.dfe.pattern_rest.clone(),
-      Rc::new(new_ground_function.into())
+      self.match_equation.pattern_rest(),
+      new_ground_function
     );
 
     // We just iterate over the children of the ground.
@@ -213,10 +194,9 @@ impl<T> Iterator for RuleDecCommutative<T> where T: DecompositionType {
 
 impl<T> RuleDecCommutative<T> where T: DecompositionType {
   pub fn new(me: MatchEquation) -> RuleDecCommutative<T> {
-    let dfe = DestructuredFunctionEquation::new(&me).unwrap();
     RuleDecCommutative {
-      dfe,
-      term_idx: 0,
+      match_equation: me,
+      term_idx: 1,
       phantom : std::marker::PhantomData::<T>::default()
     }
   }
@@ -224,71 +204,51 @@ impl<T> RuleDecCommutative<T> where T: DecompositionType {
 
 // Dec-C: Decomposition under commutative head.
 impl RuleDecCommutative<NonAssociative> {
-  pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<RuleDecCommutative<NonAssociative>> {
+  pub fn try_rule(me: &MatchEquation) -> Option<RuleDecCommutative<NonAssociative>> {
     // The first of pattern_function cannot be a sequence variable. It must be a function or a
     // symbol, i.e. a non-sequence "term".
 
-    if dfe.pattern_function.len() > 0
-        && dfe.ground_function.len() > 0
+    if me.pattern.len() > 1
+        && me.ground.len() > 1
+        && SExpression::part(&me.pattern, 1).is_sequence_variable().is_none()
     {
-      let first = dfe.pattern_function.part(0);
-
-      // Cannot be function variable.
-      // if let Expression::Function(function) = first.as_ref() {
-      //   if function.is_function_variable() {
-      //     return None;
-      //   }
-      // }
-
-      // Cannot be a sequence variable.
-      let expr_kind = first.kind();
-      if expr_kind != ExpressionKind::SequenceVariable {
-        return Some(
-          RuleDecCommutative {
-            dfe     : dfe.clone(),
-            term_idx: 0,
-            phantom : std::marker::PhantomData::default()
-          }
-        )
-      }
+      Some(
+        RuleDecCommutative {
+          match_equation: me.clone(),
+          term_idx      : 1,
+          phantom       : std::marker::PhantomData::default()
+        }
+      )
+    } else {
+      None
     }
 
-    None
   }
 }
 
 
 // Dec-AC: Decomposition under associative-commutative head.
 impl RuleDecCommutative<Associative> {
-  pub fn try_rule(dfe: &DestructuredFunctionEquation) -> Option<RuleDecCommutative<Associative>> {
+  pub fn try_rule(me: &MatchEquation) -> Option<RuleDecCommutative<Associative>> {
     // The first of pattern_function cannot be a sequence variable or individual variable.. It must
     // be a function or a symbol, i.e. a non-sequence "term".
+    // todo: In original code, we didn't check != is_variable. Was this a bug?
 
-    if dfe.pattern_function.len() > 0
-        && dfe.ground_function.len() > 0
+    if me.pattern.len() > 1
+        && me.ground.len() > 1
+        && SExpression::part(&me.pattern, 1).is_sequence_variable().is_none()
+        && SExpression::part(&me.pattern, 1).is_variable().is_none()
     {
-      let first = dfe.pattern_function.part(0);
-
-      // Cannot be function variable.
-      // if let Expression::Function(function) = first.as_ref() {
-      //   if function.is_function_variable() {
-      //     return None;
-      //   }
-      // }
-
-      // Cannot be a sequence variable.
-      let expr_kind = first.kind();
-      if expr_kind != ExpressionKind::SequenceVariable {
-        return Some(
-          RuleDecCommutative {
-            dfe     : dfe.clone(),
-            term_idx: 0,
-            phantom : std::marker::PhantomData::default()
-          }
-        )
-      }
+      Some(
+        RuleDecCommutative {
+          match_equation: me.clone(),
+          term_idx      : 1,
+          phantom       : std::marker::PhantomData::default()
+        }
+      )
+    } else {
+      None
     }
 
-    None
   }
 }

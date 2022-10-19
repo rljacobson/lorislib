@@ -1,11 +1,11 @@
 /*!
 
-A `Context` is a namespace. A `Context` struct is a symbol table that holds the
-values, definitions, and attributes for symbols within a context.
+A `Context` is a namespace. A `Context` struct is a symbol table that holds the values, definitions, and attributes
+for symbols within a context.
 
-Much of this should arguably be implemented in the language being implemented.
-However, doing so would mean that information about the original expression that
-created the symbol and its definitions would not be retained.
+A lot of things need access to the `Context` in order to read `*Values` or function attributes or for RW access
+during evaluation. The codebase is transitioning to a `Context` model of shared mutable state via interior
+mutability.
 
 
 */
@@ -13,6 +13,7 @@ created the symbol and its definitions would not be retained.
 
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::{
   atom::{
@@ -29,7 +30,6 @@ use crate::{
 };
 use crate::interner::{interned_static, InternedString, resolve_str};
 // use crate::parsing::{Lexer, parse};
-
 
 
 pub struct Context{
@@ -52,7 +52,19 @@ impl Context {
 
   // region Getters and Setters
 
-  pub fn get_symbol(&mut self, symbol: InternedString) ->  &mut SymbolRecord {
+  pub fn get_attributes(&self, symbol: InternedString) -> Attributes {
+    match self.symbols.get(&symbol) {
+      None => Attributes::default(),
+
+      Some(record) => record.attributes
+    }
+  }
+
+  pub fn get_symbol(&self, symbol: InternedString) ->  Option<&SymbolRecord> {
+    self.symbols.get(&symbol)
+  }
+
+  pub fn get_symbol_mut(&mut self, symbol: InternedString) ->  &mut SymbolRecord {
     self.symbols.entry(symbol).or_insert_with(
       | | {
         SymbolRecord::new(symbol)
@@ -62,13 +74,13 @@ impl Context {
 
   /// This method does not check for read-only! Only use for registering built-ins.
   pub(crate) fn set_down_value_attribute(&mut self, symbol: InternedString, value: SymbolValue, attributes: Attributes) {
-    let record = self.get_symbol(symbol);
+    let record = self.get_symbol_mut(symbol);
     record.down_values.push(value);
     record.attributes.update(attributes);
   }
 
   pub fn set_attribute(&mut self, symbol: InternedString, attribute: Attribute) -> Result<(), String> {
-    let record = self.get_symbol(symbol);
+    let record = self.get_symbol_mut(symbol);
 
     if record.attributes.attributes_read_only() {
       Err(format!("Symbol {} has read-only attributes", resolve_str(symbol)))
@@ -79,7 +91,7 @@ impl Context {
   }
 
   pub fn set_down_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
-    let record = self.get_symbol(symbol);
+    let record = self.get_symbol_mut(symbol);
 
     if record.attributes.read_only() {
       Err(format!("Symbol {} is read-only", resolve_str(symbol)))
@@ -90,7 +102,7 @@ impl Context {
   }
 
   pub fn set_up_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
-    let record = self.get_symbol(symbol);
+    let record = self.get_symbol_mut(symbol);
 
     if record.attributes.read_only() {
       Err(format!("Symbol {} is read-only", resolve_str(symbol)))
@@ -101,7 +113,7 @@ impl Context {
   }
 
   pub fn set_own_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
-    let record = self.get_symbol(symbol);
+    let record = self.get_symbol_mut(symbol);
 
     if record.attributes.read_only() {
       Err(format!("Symbol {} is read-only", resolve_str(symbol)))
@@ -112,7 +124,7 @@ impl Context {
   }
 
   pub fn set_sub_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
-    let record = self.get_symbol(symbol);
+    let record = self.get_symbol_mut(symbol);
 
     if record.attributes.read_only() {
       Err(format!("Symbol {} is read-only", resolve_str(symbol)))
@@ -125,7 +137,7 @@ impl Context {
   // todo: Not especially efficient if the symbol was never defined.
   pub fn clear_symbol(&mut self, symbol: InternedString) -> Result<(), String> {
     { // Scope for record
-      let record = self.get_symbol(symbol);
+      let record = self.get_symbol_mut(symbol);
       if record.attributes.read_only() || record.attributes.protected() {
         return Err(format!("Symbol {} is read-only", resolve_str(symbol)))
       }
@@ -139,7 +151,7 @@ impl Context {
       None => None,
       Some(record) => {
         // todo: get rid of this clone.
-        Some(record.up_values.clone())
+        Some(record.UpValues.clone())
       }
     }
   }
@@ -150,7 +162,7 @@ impl Context {
       None => None,
       Some(record) => {
         // todo: get rid of this clone.
-        Some(record.own_values.clone())
+        Some(record.OwnValues.clone())
       }
     }
   }
@@ -158,6 +170,17 @@ impl Context {
 
   // endregion
 
+}
+
+/// Used to communicate across function calls
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ContextValueStore {
+  OwnValues,
+  UpValues,
+  DownValues,
+  SubValues,
+  NValues,
+  DisplayFunction,
 }
 
 pub struct SymbolRecord {

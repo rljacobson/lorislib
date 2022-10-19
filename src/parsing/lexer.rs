@@ -6,9 +6,9 @@ Minimalist lexer.
 
 use std::{
   fmt::{Display, Formatter},
-  cmp::min
+  cmp::min,
+  iter::Peekable
 };
-use std::iter::Peekable;
 
 use lazy_static::lazy_static;
 use aho_corasick::{AhoCorasickBuilder, AhoCorasick, MatchKind};
@@ -25,6 +25,7 @@ use rug::{
 use strum_macros::AsRefStr;
 
 use crate::{
+  builtins::DEFAULT_REAL_PRECISION,
   atom::Atom,
   interner::{
     interned,
@@ -270,7 +271,7 @@ impl<'t> Iterator for LexerCore<'t> {
         match
           self.get_match(REGEXES[REAL_IDX].find(&self.text[self.start..])) {
           Ok(token) => {
-            Some(Token::Real(BigFloat::parse(resolve_str(token)).unwrap().complete(53)))
+            Some(Token::Real(BigFloat::parse(resolve_str(token)).unwrap().complete(DEFAULT_REAL_PRECISION)))
           },
           Err(_) => {
             Some(

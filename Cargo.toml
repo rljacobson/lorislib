@@ -33,7 +33,7 @@ fnv             = "1.0.7"  # FNV-1a hash
 #   MPFR for floating-point numbers, and
 #   MPC  for complex numbers.
 [dependencies.rug]
-version = "1.17"
+version = "~1.17"
 default-features = false
 features = [
     "integer",

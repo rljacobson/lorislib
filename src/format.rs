@@ -33,6 +33,9 @@ pub enum DisplayForm {
   Standard,
   #[strum(serialize = "System`OutputForm")]
   Output,
+  #[strum(serialize = "System`MatcherForm")]
+  Matcher,
+
 }
 
 impl Default for DisplayForm {
@@ -53,7 +56,7 @@ static DEFAULT_FORMATTER: Cow<ExpressionFormatter> = Cow::Owned(ExpressionFormat
 });
 
 impl ExpressionFormatter {
-  pub fn default() -> Cow<ExpressionFormatter> {
+  pub fn default() -> Cow<'static, ExpressionFormatter> {
     DEFAULT_FORMATTER.clone()
   }
 }
@@ -67,16 +70,21 @@ impl From<DisplayForm> for ExpressionFormatter {
 }
 
 pub trait Formattable {
-  fn format(&self, formatter: Cow<ExpressionFormatter>) -> String;
+  fn format(&self, formatter: &ExpressionFormatter) -> String;
 }
 
 
 macro_rules! display_formattable_impl {
   ($type_name:ty) => {
-    impl std::fmt::Display for $type_name {
+    impl std::fmt::Display for $type_name
+        where $type_name: Formattable
+    {
       fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.format(ExpressionFormatter::default().clone()))
+        let expression_formatter = ExpressionFormatter::default().clone();
+        write!(f, "{}", self.format(&expression_formatter))
       }
     }
   }
 }
+
+pub(crate) use display_formattable_impl;

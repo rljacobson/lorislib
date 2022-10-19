@@ -6,34 +6,36 @@ Built-in constants and functions.
  */
 
 use std::{
-  collections::HashMap,
   rc::Rc
+};
+use std::ops::{AddAssign, Div, MulAssign};
+
+use rug::{
+  Integer as BigInteger,
+  Float as BigFloat,
+  Float,
+  Assign,
+  ops::AddFrom
 };
 
 use crate::{
-  expression::Expression,
   parse,
-  atom::Atom,
+  atom::{
+    Atom,
+    SExpression,
+    Symbol
+  },
   attributes::{Attribute, Attributes},
   context::*,
   evaluate::evaluate,
   logging::{Channel, log},
-  matching::SolutionSet
+  matching::SolutionSet,
+  interner::{interned_static, InternedString}
 };
-// use std::f64::consts;
 
 
-//                        f(substitutions, original_expression, context) -> evaluated_expression
-pub(crate) type BuiltinFn = fn(SolutionSet, Atom, &mut Context) -> Atom;
-
-/*
-pub static CONSTANTS: HashMap<&'static str, f64> = HashMap::from( [
-  ( "Pi", std::f64::consts::PI ),
-  ( "TAU", std::f64::consts::TAU ),
-  ( "E", std::f64::consts::E ),
-
-] );
-*/
+// todo: store this in the global context as an own-value.
+pub const DEFAULT_REAL_PRECISION: u32 = 53;
 
 // need: And, NumberQ, SameQ, Occurs
 
@@ -62,7 +64,12 @@ pub static STANDARD_PREAMBLE: [&str; 14] = [
 ];
 
 
+//                        f(substitutions, original_expression, context) -> evaluated_expression
+pub(crate) type BuiltinFn = fn(SolutionSet, Atom, &mut Context) -> Atom;
+
+
 // region Numeric Computation
+// todo: None of this code allows for BigReal precision other than the default 53 bits (f64).
 
 /// Implements calls matching
 ///     `N[exp_] := built-in[exp_]`
@@ -76,13 +83,15 @@ pub fn N(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
     log(
       Channel::Debug,
       5,
-      format!("Built-in function N given argumetns: {:?}", (&lhs, &rhs)).as_str()
+      format!("Built-in function N given arguments: ({:?}, {:?})", &lhs, &rhs).as_str()
     );
     // There is guaranteed to be one and only one substitution.
-    match rhs.as_ref() {
+    match &rhs {
 
       Atom::Integer(n) => {
-        return Rc::new(Atom::Real(*n as f64));
+        let mut r: Float = BigFloat::new(DEFAULT_REAL_PRECISION);
+        r.assign(n);
+        return Atom::Real(r);
       }
 
       _other => {
@@ -96,121 +105,131 @@ pub fn N(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
 
 /// Implements calls matching
 ///     `Plus[exp___] := built-in[exp___]`
-pub fn Plus(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
-  let mut int_accumulator = 0i64;
-  let mut real_accumulator = 0f64;
+pub fn Plus(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
+  let mut int_accumulator       : BigInteger = BigInteger::new();
+  let mut real_accumulator      : BigFloat   = BigFloat::new(DEFAULT_REAL_PRECISION);
+  // We cannot just rely on whether or not `real_accumulator == 0.0` at the end, because `1 + 0.0 == 1.0`, not `1`.
+  let mut real_value_encountered: bool       = false;
 
   // The argument should either be a `Sequence` or a single expression.
-  for (lhs, rhs) in arguments {
-    let mut new_children: Vec<Atom> = Vec::new();
+  let  (_lhs, rhs) = &arguments.iter().next().unwrap();
+  // `new_children` is headless.
+  let mut new_children: Vec<Atom> = Vec::new();
 
-    if let Expression::Sequence(sequence) = rhs.as_ref() {
-      for expression in &sequence.children {
-        match expression.as_ref() {
+  if let Some(sequence_children) = rhs.is_sequence() {
+    for expression in sequence_children {
+      match expression {
 
-          Atom::Integer(n) => {
-            int_accumulator += n;
-          }
-
-          Atom::Real(r) => {
-            real_accumulator += r;
-          }
-
-          _other => {
-            new_children.push(expression.clone())
-          }
+        Atom::Integer(n) => {
+          int_accumulator.add_assign(n);
         }
-      } // end iter over children
 
-      if int_accumulator != 0 && real_accumulator != 0f64 {
-        let sum = Atom::Real(real_accumulator + int_accumulator as f64);
-        new_children.push(Rc::new(sum));
-      } else if int_accumulator != 0 {
-        new_children.push(Rc::new(Atom::Integer(int_accumulator)));
-      } else if real_accumulator != 0f64 {
-        new_children.push(Rc::new(Atom::Real(real_accumulator)));
+        Atom::Real(r) => {
+          real_accumulator.add_assign(r);
+          real_value_encountered = true;
+        }
+
+        other => {
+          new_children.push(other);
+        }
       }
+    } // end iter over children
 
-      if new_children.len() == 1 {
-        // OneIdentity: `Plus[e] = e`
-        return new_children[0].clone();
-      }
-
-      let mut plus = Function::with_symbolic_head("Plus");
-      plus.children = new_children;
-
-      return Rc::new(plus.into())
-    } // end if-let sequence
-    else {
-
-      // OneIdentity: `Plus[e] = e`
-      return rhs;
-
+    // We have to do a little dance with the resulting type, because… l. On the other hand, if
+    if real_value_encountered {
+      // …if there were any reals, the numerical result is a real, even if `real_accumulator == 0.0`.
+      // Since `BigInteger`s have infinite precision, we can just add `int_accumulator` without worrying if there
+      // were any integers.
+      real_accumulator.add_from(&int_accumulator);
+      new_children.push(Atom::Real(real_accumulator));
+    } else if int_accumulator != 0 {
+      // …if there were no reals encountered but whatever integers there were summed to something non-zero,
+      // the result is a `BigInteger`
+      new_children.push(Atom::Integer(int_accumulator));
+    } else {
+      // …if there were no reals and whatever integers there were summed to 0, don't put any number in the result.
     }
+
+    if new_children.len() == 0 {
+      // The empty sum is zero.
+      Atom::Integer(BigInteger::new())
+    } else if new_children.len() == 1 {
+      // OneIdentity: `Plus[e] = e`
+      new_children[0].clone()
+    } else {
+      SExpression::new(Symbol::from_static_str("Plus"), new_children)
+    }
+  } // end if-let sequence
+  else {
+    // OneIdentity: `Plus[e] = e`
+    (**rhs).clone()
   }
 
-  // The empty sum is zero.
-  Rc::new(Integer(0).into())
 }
 
 
 /// Implements calls matching
 ///     `Times[exp___] := built-in[exp___]`
 pub fn Times(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
-  let mut int_accumulator = 1i64;
-  let mut real_accumulator = 1f64;
+
+  let mut int_accumulator       : BigInteger = BigInteger::from(1);
+  let mut real_accumulator      : BigFloat   = BigFloat::with_val(DEFAULT_REAL_PRECISION, 1f64);
+  let mut real_value_encountered: bool       = false;
 
   // The argument should either be a `Sequence` or a single expression.
-  for (lhs, rhs) in arguments {
-    let mut new_children: Vec<Atom> = Vec::new();
+  let mut new_children: Vec<Atom> = Vec::new();
+  let  (_lhs, rhs) = &arguments.iter().next().unwrap();
 
-    if let Expression::Sequence(sequence) = rhs.as_ref() {
-      for expression in &sequence.children {
-        match expression.as_ref() {
-
-          Atom::Integer(n) => {
-            int_accumulator *= n;
-          }
-
-          Atom::Real(r) => {
-            real_accumulator *= r;
-          }
-
-          _other => {
-            new_children.push(expression.clone())
-          }
+  if let Some(sequence_children) = rhs.is_sequence() {
+    for expression in &sequence_children {
+      match expression {
+        Atom::Integer(n) => {
+          int_accumulator.mul_assign(n);
         }
-      } // end iter over children
 
-      if int_accumulator != 1 && real_accumulator != 1f64 {
-        let sum = Atom::Real(real_accumulator + int_accumulator as f64);
-        new_children.push(Rc::new(sum));
-      } else if int_accumulator != 1 {
-        new_children.push(Rc::new(Atom::Integer(int_accumulator)));
-      } else if real_accumulator != 1f64 {
-        new_children.push(Rc::new(Atom::Real(real_accumulator)));
+        Atom::Real(r) => {
+          real_accumulator.mul_assign(r);
+          real_value_encountered = true;
+        }
+
+        _other => {
+          new_children.push(expression.clone())
+        }
       }
+    } // end iter over children
 
-      if new_children.len() == 1 {
-        // OneIdentity: `Plus[e] = e`
-        return new_children[0].clone();
-      }
-
-      let mut plus = Function::with_symbolic_head("Plus");
-      plus.children = new_children;
-
-      return Rc::new(plus.into())
-    } // end if-let sequence
-    else {
-
-      // OneIdentity: `Times[e] = e`
-      return rhs;
-
+    // We have to do a little dance with the resulting type, because… l. On the other hand, if
+    if real_value_encountered {
+      // …if there were any reals, the numerical result is a real, even if
+      // `real_accumulator == 1.0`. Since `BigInteger`s have infinite precision, we can
+      // just multiply `int_accumulator` without worrying if there were any integers.
+      real_accumulator.mul_assign(int_accumulator);
+      new_children.push(Atom::Real(real_accumulator));
+    } else if int_accumulator != 1 {
+      // …if there were no reals encountered but whatever integers there were multiplied to something different
+      // from 1, the result is a`BigInteger
+      new_children.push(Atom::Integer(int_accumulator));
+    } else {
+      // …if there were no reals and whatever integers there were multiplied to 1, don't put any number in the result.
     }
-  }
 
-  // The empty product is 1.
-  Rc::new(Integer(1).into())
+    if new_children.len() == 0 {
+      // The empty product `Times[]` is 1.
+      Atom::Integer(BigInteger::from(1))
+    } else if new_children.len() == 1 {
+      // OneIdentity: `Multiply[e] = e`
+      new_children[0].clone()
+    } else {
+      SExpression::new(
+        Symbol::from_static_str("Times"),
+        new_children
+      )
+    }
+  } // end if-let sequence
+  else {
+    // OneIdentity: `Times[e] = e`
+    (**rhs).clone()
+  }
 }
 
 
@@ -222,73 +241,81 @@ pub fn Divide(arguments: SolutionSet, original_expression: Atom, _: &mut Context
   let (_, numerator) = arg_pairs[0].clone();
   let (_, denominator) = arg_pairs[1].clone();
 
-  match numerator.as_ref() {
+  match numerator {
 
-    Atom::Real(0f64)  => {
-      match denominator.as_ref() {
-        | Atom::Real(0f64)
-        | Atom::Integer(0)
-          => Rc::new(Symbol::from("Indeterminate").into()),
+    Atom::Real(r) if r == 0  => {
+      match denominator {
+        | Atom::Real(_r2) if _r2 == 0
+          => Symbol::from_static_str("Indeterminate"),
+        | Atom::Integer(_i) if _i == 0
+          => Symbol::from_static_str("Indeterminate"),
 
-        _ => Rc::new(Real(0f64).into()),
+        _ => Atom::Real(BigFloat::new(DEFAULT_REAL_PRECISION)),
       }
     }
 
-    Atom::Integer(0) => {
-      match denominator.as_ref() {
-        | Atom::Real(0f64)
-        | Atom::Integer(0)
-          => { return Rc::new(Symbol::from("Indeterminate").into()); },
+    Atom::Integer(n) if n == 0 => {
+      match denominator {
+        Atom::Real(_r) if _r == 0
+          => { Symbol::from_static_str("Indeterminate")},
+        Atom::Integer(_m) if _m == 0
+          => { Symbol::from_static_str("Indeterminate")},
 
-        Expression::Real(_)    => { return Rc::new(Real(0f64).into()); },
-        Expression::Integer(_) => { return Rc::new(Integer(0).into()); },
+        Atom::Real(_)    => { Atom::Real(BigFloat::new(DEFAULT_REAL_PRECISION)) },
 
-        _ => Rc::new(Integer(0).into()),
+        _ => Atom::Integer(BigInteger::new()),
       }
     }
 
-    Atom::Real(num) if *num != 0f64 => {
-      match denominator.as_ref() {
-        | Atom::Real(0f64)
-        | Expression::Integer((Integer(0)))
-        => Rc::new(Symbol::from("ComplexInfinity").into()),
+    Atom::Real(num) if num != 0f64 => {
+      match denominator {
+        Atom::Real(_r) if _r == 0
+          => { Symbol::from_static_str("ComplexInfinity")},
+        Atom::Integer(_m) if _m == 0
+          => { Symbol::from_static_str("ComplexInfinity")},
 
-        Atom::Real(denom) => Rc::new(Real(num/denom).into()),
+        Atom::Real(denom)    => Atom::Real(num.div(denom)),
 
-        Atom::Integer(denom) => Rc::new(Real(num/(*denom as f64)).into()),
+        Atom::Integer(denom) => Atom::Real(num.div(denom)),
 
         _ => { original_expression }
       }
     }
 
-    Atom::Integer(num) if *num != 0 => {
-      match denominator.as_ref() {
-        | Atom::Real(0f64)
-        | Expression::Integer((Integer(0)))
-        => Rc::new(Symbol::from("ComplexInfinity").into()),
+    Atom::Integer(num) if num != 0 => {
+      match denominator {
+        | Atom::Real(_r) if _r == 0
+          => Symbol::from_static_str("ComplexInfinity"),
+        | Atom::Integer(_n) if _n == 0
+          => Symbol::from_static_str("ComplexInfinity"),
 
-        Atom::Real(denom) => Rc::new(Real(*num as f64/denom).into()),
+        Atom::Real(denom) => Atom::Real(num/denom),
 
         Atom::Integer(denom) => {
-          let common_divisor = gcd(*num, *denom);
-          let reduced_num = Rc::new(Integer(num/common_divisor).into());
-          let reduced_denom = Rc::new(Integer(denom/common_divisor).into());
-          let mut f = Function::with_symbolic_head("Divide");
-          f.children.push(reduced_num);
-          f.children.push(reduced_denom);
-          Rc::new(f.into())
+          // todo: Implement `Rational`.
+          let common_divisor = BigInteger::gcd(num.clone(), &denom);
+          let reduced_num    = Atom::Integer(num.div(&common_divisor));
+          let reduced_denom  = Atom::Integer(denom.div(&common_divisor));
+
+          Atom::SExpression(Rc::new(
+            [
+              Symbol::from_static_str("Divide"),
+              reduced_num,
+              reduced_denom
+            ].to_vec()
+          ))
         }
 
         _ => { original_expression }
       }
     }
 
-    other => {
-      match denominator.as_ref() {
-        | Atom::Real(0f64)
-        | Expression::Integer((Integer(0)))
-          // This isn't very conservative, but it's what Mathematica does.
-          => Rc::new(Symbol::from("ComplexInfinity").into()),
+    _other => {
+      match denominator {
+        | Atom::Real(_r) if _r == 0
+          => Symbol::from_static_str("ComplexInfinity"),
+        | Atom::Integer(_n) if _n == 0
+          => Symbol::from_static_str("ComplexInfinity"),
 
         _ => original_expression
       }
@@ -308,23 +335,28 @@ fn Set(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
   // Two arguments
   let arg_pairs: Vec<_> = arguments.into_iter().collect();
   let (_, pattern) = arg_pairs[0].clone();
-  let (_, rhs) = arg_pairs[1].clone();
+
+  let (rhs, condition): (Atom, Option<Atom>) = { // scope of inner rhs
+    let (_, rhs) = arg_pairs[1].clone();
+    extract_condition(rhs)
+  };
 
   let value = SymbolValue::Definitions {
     def: original,
     lhs: pattern.clone(),
     rhs: rhs.clone(),
-    condition: None,
+    condition,
   };
 
-  match context.set_down_value(pattern.name(), value.clone()) {
+  match context.set_down_value(pattern.name().unwrap(), value) {
     Ok(()) => {}
     Err(msg) => {
       // todo: Make a distinction between program and system errors.
       log(Channel::Error, 1, msg.as_str());
     }
   };
-  rhs
+
+  rhs.clone()
 }
 
 
@@ -333,19 +365,20 @@ fn Set(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
 fn UpSet(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
   // Two arguments
   let arg_pairs: Vec<_> = arguments.into_iter().collect();
-  let (_, pattern) = arg_pairs[0].clone();
-  let (_, rhs) = arg_pairs[1].clone();
+  let (_  , pattern)    = arg_pairs[0].clone();
+  let (_  , outer_rhs)  = arg_pairs[1].clone();
+  let (rhs, condition): (Atom , Option<Atom>) = extract_condition(outer_rhs.clone());
 
   let value = SymbolValue::Definitions {
     def: original,
     lhs: pattern.clone(),
     rhs: rhs.clone(),
-    condition: None,
+    condition,
   };
 
   for symbol in collect_symbol_or_head_symbol(pattern) {
     // Make an up-value for symbol
-    match context.set_up_value(symbol.name(), value.clone()) {
+    match context.set_up_value(symbol, value.clone()) {
       Ok(()) => {}
       Err(msg) => {
         // todo: Make a distinction between program and system errors.
@@ -353,33 +386,34 @@ fn UpSet(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom 
       }
     }
   };
-  rhs
+
+  outer_rhs
 }
 
 // endregion
 
 pub(crate) fn register_builtins(context: &mut Context) {
-  let mut parser = Parser::new();
   let mut read_only_attributes = Attributes::default();
+  // todo: when is something read-only vs protected?
   read_only_attributes.set(Attribute::ReadOnly);
   read_only_attributes.set(Attribute::AttributesReadOnly);
 
   // region Context Manipulation
   // Set[lhs_, rhs_]
   let value = SymbolValue::BuiltIn{
-    pattern  : parser.parse("Set[lhs_, rhs_]").unwrap(),
+    pattern  : parse("Set[lhs_, rhs_]").unwrap(),
     condition: None,
     built_in : Set
   };
-  context.set_down_value_attribute("Set", value, read_only_attributes);
+  context.set_down_value_attribute(interned_static("Set"), value, read_only_attributes);
 
   // UpSet[lhs_, rhs_]
   let value = SymbolValue::BuiltIn{
-    pattern  : parser.parse("UpSet[lhs_, rhs_]").unwrap(),
+    pattern  : parse("UpSet[lhs_, rhs_]").unwrap(),
     condition: None,
     built_in : UpSet
   };
-  context.set_down_value_attribute("UpSet", value, read_only_attributes);
+  context.set_down_value_attribute(interned_static("UpSet"), value, read_only_attributes);
 
   // endregion
 
@@ -388,17 +422,17 @@ pub(crate) fn register_builtins(context: &mut Context) {
   // Numeric Floating Point Conversion
   // N[e_Integer]:=e_Real
   let value = SymbolValue::BuiltIn{
-    pattern  : parser.parse("N[e_]").unwrap(),
+    pattern  : parse("N[e_]").unwrap(),
     condition: None,
     built_in : N
   };
   let mut attributes = read_only_attributes;
   attributes.set(Attribute::Listable);
-  context.set_down_value_attribute("N", value, attributes);
+  context.set_down_value_attribute(interned_static("N"), value, attributes);
 
   // Plus[exp___]
   let value = SymbolValue::BuiltIn{
-    pattern  : parser.parse("Plus[e___]").unwrap(),
+    pattern  : parse("Plus[e___]").unwrap(),
     condition: None,
     built_in : Plus
   };
@@ -407,11 +441,11 @@ pub(crate) fn register_builtins(context: &mut Context) {
   attributes.set(Attribute::Commutative);
   attributes.set(Attribute::Variadic);
   attributes.set(Attribute::OneIdentity);
-  context.set_down_value_attribute("Plus", value, attributes);
+  context.set_down_value_attribute(interned_static("Plus"), value, attributes);
 
   // Times[exp___]
   let value = SymbolValue::BuiltIn{
-    pattern  : parser.parse("Times[e___]").unwrap(),
+    pattern  : parse("Times[e___]").unwrap(),
     condition: None,
     built_in : Times
   };
@@ -420,24 +454,39 @@ pub(crate) fn register_builtins(context: &mut Context) {
   attributes.set(Attribute::Commutative);
   attributes.set(Attribute::Variadic);
   attributes.set(Attribute::OneIdentity);
-  context.set_down_value_attribute("Times", value, attributes);
+  context.set_down_value_attribute(interned_static("Times"), value, attributes);
+
+  // Divide[exp1, exp2]
+  let value = SymbolValue::BuiltIn{
+    pattern  : parse("Divide[exp1_, exp2_]").unwrap(),
+    condition: None,
+    built_in : Divide
+  };
+  context.set_down_value_attribute(interned_static("Divide"), value, read_only_attributes);
 
   // endregion
 
   // region Constants
+  // Todo: Implement NValues
 
-  // Numeric up_values for Pi`
+  // Numeric up_value for `Pi`
   { // Scope for pi_record
-    let mut pi_record = context.get_symbol("Pi");
-    let f = Function::with_symbolic_head("UpSet");
-    let value = SymbolValue::Definitions {
-      def: Rc::new(f.into()),
-      lhs: parser.parse("N[n_]").unwrap(),
-      rhs: Rc::new(Real(std::f64::consts::PI).into()),
-      condition: None,
+    let mut pi_record = context.get_symbol_mut(interned_static("Pi"));
+    let f = { // scope of children
+      let children = [
+        Symbol::from_static_str("UpSet"),
+        Atom::SExpression(Rc::new(
+          [
+            Symbol::from_static_str("N"),
+            Symbol::from_static_str("Pi")
+          ].to_vec()
+        )),
+        Atom::Real(BigFloat::with_val(53, rug::float::Constant::Pi))
+      ];
+      Atom::SExpression(Rc::new(children.to_vec()))
     };
-    pi_record.up_values.push(value);
-    pi_record.attributes = read_only_attributes;;
+
+    evaluate(f, context);
   }
 
   // endregion
@@ -446,14 +495,31 @@ pub(crate) fn register_builtins(context: &mut Context) {
 
 // region utilities
 
-/// The `pattern_function` must be a function`. Finds all symbols or symbols that are heads of functions that are
+/// If `atom` has the form `Condition[exp1, exp2]`, gives `(exp1, Some(exp2))`. Otherwise, gives `(atom, None)`.
+fn extract_condition(atom: Atom) -> (Atom, Option<Atom>) {
+  match atom {
+
+    Atom::SExpression(children)
+      if children.len() == 3 && children[0] == Symbol::from_static_str("Condition")
+      => {
+      (children[1].clone(), Some(children[2].clone()))
+    }
+
+    _ => (atom, None)
+  }
+}
+
+/// The `pattern_function` must be a function. Finds all symbols or symbols that are heads of functions that are
 /// arguments to the given function.
-fn collect_symbol_or_head_symbol(pattern_function: Atom) -> Vec<Atom>{
-  let f = Function::unwrap(pattern_function.as_ref());
-  f.children.iter().filter_map(|c| {
-    match c.as_ref() {
-      Expression::Symbol(_) => Some(c.clone()),
-      Expression::Function(f)=> Some(f.head.clone()),
+fn collect_symbol_or_head_symbol(pattern_function: Atom) -> Vec<InternedString>{
+  let f = SExpression::children(&pattern_function);
+  let mut child_iter = f.iter();
+  child_iter.next(); // skip head
+
+  child_iter.filter_map(|c| {
+    match c {
+      Atom::Symbol(name) => Some(*name),
+      Atom::SExpression(f)=> Some(f[0].name().unwrap()),
       _ => None
     }
   }).collect()

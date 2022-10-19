@@ -9,17 +9,14 @@ FVE: Function variable elimination X(s̃)≪ᴱƒ(t̃)⇝ₛ{ƒ(s̃)≪ᴱƒ(t̃
 
 */
 
-use std::cell::Cell;
-use std::rc::Rc;
 
 use smallvec::smallvec;
 
 use crate::{
-  expression::{
-    Expression,
-    ExpressionKind
-  },
-  atom::Atom
+  atom::{
+    AtomKind,
+    SExpression,
+  }
 };
 
 use super::{
@@ -121,10 +118,11 @@ impl Iterator for RuleIVE {
 
 impl RuleIVE {
   pub fn try_rule(match_equation: &MatchEquation) -> Option<Self> {
-
-    if match_equation.pattern.kind() == ExpressionKind::Variable
-        && match_equation.ground.kind() != ExpressionKind::Sequence
-        && match_equation.ground.kind() != ExpressionKind::SequenceVariable
+    // Pattern:  x_
+    // Ground: Not a sequence or sequence variable.
+    if match_equation.pattern.is_variable().is_some()
+        && match_equation.ground.is_sequence().is_none()
+        && match_equation.ground.is_sequence_variable().is_none()
     {
       Some(
             RuleIVE {
@@ -161,67 +159,27 @@ impl Iterator for RuleFVE {
     } else {
       self.exhausted = true;
 
-      // This is a bit of a mess because of the destructuring, but all it does is
-      // create a new expression from `pattern` but with the `ground`'s
-      // head.
-
-      match (
-              self.match_equation.pattern.as_ref(),
-              self.match_equation.ground.as_ref()
-            )
-      {
-
-        (
-          Expression::Function(
-            Function{
-              head: pattern_head,
-              children: pattern_children,
-              attributes: pattern_attributes,
-              ..
+      // Create a new expression from `pattern` but with the `ground`'s  head.
+      let substitution =
+          NextMatchResult::Substitution(
+            Substitution{
+              variable: self.match_equation.pattern.head(), // Pattern head, the variable
+              ground  : self.match_equation.ground.head(),  // Ground head
             }
-          ),
-          Expression::Function(
-            Function{
-              head: ground_head,
-              ..
+          );
+      let new_match_equations =
+          NextMatchResult::MatchEquation(
+            MatchEquation {
+              pattern: // The pattern with it's head replaced by ground's head.
+                SExpression::new_swapped_head(
+                  self.match_equation.ground.head(),
+                  SExpression::children(&self.match_equation.pattern).as_ref()
+                ),
+              ground: self.match_equation.ground.clone(),
             }
-          ),
-        ) => {
-          let substitution =
-            NextMatchResult::Substitution(
-              Substitution{
-                variable: pattern_head.clone(),
-                ground  : ground_head.clone(),
-              }
-            );
-          let new_match_equations = NextMatchResult::MatchEquation(
-              MatchEquation {
-                pattern: Rc::new(Expression::Function(
-                  Function{
-                    head: ground_head.clone(),
-                    children: pattern_children.clone(),
-                    attributes: *pattern_attributes,
-                    cached_hash: Cell::new(0)
-                  }
-                )),
-                ground: self.match_equation.ground.clone(),
-              }
-            );
+          );
 
-          Some(
-            smallvec![
-              new_match_equations,
-              substitution
-            ]
-          )
-        }
-
-        _ => {
-          unreachable!()
-        }
-
-      } // end match
-
+      Some(smallvec![new_match_equations, substitution])
     } // end else not exhausted
   } // end next
 }
@@ -229,23 +187,18 @@ impl Iterator for RuleFVE {
 
 impl RuleFVE {
   pub fn try_rule(match_equation: &MatchEquation) -> Option<Self> {
-
-    if let Expression::Function( Function{ head, ..} )
-            = match_equation.pattern.as_ref() {
-      if head.kind() == ExpressionKind::Variable
-          && match_equation.ground.kind() == ExpressionKind::Function {
-        return
-          Some(
-            RuleFVE{
-              match_equation: match_equation.clone(),
-              exhausted     : false,
-            }
-          );
-
-      } // end inner if
-    } // end if let
-
-    None
-
+    // Pattern: <f>[…]
+    // Ground :  g[…]
+    if SExpression::is_head_variable(&match_equation.pattern).is_some()
+        && match_equation.ground.kind() == AtomKind::SExpression {
+      Some(
+        RuleFVE{
+          match_equation: match_equation.clone(),
+          exhausted     : false,
+        }
+      )
+    } else {
+      None
+    }
   }
 }
