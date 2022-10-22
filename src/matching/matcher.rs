@@ -36,7 +36,7 @@ use crate::atom::{
   AtomKind
 };
 use crate::attributes::Attributes;
-use crate::context::SymbolRecord;
+use crate::format::{DisplayForm, Formattable};
 
 use super::{
   associative::{
@@ -66,7 +66,6 @@ use super::{
   },
   match_generator::{
     MatchGenerator,
-    MaybeNextMatchResult,
     NextMatchResult,
     NextMatchResultList
   },
@@ -249,12 +248,13 @@ impl<'c> Matcher<'c> {
       return Ok(());
     }
 
-    // A prerequisite for creating a `DestructuredFunctionEquation` and good
-    // place to bail early.
+    // A prerequisite for destructuring f/g and good place to bail early.
     if me.pattern.kind() != AtomKind::SExpression
         || me.ground.kind() != AtomKind::SExpression
     {
       // Return match equation.
+      eprintln!("Bailing from select_rule early: pattern.kind()={:?} ground.kind()={:?}", me.pattern.kind(), me.ground
+        .kind());
       self.equation_stack.push(me);
       return Err(());
     }
@@ -407,7 +407,7 @@ impl<'c> Matcher<'c> {
 }
 
 
-impl<'c> Iterator for &mut Matcher<'c> {
+impl<'c> Iterator for Matcher<'c> {
   type Item = SolutionSet;
 
   fn next(&mut self) -> Option<Self::Item> {
@@ -458,8 +458,7 @@ impl<'c> Iterator for &mut Matcher<'c> {
 
           Some(MatchStack::MatchGenerator(match_generator)) => {
             // Step 2.b
-            let next_match_result: MaybeNextMatchResult = match_generator.next();
-            match next_match_result {
+            match match_generator.next() {
 
               Some(results) => {
                 log(Channel::Debug, 5, "Match generator returned Some".to_string().as_str());
@@ -514,10 +513,18 @@ pub fn display_solutions(solution_set: &SolutionSet) -> String {
     String::from("EMPTY")
   } else {
     let mut subs = solution_set.iter()
-        .map(|(k, v)| format!("{} = {}", k, v))
+        .map(|(k, v)|
+            format!(
+              "{} = {}",
+              k.format(&DisplayForm::Matcher.into()),
+              v.format(&DisplayForm::Matcher.into()),
+            )
+        )
         .collect::<Vec<String>>();
     subs.sort();
     subs.join(", ")
   }
 }
 
+// tests
+// See mod.rs for the tests.

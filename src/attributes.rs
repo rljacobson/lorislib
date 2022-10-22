@@ -7,7 +7,7 @@ Attributes are implemented as a bitfield.
 */
 #![allow(dead_code)]
 
-use std::ops::Index;
+use std::ops::{Add, Index};
 
 use strum_macros::{Display, IntoStaticStr};
 
@@ -56,7 +56,7 @@ pub enum Attribute {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
-pub struct Attributes(u32);
+pub struct Attributes(pub u32);
 
 // These exist solely to be static references, which the `Index` trait insists on requiring.
 static ATTRIBUTE_SET: bool = true;
@@ -66,10 +66,10 @@ impl Index<u32> for Attributes {
   type Output = bool;
 
   fn index(&self, index: u32) -> &Self::Output {
-    if (self.0 & (1 << index as u32)) != 0 {
-      &ATTRIBUTE_UNSET
-    } else {
+    if (self.0 & (1 << (index as u32))) != 0 {
       &ATTRIBUTE_SET
+    } else {
+      &ATTRIBUTE_UNSET
     }
   }
 }
@@ -78,10 +78,10 @@ impl Index<Attribute> for Attributes {
   type Output = bool;
 
   fn index(&self, index: Attribute) -> &Self::Output {
-    if (self.0 & (1 << index as u32)) != 0 {
-      &ATTRIBUTE_UNSET
-    } else {
+    if (self.0 & (1 << (index as u32))) != 0 {
       &ATTRIBUTE_SET
+    } else {
+      &ATTRIBUTE_UNSET
     }
   }
 }
@@ -173,6 +173,49 @@ impl Attributes {
   // endregion
 
 }
+
+// region Attribute addition implementations.
+
+impl Add<Attribute> for Attributes {
+  type Output = Self;
+
+  fn add(mut self, other: Attribute) -> Self {
+    self.set(other);
+    self
+  }
+}
+
+
+impl Add<Attributes> for Attribute {
+  type Output = Attributes;
+
+  fn add(self, mut other: Attributes) -> Self::Output {
+    other.set(self);
+    other
+  }
+}
+
+
+impl Add<Attribute> for Attribute {
+  type Output = Attributes;
+
+  fn add(self, other: Attribute) -> Self::Output {
+    let mut out: Attributes = self.into();
+    out.set(other);
+    out
+  }
+}
+
+impl Add for Attributes {
+  type Output = Self;
+
+  fn add(mut self, other: Self) -> Self {
+    self.update(other);
+    self
+  }
+}
+
+// endregion
 
 #[cfg(test)]
 mod tests {

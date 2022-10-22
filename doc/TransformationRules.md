@@ -4,38 +4,39 @@ The algorithm proceeds by repeatedly applying transformation rules to the active
 When there are no more match equations to solve, the algorithm terminates with success. When
 no transformation rule applies to a match equation, the algorithm terminates with failure.
 
-The table represents two distinct matching procedures according to whether associativity is strict or not.
+The table represents two distinct matching procedures according to whether associativity is strict or not. (From 
+\[Dundua, p. 12]).
 
 ## Table Form
 
-| Name              | Description                                            |         Transformed Equation         | Resulting Equations Γ  |  Solution Set S  |
-| ----------------- | ------------------------------------------------------ | :----------------------------------: | :--------------------: | :--------------: |
-|                   |                                                        |                                      |                        |                  |
-|                   | ***Common Rules***                                     |                                      |                        |                  |
-| **T**             | Trivial                                                |                s ≪ᴱs                 |           ∅            |        ∅         |
-| **IVE**           | Individual variable elimination                        |                 x≪ᴱt                 |           ∅            |       x≈t        |
-| **FVE**           | Function variable elimination                          |              X(s̃)≪ᴱƒ(t̃)              |       ƒ(s̃)≪ᴱƒ(t̃)       |       X≈ƒ        |
-|                   |                                                        |                                      |                        |                  |
-|                   | ***Rules for free symbols***                           |                                      |                        |                  |
-| **Dec-F**         | Decomposition under free head                          |            ƒ(s,s̃)≪ᴱƒ(t,t̃)            |  s≪ᴱt,<br> ƒ(s̃)≪ᴱƒ(t̃)  |        ∅         |
-| **SVE-F**         | Sequence variable elimination under free head          |           ƒ(x̅,s̃)≪ᴱƒ(t̃₁,t̃₂)           |      ƒ(s̃)≪ᴱ ƒ(t̃₂)      |       x̅≈t̃₁       |
-|                   |                                                        |                                      |                        |                  |
-|                   | ***Rules for commutative symbols***                    |                                      |                        |                  |
-| **Dec-C**         | Decomposition under commutative head                   |          ƒ(s,s̃)≪ᴱƒ(t̃₁,t,t̃₂)          | s≪ᴱt<br>ƒ(s̃)≪ᴱƒ(t̃₁,t̃₂) |        ∅         |
-| **SVE-C**         | Sequence variable elimination under commutative head   | ƒ(x̅,,s̃)≪ᴱƒ(t̃₁,t₁,t̃₂,t₂,…,t̃ₙ,tₙ,t̃ₙ₊₁) |  ƒ(s̃)≪ᴱ ƒ(t̃₁,…,t̃ₙ₊₁)   |  x̅ ≈ ❴t₁,…,tₙ❵   |
-|                   |                                                        |                                      |                        |                  |
-|                   | ***Rules for associative symbols***                    |                                      |                        |                  |
-| **Dec-A**         | Decomposition under associative head                   |            ƒ(s,s̃)≪ᴱƒ(t,t̃)            |   s≪ᴱt<br>ƒ(s̃)≪ᴱƒ(t̃)   |        ∅         |
-| **SVE-A**         | Sequence variable elimination under associative head   |           ƒ(̅x,s̃)≪ᴱƒ(t̃₁,t̃₂)           |      ƒ(̅s̃)≪ᴱ ƒ(t̃₂)      |    x≈(t̃₁)[ƒ]     |
-| **FVE-A-strict**  | Function variable elimination under associative head   |          ƒ(X(s̃₁),s̃₂)≪ᴱƒ(t̃)           |     ƒ(s̃₁,s̃₂)≪ᴱƒ(t̃)     |       X≈ƒ        |
-| **IVE-A-strict**  | Individual variable elimination under associative head |           ƒ(x,s̃)≪ᴱƒ(t̃₁,t̃₂)           |      ƒ(̅s̃)≪ᴱ ƒ(t̃₂)      |     x≈ƒ(t̃₁)      |
-|                   |                                                        |                                      |                        |                  |
-|                   | ***Rules for associative-commutative symbols***        |                                      |                        |                  |
-| **Dec-AC**        | Decomposition under AC head (Same as Dec-C)            |          ƒ(s,s̃)≪ᴱƒ(t̃₁,t,t̃₂)          | s≪ᴱt<br>ƒ(s̃)≪ᴱƒ(t̃₁,t̃₂) |        ∅         |
-| **SVE-AC**        | Sequence variable elimination under AC head            | ƒ(̅x,s̃)≪ᴱƒ(t̃₁,t₁,t̃₂,t₂,…,t̃ₙ,tₙ,t̃ₙ₊₁)  |  ƒ(̅s̃)≪ᴱ ƒ(t̃₁,…,t̃ₙ₊₁)   | x̅ ≈ ❴t₁,…,tₙ❵[ƒ] |
-| **FVE-AC-strict** | Function variable elimination under AC head            |          ƒ(X(s̃₁),s̃₂)≪ᴱƒ(t̃)           |     ƒ(s̃₁,s̃₂)≪ᴱƒ(t̃)     |     S={X≈ƒ}      |
-| **IVE-AC**        | Individual variable elimination under AC head          | ƒ(x,s̃)≪ᴱƒ(t̃₁,t₁,t̃₂,t₂,…,t̃ₙ,tₙ,t̃ₙ₊₁)  |  ƒ(̅s̃)≪ᴱ ƒ(t̃₁,…,t̃ₙ₊₁)   |  x ≈ ƒ(t₁,…,tₙ)  |
-|                   |                                                        |                                      |                        |                  |
+| Name              | Description                                            |                 Given Equation                 | Condition |   | Resulting Equations Γ  |  Solution Set S  |
+| ----------------- | ------------------------------------------------------ |:------------------------------------------:|-----| :--------------------: | :--------------: |
+|                   |                                                        |                                            |     |                        |                  |
+|                   | ***Common Rules***                                     |                                            |     |                        |                  |
+| **T**             | Trivial                                                |                   s ≪ᴱs                    |     |           ∅            |        ∅         |
+| **IVE**           | Individual variable elimination                        |                    x≪ᴱt                    |     |           ∅            |       x≈t        |
+| **FVE**           | Function variable elimination                          |                X(s̃)≪ᴱƒ(t̃)                |     |       ƒ(s̃)≪ᴱƒ(t̃)       |       X≈ƒ        |
+|                   |                                                        |                                            |     |                        |                  |
+|                   | ***Rules for free symbols***                           |                                            |     |                        |                  |
+| **Dec-F**         | Decomposition under free head                          |              ƒ(s,s̃)≪ᴱƒ(t,t̃)              | s∉Ꮙₛₑ |  s≪ᴱt,<br> ƒ(s̃)≪ᴱƒ(t̃)  |        ∅         |
+| **SVE-F**         | Sequence variable elimination under free head          |            ƒ(x̅,s̃)≪ᴱƒ(t̃₁,t̃₂)            |     |      ƒ(s̃)≪ᴱ ƒ(t̃₂)      |       x̅≈t̃₁       |
+|                   |                                                        |                                            |     |                        |                  |
+|                   | ***Rules for commutative symbols***                    |                                            |     |                        |                  |
+| **Dec-C**         | Decomposition under commutative head                   |           ƒ(s,s̃)≪ᴱƒ(t̃₁,t,t̃₂)            | s∉Ꮙₛₑ| s≪ᴱt<br>ƒ(s̃)≪ᴱƒ(t̃₁,t̃₂) |        ∅         |
+| **SVE-C**         | Sequence variable elimination under commutative head   | ƒ(x̅,,s̃)≪ᴱƒ(t̃₁,t₁,t̃₂,t₂,…,t̃ₙ,tₙ,t̃ₙ₊₁) |     |  ƒ(s̃)≪ᴱ ƒ(t̃₁,…,t̃ₙ₊₁)   |  x̅ ≈ ❴t₁,…,tₙ❵   |
+|                   |                                                        |                                            |     |                        |                  |
+|                   | ***Rules for associative symbols***                    |                                            |     |                        |                  |
+| **Dec-A**         | Decomposition under associative head                   |              ƒ(s,s̃)≪ᴱƒ(t,t̃)              | s∉Ꮙₛₑ    |   s≪ᴱt<br>ƒ(s̃)≪ᴱƒ(t̃)   |        ∅         |
+| **SVE-A**         | Sequence variable elimination under associative head   |            ƒ(̅x,s̃)≪ᴱƒ(t̃₁,t̃₂)            |     |      ƒ(̅s̃)≪ᴱ ƒ(t̃₂)      |    x≈(t̃₁)[ƒ]     |
+| **FVE-A-strict**  | Function variable elimination under associative head   |            ƒ(X(s̃₁),s̃₂)≪ᴱƒ(t̃)            |     |     ƒ(s̃₁,s̃₂)≪ᴱƒ(t̃)     |       X≈ƒ        |
+| **IVE-A-strict**  | Individual variable elimination under associative head |            ƒ(x,s̃)≪ᴱƒ(t̃₁,t̃₂)             |     |      ƒ(̅s̃)≪ᴱ ƒ(t̃₂)      |     x≈ƒ(t̃₁)      |
+|                   |                                                        |                                            |     |                        |                  |
+|                   | ***Rules for associative-commutative symbols***        |                                            |     |                        |                  |
+| **Dec-AC**        | Decomposition under AC head (Same as Dec-C)            |           ƒ(s,s̃)≪ᴱƒ(t̃₁,t,t̃₂)            | s∉Ꮙₛₑ | s≪ᴱt<br>ƒ(s̃)≪ᴱƒ(t̃₁,t̃₂) |        ∅         |
+| **SVE-AC**        | Sequence variable elimination under AC head            | ƒ(̅x,s̃)≪ᴱƒ(t̃₁,t₁,t̃₂,t₂,…,t̃ₙ,tₙ,t̃ₙ₊₁)  |     |  ƒ(̅s̃)≪ᴱ ƒ(t̃₁,…,t̃ₙ₊₁)   | x̅ ≈ ❴t₁,…,tₙ❵[ƒ] |
+| **FVE-AC-strict** | Function variable elimination under AC head            |            ƒ(X(s̃₁),s̃₂)≪ᴱƒ(t̃)            |     |     ƒ(s̃₁,s̃₂)≪ᴱƒ(t̃)     |     S={X≈ƒ}      |
+| **IVE-AC**        | Individual variable elimination under AC head          |  ƒ(x,s̃)≪ᴱƒ(t̃₁,t₁,t̃₂,t₂,…,t̃ₙ,tₙ,t̃ₙ₊₁)  |     |  ƒ(̅s̃)≪ᴱ ƒ(t̃₁,…,t̃ₙ₊₁)   |  x ≈ ƒ(t₁,…,tₙ)  |
+|                   |                                                        |                                            |     |                        |                  |
 
 
 

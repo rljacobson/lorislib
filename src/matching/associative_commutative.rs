@@ -23,6 +23,7 @@ associative-commutative and S={X≈ƒ}.
 */
 
 
+use std::cmp::min;
 use smallvec::smallvec;
 use crate::{
   matching::{
@@ -40,6 +41,8 @@ use crate::{
   },
   atom::SExpression,
 };
+#[allow(unused_imports)]
+use crate::logging::{Channel, log};
 
 use super::{
   function_application::{
@@ -102,12 +105,13 @@ impl RuleIVEAC {
   }
 
   pub fn try_rule(me: &MatchEquation) -> Option<RuleIVEAC> {
-    if me.pattern.len() > 1
+
+    if me.pattern.len() > 0
         && SExpression::part(&me.pattern, 1).is_variable().is_some()
     {
       // Additional condition for strict associativity
       #[cfg(feature = "strict-associativity")]
-      if me.ground.len() <= 1{
+      if me.ground.len() == 0 {
         return None;
       }
 
@@ -138,8 +142,7 @@ impl Iterator for RuleIVEAC {
   type Item = NextMatchResultList;
 
   fn next(&mut self) -> MaybeNextMatchResult {
-    let mut n = self.match_equation.ground.len();
-    n = if n > 31 { 31 } else { n };
+    let n = min(32, self.match_equation.ground.len());
     let max_subset_state: u32 = ((1 << n) - 1) as u32;
 
     if self.subset > max_subset_state {
@@ -155,7 +158,7 @@ impl Iterator for RuleIVEAC {
     // Skip the head
     child_iter.next();
     for (k, c) in child_iter.enumerate(){
-      if k == 31 {
+      if k == 32 {
         break;
       }
       if ((1 << k) as u32 & self.subset) != 0 {
@@ -165,12 +168,12 @@ impl Iterator for RuleIVEAC {
       }
     }
 
-    let mut new_function = SExpression::new(self.match_equation.ground.head(), subset);
+    let new_function = SExpression::new(self.match_equation.ground.head(), subset);
     let substitution = NextMatchResult::sub(
       self.match_equation.pattern_first(),
       new_function
     );
-    let mut new_ground_function = SExpression::new(self.match_equation.ground.head(), complement);
+    let new_ground_function = SExpression::new(self.match_equation.ground.head(), complement);
 
     let match_equation = NextMatchResult::eq(
       self.match_equation.pattern_rest(),
@@ -210,15 +213,15 @@ mod tests {
     let f = {
       let mut children = vec![
         Symbol::from_static_str("ƒ"),
-        SExpression::variable("x"),
+        SExpression::variable_static_str("x"),
       ];
       let mut rest = ["u", "v", "w"].iter().map(|&n| Symbol::from_static_str(n)).collect::<Vec<Atom>>();
       children.append(&mut rest);
       Atom::SExpression(Rc::new(children))
     };
 
-    let mut g = {
-      let mut children = ["ƒ", "a", "b", "c"].iter().map(|&n| Symbol::from_static_str(n)).collect::<Vec<Atom>>();
+    let g = {
+      let children = ["ƒ", "a", "b", "c"].iter().map(|&n| Symbol::from_static_str(n)).collect::<Vec<Atom>>();
       Atom::SExpression(Rc::new(children))
     };
 

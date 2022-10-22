@@ -1,12 +1,17 @@
 /*!
 
+Operators have a variety of properties that affect how they are parsed, interpreted, and evaluated. This module
+defines an API to interact with a database of information about operators that can be queried by the various
+subsystems needing this information. In also implements a minimalist "database" backend essentially consisting of a
+hashmap or two.
+
 An operator is a syntactic component of an expression grammar that may take arguments. The
 `Operator` struct holds syntactic data about the operator, which is used by the generic Pratt
 parsing algorithm.
 
 A table of operators will hold the operator database for all the operators in the expression
-grammar. The parsing algorithm will look up a given operator using the operator's token (sigil).
-Thus, the operator table is a `HashMap` from `String` to `Operator`.
+grammar. The parsing algorithm will look up a given operator using the operator's token ("sigil").
+Thus, the `OperatorTable` is a `HashMap` from `String` to `Operator`.
 
 */
 #![allow(dead_code)]
@@ -242,7 +247,7 @@ impl Operator {
 
   /// This property would be recorded for each operator type if the operator types themselves are to be read in from
   /// a database dynamically.
-  fn associativity(&self) -> Associativity {
+  pub fn associativity(&self) -> Associativity {
     match self {
 
       | Operator::BinaryInfix { associativity, .. }
@@ -319,22 +324,28 @@ impl Operator {
 /// Read in a list of operators and their syntactic properties and generate a `left_operator_table` and
 /// `null_operator_table` for use in parsing.
 pub(crate) fn get_operator_tables() -> OperatorTables {
+  #[allow(non_snake_case)]
   let OPERATORS: &[Operator] = &[
 
     Operator::Postfix {
-      name: interned_static("BlankSequence"),
+      /// The labels `IntoBlank` and friends are "fixed up" at parse time into the more complicated expression
+      /// `Pattern[name, Blank[]]`. Thus, `IntoBlank` is a placeholder function for compatibility with the simple
+      /// scheme of one operator == one function.
+      name: interned_static("IntoBlankNullSequence"),
       precedence: 160,
       l_token: interned_static("___"),
     },
 
     Operator::Postfix {
-      name: interned_static("Sequence"),
+      /// See comments on `BlankNullSequence`/`IntoBlankNullSequence`
+      name: interned_static("IntoBlankSequence"),
       precedence: 160,
       l_token: interned_static("__"),
     },
 
     Operator::Postfix {
-      name: interned_static("Blank"),
+      /// See comments on `BlankNullSequence`/`IntoBlankNullSequence`
+      name: interned_static("IntoBlank"),
       precedence: 160,
       l_token: interned_static("_"),
     },
@@ -398,12 +409,29 @@ pub(crate) fn get_operator_tables() -> OperatorTables {
     },
 
     Operator::BinaryInfix {
+      name: interned_static("And"),
+      precedence: 100,
+      associativity: Associativity::Full,
+      l_token: interned_static("&&"),
+    },
+
+    Operator::BinaryInfix {
+      name: interned_static("Or"),
+      precedence: 95,
+      associativity: Associativity::Full,
+      l_token: interned_static("||"),
+    },
+
+    Operator::BinaryInfix {
       name: interned_static("SameQ"),
       precedence: 90,
       associativity: Associativity::Non,
       l_token: interned_static("=="),
     },
 
+    // Because Mathematica doesn't use optional ternary operators for conditional *Set, it is convenient for us not
+    // to as well. Instead, `exp1 ^= exp2 /; exp3` means `UpSet[exp1, Condition[exp2, exp3]]`
+    /*
     Operator::OptionalTernary {
       name: interned_static("Set"),
       precedence: 80,
@@ -435,6 +463,42 @@ pub(crate) fn get_operator_tables() -> OperatorTables {
       l_token: interned_static("^:="),
       o_token: interned_static("/;")
     },
+    */
+
+    Operator::BinaryInfix {
+      name: interned_static("Condition"),
+      precedence: 90, // Higher precedence than `*Set`
+      associativity: Associativity::Non,  // Todo: Associativity of `Conditon`?
+      l_token: interned_static("/;"),
+    },
+
+    Operator::BinaryInfix {
+      name: interned_static("Set"),
+      precedence: 80,
+      associativity: Associativity::Right,
+      l_token: interned_static("=")
+    },
+
+    Operator::BinaryInfix {
+      name: interned_static("UpSet"),
+      precedence: 80,
+      associativity: Associativity::Right,
+      l_token: interned_static("^="),
+    },
+
+    Operator::BinaryInfix {
+      name: interned_static("SetDelayed"),
+      precedence: 80,
+      associativity: Associativity::Right,
+      l_token: interned_static(":="),
+    },
+
+    Operator::BinaryInfix {
+      name: interned_static("UpSetDelayed"),
+      precedence: 80,
+      associativity: Associativity::Right,
+      l_token: interned_static("^:="),
+    },
 
     Operator::BinaryInfix {
       name: interned_static("Unset"),
@@ -451,7 +515,7 @@ pub(crate) fn get_operator_tables() -> OperatorTables {
     },
 
     Operator::Postfix {
-      name: interned_static("ExpresionList"),
+      name: interned_static("CompoundExpression"),
       precedence: 50,
       l_token: interned_static(";")
     },

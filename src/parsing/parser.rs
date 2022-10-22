@@ -47,7 +47,6 @@ The present design differs in several ways:
 // Todo: Think about whether or not there is a better code factorization between `left_denotation` and
 //       `null_denotation`, as they differ only in which operator types they match on.
 
-
 use std::rc::Rc;
 
 use crate::{
@@ -58,6 +57,9 @@ use crate::{
   },
   atom::{
     Atom,
+    AtomKind,
+    SExpression,
+    Symbol
   },
   logging::{
     log,
@@ -75,11 +77,13 @@ use crate::{
       OperatorTable,
       OperatorTables
     },
-  }
+  },
 };
-use crate::atom::SExpression;
+use crate::atom::SExpression::{make_variable};
 
+use crate::parsing::operator::Associativity;
 
+// The operator tables are populated lazily.
 static mut OPERATOR_TABLES: Option<OperatorTables> = None;
 
 
@@ -101,7 +105,9 @@ pub fn parse(input: &str) -> Result<Atom, ()>{
       Err(())
     }
 
-    Ok(a) => Ok(a)
+    Ok(a) => {
+      Ok(a)
+    }
 
   }
 }
@@ -139,7 +145,6 @@ fn parse_expression(
             previous_binding_power
     ).as_str()
   );
-
 
   // STEP 3: Parse the expressions that form the RHS of this null token.
   // In the case of a leaf, this is a no-op. We pass in the operator record to know
@@ -211,7 +216,7 @@ fn parse_expression(
     // something that isn't allowed to have something on its LHS!)
 
     // The `previous_binding_power` is the precedence of the parent expression that called this iteration of
-    // `parse_expression` in the first place. If the new operator have a precedence even lower than the parent
+    // `parse_expression` in the first place. If the new operator has a precedence even lower than the parent
     // expression's, then the parent expression itself deserves to be on its LHS, not the `current_root`, which is
     // merely a subexpression of the parent. If we hit this case, we are done this iteration of `parse_expression`
     // and return the expression we built to the caller.
@@ -376,9 +381,18 @@ fn null_denotation(expression: &mut Atom, operator: &Operator, lexer: &mut Lexer
 /// Consumes the next token, giving success if the token is an operator matching `expected_token` and failure
 /// otherwise.
 fn expect(expected_token: InternedString, lexer: &mut Lexer) -> Result<(), ()> {
-  match consume_token(lexer) {
+  /*
+  There is a context sensitivity problem with the `Construct` o-token "]" and the `Part` o-token "]]".
+  For example, how should the lexer treat the final "]]" in `Plus[1, Times[2, x]]`?
 
-    Token::Operator(t) if t==expected_token => {
+  It boils down to where we want to handle the special case. The most generic solution I can think of right now is to
+  handle the case that op1 is a prefix of op2. Normally, the lexer returns the leftmost longest token match. But we
+  can call `lexer.expect(op1)`, and the lexer will look first for the expected token before proceeding as normal.
+  */
+
+  match lexer.expect(expected_token) {
+
+    Some(Token::Operator(t)) if t==expected_token => {
       log(
         Channel::Debug,
         5,
@@ -387,8 +401,13 @@ fn expect(expected_token: InternedString, lexer: &mut Lexer) -> Result<(), ()> {
       Ok(())
     }
 
-    anything_else => {
+    Some(anything_else) => {
       log(Channel::Error, 1, format!("Expected: {}, Found: {}", resolve_str(expected_token), anything_else).as_str());
+      Err(())
+    }
+
+    None => {
+      log(Channel::Error, 1, format!("Expected: {}, Found nothing", resolve_str(expected_token)).as_str());
       Err(())
     }
 
@@ -401,7 +420,7 @@ fn expect(expected_token: InternedString, lexer: &mut Lexer) -> Result<(), ()> {
 fn optional_expect(expected_token: InternedString, lexer: &mut Lexer) -> bool {
   match lexer.peek() {
 
-    Some(Token::Operator(token)) if *token == expected_token => {
+    Some(Token::Operator(token)) if token == expected_token => {
       log(
         Channel::Debug,
         5,
@@ -422,8 +441,7 @@ fn optional_expect(expected_token: InternedString, lexer: &mut Lexer) -> bool {
 
 /// This method parses the expressions that will form the RHS of the left `expression`, pushing them onto
 /// `expression` as children. The `operator` holds information about `expression`.
-fn left_denotation(root: &mut Atom, operator: &Operator, lexer: &mut Lexer)
-                   -> Result<(), ()>{
+fn left_denotation(root: &mut Atom, operator: &Operator, lexer: &mut Lexer) -> Result<(), ()>{
 
   // Operators that parenthesize their arguments are special cases in the sense that for their second
   // argument their right binding power is zero regardless of their precedence/left binding power. As we have
@@ -435,16 +453,15 @@ fn left_denotation(root: &mut Atom, operator: &Operator, lexer: &mut Lexer)
       match parse_expression(0, lexer) {
 
         // The nonempty case.
-        Ok(parenthesized_expresion) => {
-          push_child(root, parenthesized_expresion)?;
+        Ok(parenthesized_expression) => {
+          push_child(root, parenthesized_expression)?;
           // Now consume the o_token and proceed.
           expect(*o_token, lexer)?;
         }
 
         // The empty case. We allow this to be empty in this implementation, but it could just as easily be an error..
         Err(_) => {
-          // Nothing to push onto the expression, but we still need to consume the o-token.
-          expect(*o_token, lexer)?;
+          // Nothing to push onto the expression.
         }
       }
     }
@@ -470,7 +487,31 @@ fn left_denotation(root: &mut Atom, operator: &Operator, lexer: &mut Lexer)
 
     // The nonempty case
     Ok(rhs_expression) => {
-      push_child(root, rhs_expression)?
+      // If this operator is fully associative and the RHS we just parsed is the operator, we want to "chain" with it.
+      // For example, If we have `a+b+c`, then the root at this point would be `Plus[a, ☐]`, and `rhs_expression`
+      // would be `Plus[b, c]`. Instead of constructing `Plus[a, Plus[b, c]]`, we want to construct `Plus[a, b, c]`.
+      if operator.associativity() == Associativity::Full
+          && root.kind() == AtomKind::SExpression
+          && rhs_expression.kind() == AtomKind::SExpression // todo: Do I need to check Atom::SExpression?
+          && root.name() == rhs_expression.name() // Only chain with the same operator.
+      {
+        // Destructure RHS
+        if let Atom::SExpression(children) = rhs_expression {
+          // We can't just `append()`, because we want to apply any relevant fix-ups.
+          let mut child_iter = Rc::try_unwrap(children).map_err(|_| () )?.into_iter();
+          child_iter.next(); // skip head.
+          for child in child_iter {
+            push_child(root, child)?;
+          }
+        } else {
+          unreachable!("Parser tried to chain a leaf expression, which is not possible. This is a bug.");
+        }
+      } else {
+
+        // The usual case of non-chaining operators.
+        push_child(root, rhs_expression)?
+      }
+
     }
 
     // The empty case. This happens when there is no expression with sufficiently low precedence to form our RHS.
@@ -558,53 +599,88 @@ fn left_denotation(root: &mut Atom, operator: &Operator, lexer: &mut Lexer)
 /// Fetches the next token and consumes it. This is the default `next` behavior. The alternative behavior is
 /// `peek`, which does not consume the token from the iterator.
 fn consume_token(lexer: &mut Lexer) -> Token {
-  // This *should* be infallible, because errors should produce error tokens.
-  lexer.next().unwrap()
+  match lexer.next() {
+    Some(token) => token,
+    None => {
+      log(
+        Channel::Error,
+        1,
+        format!("Unexpected end of input. Expected a token but found none.").as_str()
+      );
+      Token::Error("Unexpected end of input.".to_string())
+    }
+  }
 }
 
 /// Fetches the next token but does not consume it. A call to either `get_current_token` or `consume_next_token`
 /// will return the same token again.
-fn get_current_token<'a>(lexer: &'a mut Lexer) -> Option<&'a Token> {
+fn get_current_token(lexer: &mut Lexer) -> Option<Token> {
   lexer.peek()
 }
 
+fn push_child(parent: &mut Atom, child: Atom) -> Result<(), ()> {
+  fix_up(parent, child)
+}
+
 #[allow(unused_parens)]
-/// Push `child` onto `parent`, applying fix-ups for "Construct", "Sequence", and "Parentheses".
-fn push_child(parent: &mut Atom, mut child: Atom) -> Result<(), ()> {
+/// Push `child` onto `parent`, applying fix-ups for "Construct", "Sequence", "Parentheses", and "Into*Sequence".
+fn fix_up(parent: &mut Atom, mut child: Atom) -> Result<(), ()> {
   // Destructure parent…
-  return match parent {
-    Atom::SExpression(parents_children) => {
-      if Atom::Symbol(interned_static("Construct")) == parents_children[0]{
+  if let Atom::SExpression(children) = parent {
+
+    // fix-ups that depend on the form of the parent.
+    // Match on parent.head()
+    match children[0] {
+      Atom::Symbol(name) if name == interned_static("Construct")
+      => {
         // To convert `Construct` to the function it's constructing, just remove the head!
         // In this case, `child` is the head of the function being constructed, so we just
         // overwrite the `Construct` head with it.
-        Rc::get_mut(parents_children).unwrap()[0] = child;
-        // <Vec<Atom> as AsMut<Vec<Atom>>>::as_mut(parents_children)[0] = child;
+        Rc::get_mut(children).unwrap()[0] = child;
         return Ok(());
       }
 
-      // Destructure the child
-      if let Atom::SExpression(ref mut children) = child {
-        if Atom::Symbol(interned_static("Sequence")) == children[0]
-            || Atom::Symbol(interned_static("Parentheses")) == children[0]
-        {
-          // Splice in the sequence's children, skipping the head.
-          Rc::get_mut(parents_children).unwrap().extend(children[1..].iter().cloned());
-          return Ok(());
-        }
+      Atom::Symbol(name) if resolve_str(name).starts_with("IntoBlank")
+      => {
+        let name_str = resolve_str(name);
+
+        *parent = make_variable(child, &name_str[4..]);
+        return Ok(());
       }
-      // If we get here it's just a normal child of a normal function.
-      Rc::get_mut(parents_children).unwrap().push(child.clone());
-      Ok(())
+
+      _ => {
+        /* pass */
+      }
     }
 
-    _ => {
-      // Tried to push a child onto an expression that cannot have children.
-      Err(())
+    // Fix-ups that depend on the form of the child
+    // Destructure the child
+    match child {
+
+      // Collapse "Sequence" and "Parentheses"
+      Atom::SExpression(ref mut grand_children)
+      if Symbol::from_static_str("Sequence") == grand_children[0]
+          || Symbol::from_static_str("Parentheses") == grand_children[0]
+      => {
+        // Splice in the sequence's children, skipping the head.
+        Rc::get_mut(children).unwrap().extend(grand_children[1..].iter().cloned());
+        return Ok(());
+      }
+
+      _ => {
+        // If we get here it's just a normal child of a normal function.
+        Rc::get_mut(children).unwrap().push(child.clone());
+        Ok(())
+      }
     }
+
+  } // end if parent is Atom::SExpression
+  else {
+    // Tried to push a child onto an expression that cannot have children.
+    Err(())
   }
-
 }
+
 
 
 /// Finds the given `Token` in the given `OperatorTable`, converts it to an `Atom`, and returns the `Atom` and
@@ -654,6 +730,60 @@ mod tests {
   #[allow(unused_imports)]
   use crate::logging::set_verbosity;
   use super::*;
+
+  #[test]
+  fn set_delayed_test() {
+
+    let text = "Subtract[x_, rest_]:=Plus[x, Minus[rest]]";
+    let expected = "SetDelayed[Subtract[x_, rest_], Plus[x, Minus[rest]]]";
+    set_verbosity(5);
+
+    match parse(text) {
+
+      Ok(e) => {
+        assert_eq!(expected, e.to_string().as_str());
+        println!("Success: {}", e);
+      },
+
+      Err(_) => assert!(false)
+
+    };
+  }
+
+  #[test]
+  fn nested_function_test() {
+    let text = "Part[f[a, b, c, d], 3]";
+    set_verbosity(5);
+
+    match parse(text) {
+
+      Ok(e) => {
+        assert_eq!(text, e.to_string().as_str());
+        println!("Success: {}", e);
+      },
+
+      Err(_) => assert!(false)
+
+    };
+  }
+
+
+  #[test]
+  fn empty_plus_test() {
+    let text = "Plus[]";
+    set_verbosity(5);
+
+    match parse(text) {
+
+      Ok(e) => {
+        assert_eq!(text, e.to_string().as_str());
+        println!("Success: {}", e);
+      },
+
+      Err(_) => assert!(false)
+
+    };
+  }
 
   #[test]
   fn simple_test() {
@@ -754,8 +884,8 @@ mod tests {
   #[test]
   /// The parser fixes up artifacts of the parsing process, e.g. "evaluating" `Construct`s, eliding slices, etc.
   fn fixup_test() {
-    let text = "a[b, c, d[e, f], g, h]";
-    set_verbosity(5);
+    let text = "a[b, c_, d[e__, f], g___, h]";
+    // set_verbosity(5);
 
     match parse(text) {
 

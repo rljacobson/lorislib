@@ -86,7 +86,7 @@ impl Iterator for RuleSVEF {
     }
 
     // Are there any more terms to take?
-    if self.match_equation.ground.len() == self.ground_sequence.len()+1 { // minus the head of ground.
+    if self.match_equation.ground.len() == self.ground_sequence.len() {
       // No more terms.
       return None;
     }
@@ -95,7 +95,7 @@ impl Iterator for RuleSVEF {
     self.ground_sequence.push(
       SExpression::part(
         &self.match_equation.ground,
-        self.ground_sequence.len() + 1 // skipping the head/
+        self.ground_sequence.len()+1 // skip the head
       )
     );
 
@@ -118,7 +118,7 @@ impl RuleSVEF {
   // Constructs the next result using components of `self`.
   fn make_next(&self) -> NextMatchResultList {
 
-    let mut match_equation_ground = { // scope of extras
+    let match_equation_ground = { // scope of extras
       let mut match_equation_ground_children = vec![self.match_equation.ground.head()];
       match_equation_ground_children.extend(
         // Todo: Does this do the right thing when `ground_function.len()==ground_sequence.len()`?
@@ -147,9 +147,9 @@ impl RuleSVEF {
 
 
   pub fn try_rule(me: &MatchEquation) -> Option<Self> {
-    if me.pattern.len() > 1
+    if me.pattern.len() > 0
         && SExpression::part(&me.pattern, 1).is_sequence_variable().is_some()
-        && me.ground.len() > 1 {
+        && me.ground.len() > 0 {
 
       Some(
         RuleSVEF {
@@ -180,6 +180,7 @@ mod tests {
       Symbol
     },
   };
+  
 
 
   #[test]
@@ -187,7 +188,7 @@ mod tests {
     let f = { // scope of children
       let mut children = vec![
         Symbol::from_static_str("ƒ"),
-        SExpression::sequence_variable("x")
+        SExpression::sequence_variable_static_str("x")
       ];
       let mut rest = ["u", "v", "w"].iter()
                                     .map(|&n| Symbol::from_static_str(n))
@@ -235,12 +236,13 @@ mod tests {
 
   }
 
+  // Solve f(‹s›, u, v, w) << f(a, b, c, d)
   #[test]
   fn generate_rule_decf() {
     let f = { // scope of children, rest
       let mut children = vec![
         Symbol::from_static_str("ƒ"),
-        SExpression::variable("s")
+        SExpression::variable_static_str("s")
       ];
       let mut rest = ["u", "v", "w"].iter()
                                     .map(|&n| Symbol::from_static_str(n))
@@ -249,8 +251,8 @@ mod tests {
       Atom::SExpression(Rc::new(children))
     };
 
-    let mut g = { // scope of children
-      let mut children = ["ƒ", "a", "b", "c", "d"].iter()
+    let g = { // scope of children
+      let children = ["ƒ", "a", "b", "c", "d"].iter()
                                                   .map(|&n| Symbol::from_static_str(n))
                                                   .collect::<Vec<Atom>>();
       Atom::SExpression(Rc::new(children))
@@ -260,7 +262,7 @@ mod tests {
       pattern: f,
       ground : g,
     };
-    let rule_decf = RuleDecF::new(me);
+    let rule_decf: RuleDecNonCommutative<NonAssociative> = RuleDecF::new(me);
 
     let expected = [
       "‹s› ≪ a",

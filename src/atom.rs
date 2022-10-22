@@ -6,9 +6,10 @@ Primitive expression node types.
 
 use std::{
   rc::Rc,
-  cmp::Ordering
+  cmp::Ordering,
+  hash::{Hash, Hasher}
 };
-use std::hash::{Hash, Hasher};
+use fnv::FnvHasher;
 
 use strum_macros::{
   EnumDiscriminants,
@@ -29,11 +30,11 @@ use crate::{
   format::{
     Formattable,
     ExpressionFormatter,
-    display_formattable_impl
+    display_formattable_impl,
+    DisplayForm
   },
   normal_form::NormalFormOrder,
 };
-use crate::format::DisplayForm;
 
 #[derive(Clone, PartialEq, Debug, IntoStaticStr, EnumDiscriminants)]
 #[strum_discriminants(name(AtomKind))]
@@ -74,7 +75,7 @@ impl Atom {
         children[0].kind()
       }
 
-      atom => {
+      _atom => {
         // The head of any non-function is a symbol.
         AtomKind::Symbol
       }
@@ -97,7 +98,7 @@ impl Atom {
   }
 
   // todo: Should the return type be the machine sized index type (usize)?
-  /// Returns the length of the expression. Only S-Expressions can have nonzero length.
+  /// Returns the length of the expression not counting the head. Only S-Expressions can have nonzero length.
   /// For string length, use the `StringLength` function (currently unimplemented).
   pub fn len(&self) -> usize {
     match self {
@@ -114,6 +115,17 @@ impl Atom {
     self.len() == 0
   }
 
+  /// Computes and returns the hash value for `self` as an expression. Uses FNV-1a, which is not cryptographically
+  /// secure.
+  pub fn hashed(&self) -> u64 {
+    let mut hasher = FnvHasher::default();
+
+    self.hash(&mut hasher);
+
+    hasher.finish()
+  }
+
+
   // region Pattern Matching Utilities
 
   /// Is `atom` the symbol `True`
@@ -126,6 +138,31 @@ impl Atom {
     if let Atom::SExpression(children) = self {
       if children[0] == Symbol::from_static_str("Sequence"){
         return Some(children[1..].to_vec());
+      }
+    }
+    None
+  }
+
+
+  /// This is a checked version of `SExpression::children()`.
+  pub fn is_function(&self) -> Option<Rc<Vec<Atom>>> {
+    if let Atom::SExpression(children) = self {
+      Some(children.clone())
+    } else {
+      None
+    }
+  }
+
+
+
+  /// If `self` has the form `Rule[lhs, rhs]`, returns a tuple (lhs, rhs)
+  pub fn is_rule(&self) -> Option<(Atom, Atom)> {
+    if let Atom::SExpression(children) = self {
+      if (children[0] == Symbol::from_static_str("Rule")
+        || children[0] == Symbol::from_static_str("RuleDelayed"))
+          && children.len() == 3
+      {
+        return Some((children[1].clone(), children[2].clone()));
       }
     }
     None
@@ -155,7 +192,8 @@ impl Atom {
   /// Checks if `self` has the form `Pattern[□, BlankSequence[□]]` (equiv. `□__□`).
   /// Returns the name if `self` is a `BlankSequence`.
   pub fn is_sequence_variable(&self) -> Option<InternedString> {
-    self.check_variable_pattern("BlankSequence")
+    self.is_null_sequence_variable().or_else(| | self.check_variable_pattern("BlankSequence"))
+    // self.check_variable_pattern("BlankSequence")
   }
 
   /// Checks if `self` has the form `Pattern[□, BlankNullSequence[□]]` (equiv. `□___□`).
@@ -227,12 +265,12 @@ impl Hash for Atom {
 
       Atom::Integer(v) => {
         hasher.write(&[242, 99, 84, 113, 102, 46, 118, 94]);
-        v.hash(hasher)
+        v.to_string().hash(hasher);
       }
 
       Atom::Real(v) => {
         hasher.write(&[195, 244, 76 , 249, 227, 115, 88 , 251]);
-        v.as_raw().hash(hasher);
+        v.to_string().hash(hasher);
       }
 
       Atom::Symbol(v) => {
@@ -295,6 +333,27 @@ impl Formattable for Atom {
               format!("{}___", resolve_str(name))
             }
           }
+        } else if let Some(children) = self.is_sequence() {
+          match formatter.form {
+            DisplayForm::Matcher => {
+              format!(
+                "({})",
+                children.iter()
+                        .map(|c| c.format(formatter))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+              )
+            }
+            _ => {
+              format!(
+                "Sequence[{}]",
+                children.iter()
+                        .map(|c| c.format(formatter))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+              )
+            }
+          }
         } else {
           // A "normal" function
           match formatter.form {
@@ -306,7 +365,7 @@ impl Formattable for Atom {
                 // "{}({})",
                 "{}❨{}❩",
                 // "{}[{}]",
-                head,
+                head.format(formatter),
                 child_iter.map(|c| c.format(formatter))
                           .collect::<Vec<_>>()
                           .join(", ")
@@ -320,7 +379,7 @@ impl Formattable for Atom {
                 // "{}({})",
                 // "{}❨{}❩",
                 "{}[{}]",
-                head,
+                head.format(formatter),
                 child_iter.map(|c| c.format(formatter))
                           .collect::<Vec<_>>()
                           .join(", ")
@@ -464,8 +523,12 @@ pub(crate) mod SExpression {
     Atom::SExpression(Rc::new(vec![Symbol::from_static_str("Sequence")]))
   }
 
-  /// Creates a `Sequence[]` with the provided children.
+  /// Creates a `Sequence[]` when provided multiple children. If given one child it returns the child.
   pub(crate) fn sequence(mut children: Vec<Atom>) -> Atom {
+    if children.len() == 1 {
+      return children.pop().unwrap()
+    }
+
     let mut new_children = Vec::with_capacity(children.len()+1);
     new_children.push(Symbol::from_static_str("Sequence"));
     new_children.append(&mut children);
@@ -474,34 +537,38 @@ pub(crate) mod SExpression {
 
   /// Creates a sequence variable, i.e. an expression of the form `Pattern[name, BlankSequence[]]`. The provided
   /// `name` is turned into a symbol.
-  pub(crate) fn null_sequence_variable(name: &'static str) -> Atom {
-    make_variable(name, "BlankNullSequence")
+  pub(crate) fn null_sequence_variable_static_str(name: &'static str) -> Atom {
+    make_variable(Symbol::from_static_str(name), "BlankNullSequence")
   }
 
   /// Creates a sequence variable, i.e. an expression of the form `Pattern[name, BlankSequence[]]`. The provided
   /// `name` is turned into a symbol.
-  pub(crate) fn sequence_variable(name: &'static str) -> Atom {
-    make_variable(name, "BlankSequence")
+  pub(crate) fn sequence_variable_static_str(name: &'static str) -> Atom {
+    make_variable(Symbol::from_static_str(name), "BlankSequence")
   }
 
   /// Creates a sequence variable, i.e. an expression of the form `Pattern[name, BlankSequence[]]`. The provided
   /// `name` is turned into a symbol.
-  pub(crate) fn variable(name: &'static str) -> Atom {
-    make_variable(name, "Blank")
+  pub(crate) fn variable_static_str(name: &'static str) -> Atom {
+    make_variable(Symbol::from_static_str(name), "Blank")
   }
 
-  /// Creates a sequence variable, i.e. an expression of the form `Pattern[name, BlankSequence[]]`. The provided
-  /// `name` is turned into a symbol.
-  fn make_variable(name: &'static str, var_kind: &'static str) -> Atom {
+  /// Creates a sequence variable, i.e. an expression of the form `Pattern[name, BlankSequence[]]`.
+  pub(crate) fn make_variable(name: Atom, var_kind: &'static str) -> Atom {
     Atom::SExpression(
       Rc::new(
         vec![
           Symbol::from_static_str("Pattern"),
-          Symbol::from_static_str(name),
+          name,
           with_str_head(var_kind)
         ]
       )
     )
+  }
+
+  /// Wraps the given expression in `Hold`: `Hold[Expression]`.
+  pub fn hold(expression: Atom) -> Atom {
+    Atom::SExpression(Rc::new(vec![Symbol::from_static_str("Hold"), expression]))
   }
 
   // endregion
@@ -553,7 +620,7 @@ pub(crate) mod SExpression {
   /// Creates a new S-expression with the same children as `children` except that
   /// `children[0]` is `head`. Each child is cloned.
   pub(crate) fn new_swapped_head(head: Atom, children: &Vec<Atom>) -> Atom {
-    let mut new_children = Vec::with_capacity(children.len()+1);
+    let mut new_children = Vec::with_capacity(children.len());
     new_children.push(head);
     new_children.extend(children[1..].iter().cloned());
     Atom::SExpression(Rc::new(new_children))

@@ -1,9 +1,13 @@
-#![allow(non_snake_case)]
 /*!
+
 
 Built-in constants and functions.
 
+Todo: Implement NValues
+Todo: Implement Constants
+
  */
+#![allow(non_snake_case)]
 
 use std::{
   rc::Rc
@@ -44,14 +48,29 @@ use crate::{
   evaluate,
   matching::Matcher
 };
-#[allow(unused_imports)]
+#[allow(unused_imports)]#[allow(unused_imports)]
 use crate::interner::resolve_str;
 #[allow(unused_imports)]
 use crate::logging::set_verbosity;
 
+
+mod control_flow;
+mod expressions;
+mod boolean;
+mod context;
+mod numeric;
+
+use control_flow::register_builtins as register_control_flow;
+use expressions::register_builtins as register_expressions;
+use boolean::register_builtins as register_boolean;
+use context::register_builtins as register_context;
+use numeric::register_builtins as register_numeric;
+
+
 // todo: store this in the global context as an own-value.
 pub const DEFAULT_REAL_PRECISION: u32 = 53;
 
+// region Preamble
 pub static STANDARD_PREAMBLE: [&str; 14] = [
   // Definitions
 
@@ -75,11 +94,12 @@ pub static STANDARD_PREAMBLE: [&str; 14] = [
   "D[Tan[x_], y_] ^:= Sec[x]^2*D[x, y] /; Occurs[y, x]",
   "D[Sec[x_], y_] ^:= Sec[x]*Tan[x]*D[x, y] /; Occurs[y, x]",
 ];
-
+// endregion
 
 //                        f(substitutions, original_expression, context) -> evaluated_expression
 pub type BuiltinFn = fn(SolutionSet, Atom, &mut Context) -> Atom;
 
+#[macro_export]
 macro_rules! register_builtin {
   ($name:ident, $pattern:literal, $attributes:expr, $context:ident) => {
     {
@@ -92,9 +112,17 @@ macro_rules! register_builtin {
     };
   }
 }
+pub use register_builtin;
 
 pub(crate) fn register_builtins(context: &mut Context) {
   // todo: When is something read-only vs protected? What permissions should these symbols have?
+
+  register_control_flow(context);
+  register_expressions(context);
+  register_boolean(context);
+  register_context(context);
+  register_numeric(context);
+
 
   // region Attributes for functions without definition
 
@@ -104,32 +132,6 @@ pub(crate) fn register_builtins(context: &mut Context) {
   context.set_attribute(interned_static("List"), Attribute::Protected).ok();
   context.set_attribute(interned_static("Hold"), Attribute::Protected).ok();
   context.set_attribute(interned_static("Hold"), Attribute::HoldAll).ok();
-
-  // endregion
-
-  // region Constants
-  // Todo: Implement NValues
-/*
-  // Numeric up_value for `Pi`
-  { // Scope for pi_record
-    let f = { // scope of children
-      let children = [
-        Symbol::from_static_str("UpSet"),
-        Atom::SExpression(Rc::new(
-          [
-            Symbol::from_static_str("N"),
-            Symbol::from_static_str("Pi")
-          ].to_vec()
-        )),
-        Atom::Real(BigFloat::with_val(53, rug::float::Constant::Pi))
-      ];
-      Atom::SExpression(Rc::new(children.to_vec()))
-    };
-
-    evaluate(f, context);
-    context.set_attribute(interned_static("Pi"), Attribute::Protected).unwrap();
-  }
-*/
 
   // endregion
 
@@ -148,12 +150,12 @@ pub(crate) fn register_builtins(context: &mut Context) {
 // region utilities
 
 /// If `atom` has the form `Condition[exp1, exp2]`, gives `(exp1, Some(exp2))`. Otherwise, gives `(atom, None)`.
-fn extract_condition(atom: Atom) -> (Atom, Option<Atom>) {
+pub fn extract_condition(atom: Atom) -> (Atom, Option<Atom>) {
   match atom {
 
     Atom::SExpression(children)
-      if children.len() == 3 && children[0] == Symbol::from_static_str("Condition")
-      => {
+    if children.len() == 3 && children[0] == Symbol::from_static_str("Condition")
+    => {
       (children[1].clone(), Some(children[2].clone()))
     }
 
@@ -163,7 +165,7 @@ fn extract_condition(atom: Atom) -> (Atom, Option<Atom>) {
 
 /// The `pattern_function` must be a function. Finds all symbols or symbols that are heads of functions that are
 /// arguments to the given function.
-fn collect_symbol_or_head_symbol(pattern_function: Atom) -> Vec<InternedString>{
+pub fn collect_symbol_or_head_symbol(pattern_function: Atom) -> Vec<InternedString>{
   let f = SExpression::children(&pattern_function);
   let mut child_iter = f.iter();
   child_iter.next(); // skip head
@@ -177,20 +179,44 @@ fn collect_symbol_or_head_symbol(pattern_function: Atom) -> Vec<InternedString>{
   }).collect()
 }
 
+
+/// This version of occurs check is called directly with two atoms. If the expression `needle` occurs anywhere in the
+/// expression `haystack`, returns true. Otherwise, returns false.
+pub fn occurs_check(needle: &Atom, haystack: &Atom) -> bool {
+  let needle_hash = needle.hashed();
+  if needle_hash == haystack.hashed() {
+    return true;
+  }
+
+  if let Atom::SExpression(children) = haystack {
+    for child in (*children).iter() {
+      if occurs_check(&needle, child) {
+        return true;
+      }
+    }
+  };
+
+  false
+}
+
+
 // endregion
 
 
 
 #[cfg(test)]
 mod tests {
-  use crate::atom::{Atom, Symbol};
-  use crate::attributes::{Attribute, Attributes};
-  use crate::builtins::{extract_condition, occurs_check, Set};
-  use crate::context::SymbolValue;
-  use crate::interner::interned_static;
-  use crate::{Context, parse};
-  #[allow(unused_imports)]
-  use crate::logging::set_verbosity;
+  use crate::{
+    context::SymbolValue,
+    attributes::{Attribute, Attributes},
+    atom::{Atom, Symbol},
+    interner::interned_static,
+    Context,
+    parse
+  };
+  use crate::built_ins::boolean::occurs_check;
+
+  use super::*;
 
   #[test]
   fn occurs_check_test() {

@@ -88,7 +88,7 @@ impl RuleFVEA {
   }
 
   pub fn try_rule(me: &MatchEquation) -> Option<Self> {
-    if me.pattern.len() > 1
+    if me.pattern.len() > 0
         && SExpression::part(&me.pattern, 1).is_function_variable().is_some()
     {
       // let rule_deca = Some(RuleDecA::new(dfe.match_equation.clone()));
@@ -132,10 +132,10 @@ impl Iterator for RuleFVEA {
     let (function_variable, new_pattern) = { // scope of `function`, `remaining_children`
 
       let function                : Rc<Vec<Atom>> = SExpression::children(&self.me.pattern_first());
-      let function_variable       : Atom          = function[0].clone(); // f()
-      let mut new_pattern_children: Vec<Atom>     = vec![self.me.ground.head()];
+      let function_variable       : Atom          = function[0].clone(); //X_
+      let mut new_pattern_children: Vec<Atom>     = vec![self.me.ground.head()]; // f()
       new_pattern_children.extend(
-        function.iter()
+        function[1..].iter()
                 .cloned()
                 .chain(
           // The remaining children, destructured ƒ(s̃₂) to get s̃₂
@@ -197,16 +197,21 @@ impl Iterator for RuleIVEA {
         };
 
     // Transform the substitution to be a substitution for a function instead of a sequence.
+    let new_substitution = // the value of this if-let
     // Destructure result to get substitution.
-    let new_substitution = // the value of this if
     if let NextMatchResult::Substitution(substitution) = result.pop().unwrap() {
-      // Destructure sequence in the ground expression
-      let children = SExpression::children(&substitution.ground);
+      // Destructure substitution to get at ground.
+      let (variable, ground) = (substitution.variable, substitution.ground);
 
-      let mut ground_function =
-          SExpression::new_swapped_head(self.rule_svef.match_equation.ground.head(), children.as_ref());
+      let ground = if let Atom::SExpression(mut children) = ground {
+        SExpression::new_swapped_head(self.rule_svef.match_equation.ground.head(), children.as_ref())
+      } else {
+        // Not a sequence, just a singleton expression.
+        let new_children = vec![self.rule_svef.match_equation.ground.head(), ground];
+        Atom::SExpression(Rc::new(new_children))
+      };
 
-      NextMatchResult::sub(substitution.variable, ground_function)
+      NextMatchResult::sub(variable, ground)
     } else {
       unreachable!();
     };
@@ -228,7 +233,7 @@ impl RuleIVEA {
   pub fn try_rule(me: &MatchEquation) -> Option<Self> {
     // Pattern: f[‹x›,…]
 
-    if me.pattern.len() > 1
+    if me.pattern.len() > 0
         && SExpression::part(&me.pattern, 1).is_variable().is_some()
     {
       let rule_svef = RuleSVEF::new(me.clone());
@@ -261,21 +266,24 @@ mod tests {
       Symbol
     }
   };
+  use crate::logging::set_verbosity;
 
 
   // solve ƒ(x̅,s̃)≪ᴱƒ(t̃₁,t̃₂)
   #[test]
   fn generate_rule_svea() {
-    let mut f: Atom = { // Scope of children
+    set_verbosity(5);
+
+    let f: Atom = { // Scope of children
       let mut children = vec![
         Symbol::from_static_str("ƒ"),
-        SExpression::sequence_variable("x")
+        SExpression::sequence_variable_static_str("x")
       ];
       children.extend(["u", "v", "w"].iter().map(|&n| Symbol::from_static_str(n)));
       Atom::SExpression(Rc::new(children))
     };
 
-    let mut g: Atom = Atom::SExpression(Rc::new(
+    let g: Atom = Atom::SExpression(Rc::new(
       ["ƒ", "a", "b", "c"].iter().map(|&n| Symbol::from_static_str(n)).collect::<Vec<Atom>>()
     ));
 
@@ -341,15 +349,15 @@ mod tests {
   #[test]
   fn generate_rule_fvea() {
 
-    let mut x = { // scope of children
-      let mut children = vec![SExpression::variable("X")];
+    let w = { // scope of children
+      let mut children = vec![SExpression::variable_static_str("X")];
       children.extend(["u", "v", "w"].iter().map(|&n| Symbol::from_static_str(n)));
       Atom::SExpression(Rc::new(children))
     };
-    let mut f = { // scope of children
+    let f = { // scope of children
       let mut children = vec![
         Symbol::from_static_str("ƒ"),
-        x
+        w
       ];
       children.extend(
         ["x", "y", "z"].iter().map(|&n| Symbol::from_static_str(n))
@@ -357,10 +365,10 @@ mod tests {
       Atom::SExpression(Rc::new(children))
     };
 
-    let mut g = Atom::SExpression(Rc::new(
+    let g = Atom::SExpression(Rc::new(
       ["ƒ", "a", "b", "c", "d", "e", "h"]
                       .iter()
-                      .map(|&n| Rc::new(Symbol::from_static_str(n)))
+                      .map(|n| Symbol::from_static_str(n))
                       .collect::<Vec<Atom>>()
     ));
 
@@ -391,10 +399,10 @@ mod tests {
   /// Solve ƒ❨‹x›, u, v, w❩ ≪ ƒ❨a, b, c❩
   #[test]
   fn generate_rule_ivea() {
-    let x: Atom = {
+    let f: Atom = {
       let mut children = vec![
         Symbol::from_static_str("ƒ"),
-        SExpression::variable("x")
+        SExpression::variable_static_str("x")
       ];
       children.extend(
         ["u", "v", "w"].iter().map(|&n| Symbol::from_static_str(n))
@@ -402,10 +410,10 @@ mod tests {
       Atom::SExpression(Rc::new(children))
     };
 
-    let mut g = Atom::SExpression(Rc::new(
+    let g = Atom::SExpression(Rc::new(
       ["ƒ", "a", "b", "c"]
           .iter()
-          .map(|&n| Rc::new(Symbol::from_static_str(n)))
+          .map(|n| Symbol::from_static_str(n))
           .collect::<Vec<Atom>>()
     ));
 

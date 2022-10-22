@@ -25,7 +25,8 @@ regex        = {version = "1.6.0", default-features = false, features = ["perf",
 aho-corasick    = "0.7.19" # Lexer
 string-interner = "0.14.0" # Used throughout
 yansi           = "0.5.1"  # ANSI color support
-fnv             = "1.0.7"  # FNV-1a hash
+fnv             = "1.0.7"  # FNV-1a hash, used internally for equality check of expressions.
+num-integer     = "^0.1.44" # For num_integer::binomial. Version is sync'ed to rug's dependency.
 
 # Arbitrary Precision Library
 # Uses:

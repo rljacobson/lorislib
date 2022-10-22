@@ -4,7 +4,6 @@
 #[macro_use]
 mod atom;
 mod attributes;
-mod builtins;
 mod context;
 mod evaluate;
 #[macro_use]
@@ -14,6 +13,7 @@ mod matching;
 mod normal_form;
 mod parsing;
 pub mod logging;
+mod built_ins;
 
 pub use context::Context;
 pub use evaluate::evaluate;

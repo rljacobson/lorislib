@@ -64,9 +64,9 @@ impl RuleSVEC {
   pub fn try_rule(me: &MatchEquation) -> Option<Self> {
     // Patter: f[«x»]
     // Ground: g[a,…]
-    if me.pattern.len() > 1
+    if me.pattern.len() > 0
         && SExpression::part(&me.pattern, 1).is_sequence_variable().is_some()
-        && me.ground.len() > 1 {
+        && me.ground.len() > 0 {
       Some(
         RuleSVEC {
           match_equation: me.clone(),
@@ -89,7 +89,7 @@ impl Iterator for RuleSVEC {
   type Item = NextMatchResultList;
 
   fn next(&mut self) -> MaybeNextMatchResult {
-    let mut n = min(self.match_equation.ground.len(), 31);
+    let n = min(self.match_equation.ground.len(), 31);
     let max_subset_state: u32 = ((1 << n) - 1) as u32;
 
     /*
@@ -215,7 +215,7 @@ mod tests {
     let f = { // scope of children
       let mut children = vec![
         Symbol::from_static_str("ƒ"),
-        SExpression::sequence_variable("x")
+        SExpression::sequence_variable_static_str("x")
       ];
       let mut rest = ["u", "v", "w"].iter()
                                     .map(|&n| Symbol::from_static_str(n))
@@ -288,7 +288,7 @@ mod tests {
     let f: Atom = { // scope of children, rest
       let mut children = vec![
         Symbol::from_static_str("ƒ"),
-        SExpression::variable("s")
+        SExpression::variable_static_str("s")
       ];
       let mut rest = ["u", "v", "w"].iter()
                                     .map(|&n| Symbol::from_static_str(n))
@@ -297,8 +297,8 @@ mod tests {
       Atom::SExpression(Rc::new(children))
     };
 
-    let mut g: Atom = { // scope of children
-      let mut children = ["ƒ", "a", "b", "c", "d"].iter()
+    let g: Atom = { // scope of children
+      let children = ["ƒ", "a", "b", "c", "d"].iter()
                                          .map(|&n| Symbol::from_static_str(n))
                                          .collect::<Vec<Atom>>();
       Atom::SExpression(Rc::new(children))

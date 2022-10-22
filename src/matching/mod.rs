@@ -74,14 +74,16 @@ SUCCESS: To obtain additional matches, proceed from Step 3.b to Step 1.a.ii.
 
 use std::{collections::HashMap, fmt::Display};
 
-pub use matcher::{Matcher};
+pub use matcher::{Matcher, display_solutions};
 use crate::{
   atom::{
     SExpression,
     Atom,
   }
 };
+use crate::format::{DisplayForm, Formattable};
 
+// todo: Use TinyMap instead of SolutionSet.
 /// A map from a variable / sequence variable to the ground term is it bound to.
 pub type SolutionSet = HashMap<Atom, Atom>;
 
@@ -104,7 +106,12 @@ impl MatchEquation {
 
 impl Display for MatchEquation {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{} ≪ {}", self.pattern, self.ground)
+    write!(
+      f,
+      "{} ≪ {}",
+      self.pattern.format(&DisplayForm::Matcher.into()),
+      self.ground.format(&DisplayForm::Matcher.into())
+    )
   }
 }
 
@@ -121,7 +128,12 @@ pub struct Substitution{
 
 impl Display for Substitution {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}→{}", self.variable, self.ground)
+    write!(
+      f,
+      "{}→{}",
+      self.variable.format(&DisplayForm::Matcher.into()),
+      self.ground.format(&DisplayForm::Matcher.into())
+    )
   }
 }
 
@@ -134,25 +146,110 @@ mod tests {
     Atom,
     SExpression,
     Symbol,
-  }, attributes::Attribute, Context, logging::set_verbosity, matching::matcher::display_solutions};
-  use crate::interner::interned_static;
+  }, attributes::{
+    Attribute,
+  }, Context, matching::matcher::display_solutions, interner::interned_static, parse};
+
+
+  #[allow(unused_imports)]
+  use crate::logging::set_verbosity;
 
   use super::*;
+
+  /// Solve  Plus[Times[a_, x_], Times[b_, y_]] << Plus[Times[3, x], Times[4, x]]
+  #[test]
+  fn four_parameter_test() {
+    let mut context: Context = Context::new_global_context();
+    let pattern = parse("Plus[Times[a_, x_], Times[b_, y_]]").unwrap();
+    let ground  = parse("Plus[Times[3, w], Times[4, w]]").unwrap();
+
+    // let pattern = parse("Plus[Times[a_, x_]]").unwrap();
+    // let ground  = parse("Plus[Times[3, 4]]").unwrap();
+
+    set_verbosity(5);
+
+    println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
+
+    let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
+    let result : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+
+    println!("SOLUTIONS: {}", result.join(", "));
+
+  }
+
+
+  // Solve SetDelayed[lhs_, rhs_] < SetDelayed[Subtract[x_, rest_], Plus[x, Minus[rest]]]
+  #[test]
+  fn complicated_two_parameter_test(){
+    let mut context: Context = Context::new_global_context();
+    let pattern = parse("SetDelayed[lhs_, rhs_]").unwrap();
+    let ground  = parse("SetDelayed[Subtract[x_, rest_], Plus[x, Minus[rest]]]").unwrap();
+    // set_verbosity(5);
+
+    println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
+
+    let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
+    let result     : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+
+    println!("SOLUTIONS: {}", result.join(", "));
+
+  }
+
+  // Solve Part[exp_, n_] ≪ Part[f[a, b, c, d], 3]
+  #[test]
+  fn two_parameter_test(){
+    let mut context: Context = Context::new_global_context();
+    let pattern = parse("Plus[e___]").unwrap();
+    let ground  = parse("Plus[2, 3]").unwrap();
+    set_verbosity(5);
+
+    context.set_attribute(interned_static("Plus"), Attribute::Commutative).unwrap();
+    context.set_attribute(interned_static("Plus"), Attribute::Associative).unwrap();
+
+    println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
+
+    let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
+    let result     : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+
+    println!("SOLUTIONS: {}", result.join(", "));
+
+  }
+
+  #[test]
+  fn integration_test(){
+    let mut context: Context = Context::new_global_context();
+    let pattern = parse("Plus[e___]").unwrap();
+    let ground  = parse("Plus[2, 3]").unwrap();
+    set_verbosity(5);
+
+    context.set_attribute(interned_static("Plus"), Attribute::Commutative).unwrap();
+    context.set_attribute(interned_static("Plus"), Attribute::Associative).unwrap();
+
+    println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
+
+    let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
+    let result     : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+
+    println!("SOLUTIONS: {}", result.join(", "));
+
+  }
 
   #[test]
   /// Solve ƒ()≪ᴱƒ(), ƒ is A or AC
   fn match_empty_functions(){
+    // To avoid calling `register_builtins()`, which would make this test moot, we specially construct the context.
+    let mut context: Context = Context::without_built_ins(interned_static("Global"));
+
     let f: Atom = SExpression::with_str_head("ƒ");
-    f.attributes.set(Attribute::Associative);
-    let g: Atom = f.duplicate_head();
+    context.set_attribute(interned_static("ƒ"), Attribute::Associative).unwrap();
+    let g: Atom = f.clone();
 
     let me = MatchEquation{
       pattern: f,
       ground: g,
     };
 
-    let mut context: Context     = Context::new_global_context();
-    let mut matcher: Matcher     = Matcher::new(me.pattern.clone(), me.ground, &mut context);
+    let matcher: Matcher     = Matcher::new(me.pattern.clone(), me.ground, &mut context);
     let result     : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
     assert_eq!("EMPTY", result.join(", "));
   }
@@ -162,26 +259,26 @@ mod tests {
   #[test]
   /// Solve ƒ(x̅)≪ᴱƒ(a), ƒ is A or AC
   fn problem5() {
-    // set_verbosity(5);
     let mut context: Context = Context::new_global_context();
+    // set_verbosity(5);
 
-    let mut f: Atom =
+    let f: Atom =
         Atom::SExpression(
           Rc::new(
             [
               Symbol::from_static_str("ƒ"),
-              SExpression::sequence_variable("x")
+              SExpression::sequence_variable_static_str("x")
             ].to_vec()
           )
         );
 
     context.set_attribute(interned_static("ƒ"), Attribute::Associative).unwrap();
 
-    let mut g: Atom = Atom::SExpression(
+    let g: Atom = Atom::SExpression(
       Rc::new(
         [
           Symbol::from_static_str("ƒ"),
-          Symbol::from_static_str("x")
+          Symbol::from_static_str("a")
         ].to_vec()
       )
     );
@@ -191,35 +288,44 @@ mod tests {
       ground : g,
     };
 
-    let mut matcher: Matcher      = Matcher::new(me.pattern.clone(), me.ground, &context);
+    // Commutative/assoociative properties of me.pattern.name?
+    // let ground_attributes: Attributes = context.get_attributes(me.ground.name().unwrap());
+    // log(
+    //   Channel::Debug,
+    //     5,
+    //     format!(
+    //       "Attributes (commutatitve, associative) = {:?}",
+    //       (ground_attributes.commutative(), ground_attributes.associative()),
+    //     ).as_str(),
+    // );
+
+    let matcher: Matcher      = Matcher::new(me.pattern.clone(), me.ground, &context);
     let result     : Vec<String>  = matcher.map(|s| display_solutions(&s)).collect();
 
-    assert_eq!("{«x» = a, «x» = ƒ[a]}", format!("{{{}}}", result.join(", ")));
+    assert_eq!("{«x» = a, «x» = ƒ❨a❩}", format!("{{{}}}", result.join(", ")));
   }
 
   #[test]
   /// Solve ƒ(x,y)≪ᴱƒ(a,b), ƒ is AC
   fn problem7() {
-    // set_verbosity(5);
     let mut context = Context::new_global_context();
+    // set_verbosity(5);
 
-    let mut f =
+    let f =
         Atom::SExpression(
           Rc::new(
             [
               Symbol::from_static_str("ƒ"),
-              SExpression::variable("x"),
-              SExpression::variable("y")
+              SExpression::variable_static_str("x"),
+              SExpression::variable_static_str("y")
             ].to_vec()
           )
         );
 
-    context.set_attribute(interned_static("ƒ"), Attribute::Associative)
-           .expect("Symbol is read_only");
-    context.set_attribute(interned_static("ƒ"), Attribute::Commutative)
-           .expect("Symbol is read_only");
+    context.set_attribute(interned_static("ƒ"), Attribute::Associative).unwrap();
+    context.set_attribute(interned_static("ƒ"), Attribute::Commutative).unwrap();
 
-    let mut g =
+    let g =
         Atom::SExpression(
           Rc::new(
             [
@@ -237,20 +343,20 @@ mod tests {
 
     // println!("{}", me);
 
-    let mut matcher = Matcher::new(me.pattern.clone(), me.ground, context.clone());
+    let matcher = Matcher::new(me.pattern.clone(), me.ground, &mut context);
 
-    let expected = [
+    let expected = [ // ƒ❨a❩
       #[cfg(not(feature = "strict-associativity"))]
-          "‹x› = ƒ[], ‹y› = ƒ[a, b]", // Not allowed by strict-associativity.
-      "‹x› = ƒ[a], ‹y› = ƒ[b]",
-      "‹x› = ƒ[a], ‹y› = b",
-      "‹x› = ƒ[b], ‹y› = ƒ[a]",
-      "‹x› = ƒ[b], ‹y› = a",
+          "‹x› = ƒ❨❩, ‹y› = ƒ❨a, b❩", // Not allowed by strict-associativity.
+      "‹x› = ƒ❨a❩, ‹y› = ƒ❨b❩",
+      "‹x› = ƒ❨a❩, ‹y› = b",
+      "‹x› = ƒ❨b❩, ‹y› = ƒ❨a❩",
+      "‹x› = ƒ❨b❩, ‹y› = a",
       #[cfg(not(feature = "strict-associativity"))]
-          "‹x› = ƒ[a, b], ‹y› = ƒ[]", // Not allowed by strict-associativity.
-      "‹x› = a, ‹y› = ƒ[b]",
+          "‹x› = ƒ❨a, b❩, ‹y› = ƒ❨❩", // Not allowed by strict-associativity.
+      "‹x› = a, ‹y› = ƒ❨b❩",
       "‹x› = a, ‹y› = b",
-      "‹x› = b, ‹y› = ƒ[a]",
+      "‹x› = b, ‹y› = ƒ❨a❩",
       "‹x› = b, ‹y› = a"
     ];
 
@@ -261,18 +367,18 @@ mod tests {
   }
 
 
-  /// Solve ƒ[‹x›] ≪ ƒ[].
+  /// Solve ƒ❨‹x›❩ ≪ ƒ❨❩.
   /// No solution for strict associativity. One solution for (regular) associativity.
   #[test]
   fn match_empty_associative_function() {
     // set_verbosity(5);
 
-    let mut f =
+    let f =
         Atom::SExpression(
           Rc::new(
             [
               Symbol::from_static_str("ƒ"),
-              Symbol::from_static_str("x")
+              SExpression::variable_static_str("x")
             ].to_vec()
           )
         );
@@ -284,18 +390,18 @@ mod tests {
     context.set_attribute(interned_static("ƒ"), Attribute::Commutative)
            .expect("Symbol is read_only");
 
-    let g = f.duplicate_head();
+    let g = SExpression::duplicate_with_head(&f);
 
     let me = MatchEquation{
       pattern: f,
-      ground: g,
+      ground : g,
     };
 
-    let mut matcher: Matcher     = Matcher::new(me.pattern.clone()                  , me.ground, &context);
+    let matcher: Matcher     = Matcher::new(me.pattern.clone()                  , me.ground, &context);
     let result     : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
 
     #[cfg(not(feature = "strict-associativity"))]
-    assert_eq!("‹x› = ƒ[]", result.join(", "));
+    assert_eq!("‹x› = ƒ❨❩", result.join(", "));
     #[cfg(feature = "strict-associativity")]
     assert_eq!("", result.join(", ")); // Empty
   }

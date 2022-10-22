@@ -7,13 +7,16 @@ A lot of things need access to the `Context` in order to read `*Values` or funct
 during evaluation. The codebase is transitioning to a `Context` model of shared mutable state via interior
 mutability.
 
+Todo: Predefined and built-in symbols should live in the `System` context. Contexts should be able to define
+      visibility and other finer-grained access controls, like read-only attributes, etc. In other words, make
+      `Context`s modules.
 
 */
 #![allow(dead_code)]
 
 
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::fmt::{Debug, Formatter};
 
 use crate::{
   atom::{
@@ -23,7 +26,7 @@ use crate::{
     Attributes,
     Attribute
   },
-  builtins::{
+  built_ins::{
     BuiltinFn,
     register_builtins
   },
@@ -36,6 +39,7 @@ pub struct Context{
   // todo: Should there be a context path object?
   name   : InternedString,
   symbols: HashMap<InternedString, SymbolRecord>,
+  state: usize
 }
 
 impl Context {
@@ -44,13 +48,29 @@ impl Context {
     let mut context = Context{
       name: interned_static("Global"),
       symbols: HashMap::new(),
+      /// Incremented every time this context is modified. It is accessed publicly by `state_version` and used during
+      /// evaluation to determine if an expression is completely evaluated.
+      state: 0
     };
 
     register_builtins(&mut context);
     context
   }
 
+  /// Used for testing and debugging to avoid calling `register_builtins`.
+  pub(crate) fn without_built_ins(name: InternedString) -> Context {
+    Context{
+      name,
+      symbols: HashMap::new(),
+      state: 0
+    }
+  }
+
   // region Getters and Setters
+
+  pub fn state_version(&self) -> usize {
+    self.state
+  }
 
   pub fn get_attributes(&self, symbol: InternedString) -> Attributes {
     match self.symbols.get(&symbol) {
@@ -82,59 +102,77 @@ impl Context {
   pub fn set_attribute(&mut self, symbol: InternedString, attribute: Attribute) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
 
-    if record.attributes.attributes_read_only() {
-      Err(format!("Symbol {} has read-only attributes", resolve_str(symbol)))
-    } else {
+    // if record.attributes.attributes_read_only() {
+    //   Err(format!("Symbol {} has read-only attributes", resolve_str(symbol)))
+    // } else {
       record.attributes.set(attribute);
       Ok(())
-    }
+    // }
   }
 
   pub fn set_down_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
 
-    if record.attributes.read_only() {
-      Err(format!("Symbol {} is read-only", resolve_str(symbol)))
-    } else {
+    // if record.attributes.read_only() {
+    //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
+    // } else {
       record.down_values.push(value);
+      self.state += 1;
       Ok(())
-    }
+    // }
+  }
+
+
+  pub fn set_display_function(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
+    let record = self.get_symbol_mut(symbol);
+
+    // if record.attributes.read_only() {
+    //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
+    // } else {
+      record.down_values.push(value);
+      self.state += 1;
+      Ok(())
+    // }
   }
 
   pub fn set_up_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
 
-    if record.attributes.read_only() {
-      Err(format!("Symbol {} is read-only", resolve_str(symbol)))
-    } else {
+    // if record.attributes.read_only() {
+    //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
+    // } else {
       record.up_values.push(value);
+      self.state += 1;
       Ok(())
-    }
+    // }
   }
 
   pub fn set_own_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
 
-    if record.attributes.read_only() {
-      Err(format!("Symbol {} is read-only", resolve_str(symbol)))
-    } else {
+    // if record.attributes.read_only() {
+    //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
+    // } else {
       record.own_values.push(value);
+      self.state += 1;
       Ok(())
-    }
+    // }
   }
 
   pub fn set_sub_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
 
-    if record.attributes.read_only() {
-      Err(format!("Symbol {} is read-only", resolve_str(symbol)))
-    } else {
+    // if record.attributes.read_only() {
+    //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
+    // } else {
       record.sub_values.push(value);
+      self.state += 1;
       Ok(())
-    }
+    // }
   }
 
   // todo: Not especially efficient if the symbol was never defined.
+  // todo: Should clearing a symbol increment the state version? No for now.
   pub fn clear_symbol(&mut self, symbol: InternedString) -> Result<(), String> {
     { // Scope for record
       let record = self.get_symbol_mut(symbol);
@@ -142,7 +180,7 @@ impl Context {
         return Err(format!("Symbol {} is read-only", resolve_str(symbol)))
       }
     }
-    self.symbols.remove(&symbol) ;
+    self.symbols.remove(&symbol);
     Ok(())
   }
 /*
@@ -233,3 +271,66 @@ pub enum SymbolValue{
     built_in : BuiltinFn
   }
 }
+
+// Function pointers don't implement `PartialEq`:
+//   https://github.com/rust-lang/unsafe-code-guidelines/issues/239
+impl PartialEq for SymbolValue {
+  fn eq(&self, other: &Self) -> bool {
+    match (self, other) {
+
+      (
+        SymbolValue::BuiltIn {pattern: p1, condition: c1, built_in: _b1},
+        SymbolValue::BuiltIn {pattern: p2, condition: c2, built_in: _b2},
+      ) => {
+        p1==p2 && c1==c2 //&& (b1 as *const _ == b2 as *const _)
+      }
+
+      (
+        SymbolValue::Definitions { def: d1, .. },
+        SymbolValue::Definitions { def: d2, .. }
+      ) => {
+        // If the original definitions are the same, the rest had better be the same also.
+        d1==d2
+      }
+
+      _ => false
+
+    }
+  }
+}
+
+impl Eq for SymbolValue {}
+
+impl Debug for SymbolValue {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    match self {
+
+      SymbolValue::Definitions { def, lhs, rhs, condition } => {
+        write!(
+          f,
+          "SymbolValue::Definitions{{ def: {}, lhs: {}, rhs: {}, condition: {:?}}}",
+          def,
+          lhs,
+          rhs,
+          condition
+        )
+      }
+
+      SymbolValue::BuiltIn { pattern, condition, built_in } => {
+        write!(
+          f,
+          "SymbolValue::Definitions{{ pattern: {}, condition: {:?}, built_in: {:?}}}",
+          pattern,
+          condition,
+          built_in as *const _
+        )
+      }
+
+    }
+
+  }
+}
+
+
+// Tests
+// `Context` is tested in `builltins.rs` and other client code.

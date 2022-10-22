@@ -20,6 +20,8 @@ use crate::{
   },
   atom::SExpression,
 };
+#[allow(unused_imports)]
+use crate::logging::{Channel, log};
 
 /// Marker types for the different decomposition types.
 pub trait DecompositionType {}
@@ -58,8 +60,8 @@ impl RuleDecNonCommutative<NonAssociative> {
     // Identical to criteria for other Dec-type functions. The first of pattern_function cannot be a
     // sequence variable. It must be a non-sequence "term".
 
-    if me.pattern.len() > 1
-        && me.ground.len() > 1
+    if me.pattern.len() > 0
+        && me.ground.len() > 0
         && SExpression::part(&me.pattern, 1).is_sequence_variable().is_none()
     {
       Some(
@@ -79,14 +81,12 @@ impl RuleDecNonCommutative<NonAssociative> {
 // Dec-A: Decomposition under associative head.
 impl RuleDecNonCommutative<Associative> {
   pub fn try_rule(me: &MatchEquation) -> Option<Self> {
-    // The first of pattern_function cannot be a sequence variable or individual variable. It must
+    // The first of pattern_function cannot be a sequence variable. It must
     // be a function or a symbol, i.e. a non-sequence "term".
-    // todo: In original code, we didn't check != is_variable. Was this a bug?
 
-    if me.pattern.len() > 1
-        && me.ground.len() > 1
+    if me.pattern.len() > 0
+        && me.ground.len() > 0
         && SExpression::part(&me.pattern, 1).is_sequence_variable().is_none()
-        && SExpression::part(&me.pattern, 1).is_variable().is_none()
     {
       Some(
         RuleDecNonCommutative {
@@ -121,7 +121,7 @@ impl<T> Iterator for RuleDecNonCommutative<T> where T: DecompositionType {
       let result_variable_equation =
           NextMatchResult::eq(
             self.me.pattern_first(),
-            SExpression::part(&self.me.ground, 2)
+            SExpression::part(&self.me.ground, 1)
           );
 
       let match_equation_ground = SExpression::duplicate_with_rest(&self.me.ground);
@@ -160,22 +160,23 @@ impl<T> Iterator for RuleDecCommutative<T> where T: DecompositionType {
 
     // Is there another term?
     if self.term_idx as usize == self.match_equation.ground.len() {
+
       return None;
     }
 
     // Construct the result.
     let term_equation = NextMatchResult::eq(
       self.match_equation.pattern_first(),
-      SExpression::part(&self.match_equation.ground, self.term_idx as usize)
+      SExpression::part(&self.match_equation.ground, self.term_idx as usize + 1)
     );
 
-    let mut new_ground_function = { // scope of children
+    let new_ground_function = { // scope of children
       let children
           = SExpression::children(
             &self.match_equation.ground
           )[1..].iter()
-                .enumerate() // enumerate starts at 0, term_idx starts at 1.
-                .filter_map(|(k, v)| if k+1 != self.term_idx as usize { Some(v.clone()) } else { None })
+                .enumerate()
+                .filter_map(|(k, v)| if k != self.term_idx as usize { Some(v.clone()) } else { None })
                 .collect::<Vec<_>>();
       SExpression::new(self.match_equation.ground.head(), children)
     };
@@ -196,7 +197,7 @@ impl<T> RuleDecCommutative<T> where T: DecompositionType {
   pub fn new(me: MatchEquation) -> RuleDecCommutative<T> {
     RuleDecCommutative {
       match_equation: me,
-      term_idx: 1,
+      term_idx: 0,
       phantom : std::marker::PhantomData::<T>::default()
     }
   }
@@ -208,16 +209,12 @@ impl RuleDecCommutative<NonAssociative> {
     // The first of pattern_function cannot be a sequence variable. It must be a function or a
     // symbol, i.e. a non-sequence "term".
 
-    if me.pattern.len() > 1
-        && me.ground.len() > 1
+    if me.pattern.len() > 0
+        && me.ground.len() > 0
         && SExpression::part(&me.pattern, 1).is_sequence_variable().is_none()
     {
       Some(
-        RuleDecCommutative {
-          match_equation: me.clone(),
-          term_idx      : 1,
-          phantom       : std::marker::PhantomData::default()
-        }
+        RuleDecCommutative::new(me.clone())
       )
     } else {
       None
@@ -230,21 +227,15 @@ impl RuleDecCommutative<NonAssociative> {
 // Dec-AC: Decomposition under associative-commutative head.
 impl RuleDecCommutative<Associative> {
   pub fn try_rule(me: &MatchEquation) -> Option<RuleDecCommutative<Associative>> {
-    // The first of pattern_function cannot be a sequence variable or individual variable.. It must
+    // The first of pattern_function cannot be a sequence variable. It must
     // be a function or a symbol, i.e. a non-sequence "term".
-    // todo: In original code, we didn't check != is_variable. Was this a bug?
 
-    if me.pattern.len() > 1
-        && me.ground.len() > 1
+    if me.pattern.len() > 0
+        && me.ground.len() > 0
         && SExpression::part(&me.pattern, 1).is_sequence_variable().is_none()
-        && SExpression::part(&me.pattern, 1).is_variable().is_none()
     {
       Some(
-        RuleDecCommutative {
-          match_equation: me.clone(),
-          term_idx      : 1,
-          phantom       : std::marker::PhantomData::default()
-        }
+        RuleDecCommutative::new(me.clone())
       )
     } else {
       None
@@ -252,3 +243,7 @@ impl RuleDecCommutative<Associative> {
 
   }
 }
+
+
+// tests
+// The tests are on the composing generators.

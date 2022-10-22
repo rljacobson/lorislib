@@ -7,7 +7,6 @@ Minimalist lexer.
 use std::{
   fmt::{Display, Formatter},
   cmp::min,
-  iter::Peekable
 };
 
 use lazy_static::lazy_static;
@@ -25,7 +24,7 @@ use rug::{
 use strum_macros::AsRefStr;
 
 use crate::{
-  builtins::DEFAULT_REAL_PRECISION,
+  built_ins::DEFAULT_REAL_PRECISION,
   atom::Atom,
   interner::{
     interned,
@@ -38,12 +37,14 @@ use crate::{
 To have dynamic lexing of operators, the lexer needs facilities for adding and removing operators.
 */
 
-/// We want the Lexer to be peekable.
-pub type Lexer<'t> = Peekable<LexerCore<'t>>;
+// We want the Lexer to be peekable. However, using `Peekable<I>` is incompatible with `expect()`, which changes
+// matching strategies and invalidates the peeked token. Since lexing is so cheap, we just lex without updating state
+// for `peek()`.
+// pub type Lexer<'t> = Peekable<LexerCore<'t>>;
 
 // Todo: This free function is a little awkward.
 pub fn new_lexer(input: &str) -> Lexer {
-  LexerCore::new(input).peekable()
+  Lexer::new(input)
 }
 
 
@@ -52,17 +53,22 @@ const STRING_LITERAL_IDX: usize = 0;
 const REAL_IDX          : usize = 1;
 const INTEGER_IDX       : usize = 2;
 const IDENTIFIER_IDX    : usize = 3;
-const EOL_COMMENT_IDX   : usize = 4;
-const WHITESPACE_IDX    : usize = 5;
+const WHITESPACE_IDX    : usize = 4;
+const COMMENT_IDX       : usize = 5;
 
 lazy_static! {
   pub static ref REGEXES: [Regex; 6] = [
-    Regex::new(r#""(?:[^"]|\\")*""#).unwrap(),    //  0. StringLiteral  todo: Make strings more sophisticated.
-    Regex::new(r"[0-9]+\.[0-9]+").unwrap(),       //  1. Real
-    Regex::new(r"[0-9]+").unwrap(),               //  2. Integer
-    Regex::new(r"[a-zA-Z][a-zA-Z0-9]*").unwrap(), //  3. Identifiers,
-    Regex::new(r"//.*\n?").unwrap(),              //  4. EOL Comments
-    Regex::new(r"[ \t\n\f]+").unwrap(),           //  5. Whitespace
+    // Any non -quote or -slash; any even number of slashes; an escaped character (including quote); and repeat as many
+    // times as possible.
+    Regex::new(r#""(?:[^"\\]|\\\\|\\.)*""#).unwrap(), //  0. StringLiteral  todo: Make strings more sophisticated.
+    Regex::new(r"[0-9]+\.[0-9]+").unwrap(),           //  1. Real
+    Regex::new(r"[0-9]+").unwrap(),                   //  2. Integer
+    Regex::new(r"[a-zA-Z][a-zA-Z0-9]*").unwrap(),     //  3. Identifiers,
+    Regex::new(r"[ \t\n\f]+").unwrap(),               //  4. Whitespace
+    // Any number of non- slashes, -backslashes and -stars; any even number of backslashes; any escaped character
+    // (including "*"); a slash followed by a non-star; a star followed by a non-slash; and repeat as
+    // many times as possible.
+    Regex::new(r"/\*(:?[^\\/*]|\\\\|\\/.|/[^*]|\*[^\\])*/\*").unwrap(), //  5. Comments
   ];
 }
 
@@ -150,14 +156,14 @@ impl Token {
 }
 
 
-pub struct LexerCore<'t>  {
+pub struct Lexer<'t>  {
   token_matcher: AhoCorasick,
   /// A cursor pointing to the start of the next token to be tokenized.
   start: usize,
   text: &'t str,
 }
 
-impl<'t> LexerCore<'t> {
+impl<'t> Lexer<'t> {
 
   pub fn new(text: &'t str) -> Self {
     let token_matcher = AhoCorasickBuilder::new()
@@ -166,16 +172,36 @@ impl<'t> LexerCore<'t> {
         .match_kind(MatchKind::LeftmostLongest)
         .build(TOKENS);
 
-    LexerCore {
+    Lexer {
       token_matcher,
       start: 0,
       text
     }
   }
 
+  /// Skips over whitespace and comments.
+  fn eat_ignorables(&mut self) {
+    loop {
+      let old_start = self.start;
+
+      // Eat whitespace.
+      let stripped = self.text[self.start..].trim_start();
+      self.start = self.text.len() - stripped.len();
+
+      // Eat comments. We don't care about the result of the match, only that `get_match` updated `self.start`.
+      self.get_match(REGEXES[COMMENT_IDX].find(&self.text[self.start..])).ok();
+
+      // If neither of these moved the start, we're done.
+      if old_start == self.start {
+        return;
+      }
+    }
+
+  }
+
   // This method is a copy+paste, because `aho_corasick::Match` is a different type from `regex::Match`.
-  // todo: Factor out this common code the right way.
-  pub(crate) fn get_operator_match(&mut self) -> Result<InternedString, Token> {
+  // todo: Factor out this common code the right way: Make supertrait, implement it for both types.
+  fn get_operator_match(&mut self) -> Result<InternedString, Token> {
     match self.token_matcher.find(&self.text[self.start..]) {
       Some(token) => {
 
@@ -233,22 +259,51 @@ impl<'t> LexerCore<'t> {
 
   }
 
+  /// Looks for the given token before falling back to the normal leftmost longest strategy. Assumes `expected` is an
+  /// OpToken. Consumes the token.
+  pub fn expect(&mut self, expected: InternedString) -> Option<Token> {
+
+    self.eat_ignorables();
+
+    let expected_str = resolve_str(expected);
+
+    if self.text[self.start..].starts_with(expected_str){
+      self.start += expected_str.len();
+      Some(
+        Token::Operator(expected)
+      )
+    } else {
+      self.next()
+    }
+  }
+
+  /// Returns the next token without consuming it, i.e. without updating *any* state of the lexer.
+  /// Requires `&mut self` because it's much easier to restore previous state than to not change state in the first
+  /// place.
+  pub fn peek(&mut self) -> Option<Token> {
+    let old_start = self.start;
+    let result = self.next();
+    self.start = old_start;
+
+    result
+  }
+
 }
 
-impl<'t> Iterator for LexerCore<'t> {
+impl<'t> Iterator for Lexer<'t> {
   type Item = Token;
 
   // todo: Decide if we want to automatically convert leaves to Atoms, in which case we only need three `Token`
   //       variants: Error(String), Operator(InternedString), Leaf(Atom). Leaving as a token allows parsing based on
   //       leaf type, which is required for the hypothetical future.
   fn next(&mut self) -> Option<Self::Item> {
-    // Eat whitespace.
-    let stripped = self.text[self.start..].trim_start();
-    self.start = self.text.len() - stripped.len();
 
-    // todo: Eat EOL comments.
+    // Eat ignorables.
+    self.eat_ignorables();
 
-    // Empty state
+    let old_start  = self.start;
+
+    // No text remaining.
     if self.start == self.text.len() {
       return None;
     }
@@ -256,12 +311,14 @@ impl<'t> Iterator for LexerCore<'t> {
     match self.text[self.start..].as_bytes()[0] {
       b'"' => {
         // Lex string literal.
-        match
-          self.get_match(REGEXES[STRING_LITERAL_IDX].find(&self.text[self.start..])){
+        match self.get_match(REGEXES[STRING_LITERAL_IDX].find(&self.text[self.start..]))
+        {
           Ok(interned_string) => {
             Some(Token::String(interned_string))
           }
-          Err(t) => Some(t)
+
+          // Unterminated string
+          Err(_) => Some(Token::Error(format!( "Unterminated string starting at byte {}", old_start)))
         }
 
       }
