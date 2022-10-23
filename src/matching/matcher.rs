@@ -148,7 +148,7 @@ impl<'c> Matcher<'c> {
 
 
   /// Pushes the given `MatchGenerator`.
-  pub fn push_rule(&mut self, generator: BoxedMatchGenerator) {
+  fn push_rule(&mut self, generator: BoxedMatchGenerator) {
     self.match_stack.push(MatchStack::MatchGenerator(generator));
   }
 
@@ -253,8 +253,6 @@ impl<'c> Matcher<'c> {
         || me.ground.kind() != AtomKind::SExpression
     {
       // Return match equation.
-      eprintln!("Bailing from select_rule early: pattern.kind()={:?} ground.kind()={:?}", me.pattern.kind(), me.ground
-        .kind());
       self.equation_stack.push(me);
       return Err(());
     }

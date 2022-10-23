@@ -8,27 +8,26 @@ use std::{
   rc::Rc
 };
 use std::collections::HashMap;
-use std::ops::{AddAssign, Div, MulAssign, Neg};
 
-use rug::{Integer as BigInteger, Float as BigFloat, Float, Assign, ops::AddFrom, Complete};
-use rug::ops::CompleteRound;
-use num_integer; // For num_integer::binomial
+
+use rug::{Integer as BigInteger};
+
+ // For num_integer::binomial
 
 use crate::{
   matching::{
     display_solutions,
-    SolutionSet
+    SolutionSet,
+    Matcher
   },
   parse,
   atom::{
     Symbol,
     SExpression,
-    SExpression::hold,
     Atom,
     AtomKind
   },
   attributes::{
-    Attributes,
     Attribute
   },
   context::*,
@@ -37,11 +36,8 @@ use crate::{
     Channel
   },
   interner::{
-    interned_static,
-    InternedString
+    interned_static
   },
-  evaluate,
-  matching::Matcher
 };
 use crate::built_ins::{occurs_check, register_builtin};
 #[allow(unused_imports)]#[allow(unused_imports)]
@@ -54,7 +50,7 @@ use crate::logging::set_verbosity;
 
 /// Implements calls matching
 ///     `Occurs[needle_, haystack_] := built-in[needle, haystack]`
-pub fn Occurs(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
+pub(crate) fn Occurs(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
@@ -76,7 +72,7 @@ pub fn Occurs(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom 
 
 /// Internal version of `ReplaceAll`
 /// Performs all substitutions in the given solution set on expression.
-pub fn replace_all(expression: Atom, substitutions: &SolutionSet, context: &mut Context) -> Atom {
+pub(crate) fn replace_all(expression: Atom, substitutions: &SolutionSet, context: &mut Context) -> Atom {
   // If `expression` itself matches a key in `substitutions`, replace it. This is the base case for the recursion.
   for (pattern, substitution) in substitutions {
     let mut matcher = Matcher::new(pattern.clone(), expression.clone(), context);
@@ -110,7 +106,7 @@ pub fn replace_all(expression: Atom, substitutions: &SolutionSet, context: &mut 
 
 /// ReplaceAll[exp_, rules_]
 /// Given a list of rules, performs all substitutions defined by the rules at once.
-pub fn ReplaceAll(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
+pub(crate) fn ReplaceAll(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
@@ -172,7 +168,7 @@ pub fn ReplaceAll(arguments: SolutionSet, original: Atom, context: &mut Context)
 /// Replace[exp_, rules_]
 /// A list of rules are given. The rules are tried in order. The result of the first one that applies is returned.
 /// If none of the rules apply, the original expr is returned.
-pub fn Replace(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
+pub(crate) fn Replace(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
@@ -241,7 +237,7 @@ pub fn Replace(arguments: SolutionSet, original: Atom, context: &mut Context) ->
 
 
 /// The internal version of NodeCount
-pub fn node_count(expression: &Atom) -> usize {
+pub(crate) fn node_count(expression: &Atom) -> usize {
 
   match expression {
     Atom::SExpression(children) => {
@@ -260,7 +256,7 @@ pub fn node_count(expression: &Atom) -> usize {
 /// A metric of expression complexity, counts the leaves and internal nodes of the expression.
 /// Implements calls matching
 ///     `NodeCount[exp_] := built-in[exp]`
-pub fn NodeCount(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
+pub(crate) fn NodeCount(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
@@ -278,7 +274,7 @@ pub fn NodeCount(arguments: SolutionSet, _original: Atom, _: &mut Context) -> At
 
 /// Implements calls matching
 ///     `Part[exp_, n_] := built-in[exp, n]`
-pub fn Part(arguments: SolutionSet, original: Atom, _: &mut Context) -> Atom {
+pub(crate) fn Part(arguments: SolutionSet, original: Atom, _: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
@@ -320,7 +316,7 @@ pub fn Part(arguments: SolutionSet, original: Atom, _: &mut Context) -> Atom {
 
 /// Implements calls matching
 ///     `Head[exp_] := built-in[exp]`
-pub fn Head(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
+pub(crate) fn Head(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,

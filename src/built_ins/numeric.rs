@@ -7,12 +7,12 @@ Numeric Computation
 use std::{
   rc::Rc
 };
-use std::collections::HashMap;
+
 use std::ops::{AddAssign, Div, MulAssign, Neg};
 
 use rug::{Integer as BigInteger, Float as BigFloat, Float, Assign, ops::AddFrom, Complete};
 use rug::ops::CompleteRound;
-use num_integer; // For num_integer::binomial
+ // For num_integer::binomial
 
 use crate::{
   matching::{
@@ -23,9 +23,7 @@ use crate::{
   atom::{
     Symbol,
     SExpression,
-    SExpression::hold,
-    Atom,
-    AtomKind
+    Atom
   },
   attributes::{
     Attributes,
@@ -37,11 +35,8 @@ use crate::{
     Channel
   },
   interner::{
-    interned_static,
-    InternedString
-  },
-  evaluate,
-  matching::Matcher
+    interned_static
+  }
 };
 use crate::built_ins::{DEFAULT_REAL_PRECISION, register_builtin};
 #[allow(unused_imports)]#[allow(unused_imports)]
@@ -55,7 +50,7 @@ use crate::logging::set_verbosity;
 /// Implements calls matching
 ///     `N[exp_] := built-in[exp_]`
 // N[x] := built-in[{exp_->x}, context]
-pub fn N(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
+pub(crate) fn N(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
@@ -92,7 +87,7 @@ pub fn N(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
 
 /// Implements calls matching
 ///     `Plus[exp___] := built-in[exp___]`
-pub fn Plus(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
+pub(crate) fn Plus(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
   let mut int_accumulator       : BigInteger = BigInteger::new();
   let mut real_accumulator      : BigFloat   = BigFloat::new(DEFAULT_REAL_PRECISION);
   // We cannot just rely on whether or not `real_accumulator == 0.0` at the end, because `1 + 0.0 == 1.0`, not `1`.
@@ -165,7 +160,7 @@ pub fn Plus(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
 
 /// Implements calls matching
 ///     `Minus[exp_] := built-in[exp]`
-pub fn Minus(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
+pub(crate) fn Minus(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
@@ -199,7 +194,7 @@ pub fn Minus(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
 
 /// Implements calls matching
 ///     `Times[exp___] := built-in[exp___]`
-pub fn Times(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
+pub(crate) fn Times(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
 
   let mut int_accumulator       : BigInteger = BigInteger::from(1);
   let mut real_accumulator      : BigFloat   = BigFloat::with_val(DEFAULT_REAL_PRECISION, 1f64);
@@ -264,7 +259,7 @@ pub fn Times(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
 
 /// Implements calls matching
 ///     `Divide[num_, denom_] := built-in[num_, denom_]`
-pub fn Divide(arguments: SolutionSet, original_expression: Atom, _: &mut Context) -> Atom {
+pub(crate) fn Divide(arguments: SolutionSet, original_expression: Atom, _: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
@@ -385,7 +380,7 @@ pub fn Divide(arguments: SolutionSet, original_expression: Atom, _: &mut Context
 
 /// Implements calls matching
 ///     `Binomial[n_, m_] := builtin[n,m]`
-pub fn Binomial(arguments: SolutionSet, original: Atom, _: &mut Context) -> Atom {
+pub(crate) fn Binomial(arguments: SolutionSet, original: Atom, _: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,

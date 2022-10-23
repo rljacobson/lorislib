@@ -8,12 +8,12 @@ Context Manipulation
 use std::{
   rc::Rc
 };
-use std::collections::HashMap;
-use std::ops::{AddAssign, Div, MulAssign, Neg};
 
-use rug::{Integer as BigInteger, Float as BigFloat, Float, Assign, ops::AddFrom, Complete};
-use rug::ops::CompleteRound;
-use num_integer; // For num_integer::binomial
+
+
+
+
+ // For num_integer::binomial
 
 use crate::{
   matching::{
@@ -25,11 +25,9 @@ use crate::{
     Symbol,
     SExpression,
     SExpression::hold,
-    Atom,
-    AtomKind
+    Atom
   },
   attributes::{
-    Attributes,
     Attribute
   },
   context::*,
@@ -38,17 +36,19 @@ use crate::{
     Channel
   },
   interner::{
-    interned_static,
-    InternedString
-  },
-  evaluate,
-  matching::Matcher
+    interned_static
+  }
 };
-use crate::built_ins::{collect_symbol_or_head_symbol, extract_condition, register_builtin};
 #[allow(unused_imports)]#[allow(unused_imports)]
 use crate::interner::resolve_str;
 #[allow(unused_imports)]
 use crate::logging::set_verbosity;
+
+use super::{
+  collect_symbol_or_head_symbol,
+  extract_condition,
+  register_builtin
+};
 
 
 // We can use the same function for *Set and *SetDelayed, because the only difference is whether the arguments are
@@ -56,7 +56,7 @@ use crate::logging::set_verbosity;
 
 /// Implements calls matching the pattern
 ///     `UpSetDelayed[lhs_, rhs_]`
-fn UpSetDelayed(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
+pub(crate) fn UpSetDelayed(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
@@ -67,13 +67,13 @@ fn UpSetDelayed(arguments: SolutionSet, original: Atom, context: &mut Context) -
 
 /// Implements calls matching the pattern
 ///     `SetDelayed[lhs_, rhs_]`
-fn SetDelayed(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
+pub(crate) fn SetDelayed(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
   Set(arguments, original, context)
 }
 
 /// Implements calls matching the pattern
 ///     `Set[lhs_, rhs_]`
-fn Set(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
+pub(crate) fn Set(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
   // Two arguments
   let pattern = &arguments[&SExpression::variable_static_str("lhs")];
   let rhs     = &arguments[&SExpression::variable_static_str("rhs")];
@@ -87,13 +87,28 @@ fn Set(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
     condition,
   };
 
-  match context.set_down_value(pattern.name().unwrap(), value) {
-    Ok(()) => {}
-    Err(msg) => {
-      // todo: Make a distinction between program and system errors.
-      log(Channel::Error, 1, msg.as_str());
-    }
-  };
+  // If pattern is a symbol, not a function, then this is an OwnValue we are setting.
+  if let Atom::Symbol(name) = pattern {
+
+    match context.set_own_value(pattern.name().unwrap(), value) {
+      Ok(()) => {}
+      Err(msg) => {
+        // todo: Make a distinction between program and system errors.
+        log(Channel::Error, 1, msg.as_str());
+      }
+    };
+
+  } else {
+
+    match context.set_down_value(pattern.name().unwrap(), value) {
+      Ok(()) => {}
+      Err(msg) => {
+        // todo: Make a distinction between program and system errors.
+        log(Channel::Error, 1, msg.as_str());
+      }
+    };
+
+  }
 
   hold(rhs)
 }
@@ -101,7 +116,7 @@ fn Set(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
 
 /// Implements calls matching the pattern
 ///     `UpSet[lhs_, rhs_]`
-fn UpSet(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
+pub(crate) fn UpSet(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
   // Two arguments
   let pattern   = &arguments[&SExpression::variable_static_str("lhs")];
   let outer_rhs = &arguments[&SExpression::variable_static_str("rhs")];
@@ -150,7 +165,7 @@ fn UpSet(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom 
 /// Returns a List of upvalues for the provided symbol
 /// Implements calls matching the pattern
 ///     `UpValues[sym_]`
-pub fn UpValues(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
+pub(crate) fn UpValues(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
   // Two arguments
   let symbol = &arguments[&SExpression::variable_static_str("sym")];
 
@@ -196,7 +211,7 @@ pub fn UpValues(arguments: SolutionSet, original: Atom, context: &mut Context) -
 /// Returns a List of upvalues for the provided symbol
 /// Implements calls matching the pattern
 ///     `DownValues[sym_]`
-pub fn DownValues(arguments: SolutionSet, _original: Atom, context: &mut Context) -> Atom {
+pub(crate) fn DownValues(arguments: SolutionSet, _original: Atom, context: &mut Context) -> Atom {
   // Two arguments
   let symbol = &arguments[&SExpression::variable_static_str("sym")];
 

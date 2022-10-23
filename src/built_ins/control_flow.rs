@@ -4,15 +4,13 @@ Program Control Flow Built-ins
 
 */
 #![allow(non_snake_case)]
-use std::{
-  rc::Rc
-};
-use std::collections::HashMap;
-use std::ops::{AddAssign, Div, MulAssign, Neg};
 
-use rug::{Integer as BigInteger, Float as BigFloat, Float, Assign, ops::AddFrom, Complete};
-use rug::ops::CompleteRound;
-use num_integer; // For num_integer::binomial
+
+
+
+
+
+ // For num_integer::binomial
 
 use crate::{
   matching::{
@@ -21,14 +19,10 @@ use crate::{
   },
   parse,
   atom::{
-    Symbol,
     SExpression,
-    SExpression::hold,
-    Atom,
-    AtomKind
+    Atom
   },
   attributes::{
-    Attributes,
     Attribute
   },
   context::*,
@@ -37,11 +31,9 @@ use crate::{
     Channel
   },
   interner::{
-    interned_static,
-    InternedString
+    interned_static
   },
-  evaluate,
-  matching::Matcher
+  evaluate
 };
 use super::register_builtin;
 #[allow(unused_imports)]#[allow(unused_imports)]
@@ -53,7 +45,7 @@ use crate::logging::set_verbosity;
 
 /// Implements calls matching
 ///     `If[cond_, truepath_, falsepath_] := built-in[cond_, truepath_, falsepath_]`
-pub fn If(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
+pub(crate) fn If(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,

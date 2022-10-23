@@ -9,44 +9,25 @@ Todo: Implement Constants
  */
 #![allow(non_snake_case)]
 
-use std::{
-  rc::Rc
-};
-use std::collections::HashMap;
-use std::ops::{AddAssign, Div, MulAssign, Neg};
-
-use rug::{Integer as BigInteger, Float as BigFloat, Float, Assign, ops::AddFrom, Complete};
-use rug::ops::CompleteRound;
-use num_integer; // For num_integer::binomial
-
 use crate::{
   matching::{
-    display_solutions,
     SolutionSet
   },
   parse,
   atom::{
     Symbol,
     SExpression,
-    SExpression::hold,
-    Atom,
-    AtomKind
+    Atom
   },
   attributes::{
-    Attributes,
     Attribute
   },
   context::*,
-  logging::{
-    log,
-    Channel
-  },
   interner::{
     interned_static,
     InternedString
   },
-  evaluate,
-  matching::Matcher
+  evaluate
 };
 #[allow(unused_imports)]#[allow(unused_imports)]
 use crate::interner::resolve_str;
@@ -60,11 +41,15 @@ mod boolean;
 mod context;
 mod numeric;
 
+
+
 use control_flow::register_builtins as register_control_flow;
 use expressions::register_builtins as register_expressions;
 use boolean::register_builtins as register_boolean;
 use context::register_builtins as register_context;
 use numeric::register_builtins as register_numeric;
+
+pub(crate) use context::Set;
 
 
 // todo: store this in the global context as an own-value.
@@ -132,6 +117,10 @@ pub(crate) fn register_builtins(context: &mut Context) {
   context.set_attribute(interned_static("List"), Attribute::Protected).ok();
   context.set_attribute(interned_static("Hold"), Attribute::Protected).ok();
   context.set_attribute(interned_static("Hold"), Attribute::HoldAll).ok();
+
+  context.set_attribute(interned_static("UpValues"), Attribute::HoldAll).ok();
+  context.set_attribute(interned_static("DownValues"), Attribute::HoldAll).ok();
+  context.set_attribute(interned_static("OwnValues"), Attribute::HoldAll).ok();
 
   // endregion
 
@@ -214,7 +203,6 @@ mod tests {
     Context,
     parse
   };
-  use crate::built_ins::boolean::occurs_check;
 
   use super::*;
 

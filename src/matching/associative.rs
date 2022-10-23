@@ -203,7 +203,7 @@ impl Iterator for RuleIVEA {
       // Destructure substitution to get at ground.
       let (variable, ground) = (substitution.variable, substitution.ground);
 
-      let ground = if let Atom::SExpression(mut children) = ground {
+      let ground = if let Atom::SExpression(children) = ground {
         SExpression::new_swapped_head(self.rule_svef.match_equation.ground.head(), children.as_ref())
       } else {
         // Not a sequence, just a singleton expression.

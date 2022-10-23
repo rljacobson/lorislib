@@ -39,7 +39,7 @@ pub struct Context{
   // todo: Should there be a context path object?
   name   : InternedString,
   symbols: HashMap<InternedString, SymbolRecord>,
-  state: usize
+  state: u64
 }
 
 impl Context {
@@ -68,7 +68,7 @@ impl Context {
 
   // region Getters and Setters
 
-  pub fn state_version(&self) -> usize {
+  pub fn state_version(&self) -> u64 {
     self.state
   }
 

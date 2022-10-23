@@ -4,15 +4,13 @@
 
  */
 #![allow(non_snake_case)]
-use std::{
-  rc::Rc
-};
-use std::collections::HashMap;
-use std::ops::{AddAssign, Div, MulAssign, Neg};
 
-use rug::{Integer as BigInteger, Float as BigFloat, Float, Assign, ops::AddFrom, Complete};
-use rug::ops::CompleteRound;
-use num_integer; // For num_integer::binomial
+
+
+
+
+
+ // For num_integer::binomial
 
 use crate::{
   matching::{
@@ -23,9 +21,7 @@ use crate::{
   atom::{
     Symbol,
     SExpression,
-    SExpression::hold,
-    Atom,
-    AtomKind
+    Atom
   },
   attributes::{
     Attributes,
@@ -37,11 +33,8 @@ use crate::{
     Channel
   },
   interner::{
-    interned_static,
-    InternedString
-  },
-  evaluate,
-  matching::Matcher
+    interned_static
+  }
 };
 use crate::built_ins::register_builtin;
 #[allow(unused_imports)]#[allow(unused_imports)]
@@ -49,13 +42,9 @@ use crate::interner::resolve_str;
 #[allow(unused_imports)]
 use crate::logging::set_verbosity;
 
-
-
-
-
 /// Implements calls matching
 ///     `And[exp___] := built-in[exp]`
-pub fn And(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
+pub(crate) fn And(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
@@ -114,7 +103,7 @@ pub fn And(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
 
 /// Implements calls matching
 ///     `SameQ[exp___] := built-in[exp1, exp2]`
-pub fn SameQ(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
+pub(crate) fn SameQ(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
@@ -155,7 +144,7 @@ pub fn SameQ(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
 
 /// Implements calls matching
 ///     `Or[exp___] := built-in[exp]`
-pub fn Or(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
+pub(crate) fn Or(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
@@ -212,7 +201,7 @@ pub fn Or(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
 
 /// Implements calls matching
 ///     `Not[exp_] := built-in[exp]`
-pub fn Not(arguments: SolutionSet, original: Atom, _: &mut Context) -> Atom {
+pub(crate) fn Not(arguments: SolutionSet, original: Atom, _: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
