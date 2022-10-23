@@ -15,7 +15,7 @@ non-associative, and S = {x&#773; ≈ ❴t₁,…,tₙ❵ }.
 
 use std::cmp::min;
 use smallvec::smallvec;
-use permutation_generator::PermutationGenerator32 as Permutations;
+use super::permutation_generator::PermutationGenerator32 as Permutations;
 
 use crate::{
   atom::SExpression,

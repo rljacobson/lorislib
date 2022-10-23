@@ -51,7 +51,7 @@ use std::{
 
 use smallvec::smallvec;
 
-use permutation_generator::PermutationGenerator32 as Permutations;
+use super::permutation_generator::PermutationGenerator32 as Permutations;
 
 use crate::{
   atom::{

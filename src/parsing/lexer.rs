@@ -42,11 +42,6 @@ To have dynamic lexing of operators, the lexer needs facilities for adding and r
 // for `peek()`.
 // pub type Lexer<'t> = Peekable<LexerCore<'t>>;
 
-// Todo: This free function is a little awkward.
-pub fn new_lexer(input: &str) -> Lexer {
-  Lexer::new(input)
-}
-
 
 // Keep in sync with numbering in `TOKENS`.
 const STRING_LITERAL_IDX: usize = 0;

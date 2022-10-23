@@ -1,3 +1,4 @@
+mod permutation_generator;
 mod associative;
 mod associative_commutative;
 mod common;
@@ -79,9 +80,10 @@ use crate::{
   atom::{
     SExpression,
     Atom,
-  }
+  },
+  format::{DisplayForm, Formattable}
 };
-use crate::format::{DisplayForm, Formattable};
+
 
 // todo: Use TinyMap instead of SolutionSet.
 /// A map from a variable / sequence variable to the ground term is it bound to.

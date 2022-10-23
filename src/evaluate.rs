@@ -39,7 +39,7 @@ use crate::{context::SymbolValue, atom::{
   display_solutions
 }, logging::{log, Channel}, context::Context, attributes::{Attribute, Attributes}, context::ContextValueStore, interner::{InternedString, resolve_str}, context};
 
-/// Evaluates `expression` in `context`.
+
 pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
   /*
   The general strategy is to apply an operation to an expression, see if it has changed, and if it has, to evaluate
@@ -50,25 +50,18 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
 
   */
 
-  if let Atom::SExpression(children) = &expression {
-    let attrs: Attributes = context.get_attributes(children[0].name().unwrap());
-    if attrs[Attribute::HoldAll] || attrs[Attribute::HoldAllComplete] {
-      return expression;
-    }
-  }
-
-
   // This function assumes the caller has already taken care of any `UpValues`.
   // Numbers and variables evaluate to themselves. It suffices to only take care
   // of the `Symbol` and `Function` cases.
-  let original_hash = expression.hashed();
-  // The "state version" of `context` that this expression was last evaluated at.
-  let evaluated_version = context.state_version();
-
   match &expression {
+
     Atom::Symbol(symbol) => {
       // Look for OwnValues.
       // log(Channel::Debug, 4, "Evaluating symbol. Checking for own-values.");
+
+      let original_hash = expression.hashed();
+      // The "state version" of `context` that this expression was last evaluated at.
+      let evaluated_version = context.state_version();
 
       if let Some(exp) = try_definitions(
         expression.clone(),
@@ -76,169 +69,193 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
         ContextValueStore::OwnValues,
         context
       ) {
-        return if exp.hashed()!=original_hash || evaluated_version != context.state_version() {
+        if exp.hashed() != original_hash || evaluated_version != context.state_version() {
+          // Something has changed, so continue evaluating.
           evaluate(exp, context)
         } else {
           exp
         }
+      } else {
+        // No own-values. Return original expression.
+        expression
       }
-      expression
-    }
+    } // end Atom::Symbol branch
 
     Atom::SExpression(children) => {
-      log(
-        Channel::Debug,
-        4,
-        format!(
-          "Evaluating {}",
-          &expression
-        ).as_str()
-      );
+      let original_hash = expression.hashed();
+      // The "state version" of `context` that this expression was last evaluated at.
+      let evaluated_version = context.state_version();
 
+      // If the head is a name with `Hold*` attributes, we are not allowed to evaluate some or all of the children.
+      // In order to have attributes, the head needs to have a name in the first place. We do this in a single step.
+      let name_and_hold_attribute: Option<(InternedString, Attribute)> =
+          match &expression.name() {
+            Some(name) => {
+              let attributes = context.get_attributes(*name);
+              // It is convenient to have attributes be a statically matchable value.
+              // The following are precisely the conditions needed in the match arms below.
+              let attribute =
+                  if attributes[Attribute::HoldFirst]
+                      && children.len() > 1 // There needs to be a "first" to hold.
+                  {
+                    Attribute::HoldRest
+                  } else if attributes[Attribute::HoldRest]
+                      && children.len() > 2 // There needs to be a "rest" to hold.
+                  {
+                    Attribute::HoldFirst
+                  } else if attributes[Attribute::HoldAll]
+                      || attributes[Attribute::HoldAllComplete]
+                  {
+                    Attribute::HoldAll
+                  } else{
+                    // Some arbitrary value
+                    Attribute::Stub
+                  };
 
-      // Step 0: Propagate attributes to children.
-      let propogated = propogate_attributes(expression.clone(), context);
-      if propogated.hashed() != original_hash{
-        log(
-          Channel::Debug,
-          4,
-          "Propagating attributes changed the expression. Evaluating again."
-        );
-        // Changed, redo evaluation.
-        return evaluate(propogated, context);
-      }
-
-      // Step 1: Look for `UpValues` for each child.
-      // For UpValues, we match on the parent instead of the expression itself.
-      // log(Channel::Debug, 4, "Evaluating function. Checking for upvalues.");
-
-      for child in children[1..].iter() {
-        if let Some(name) = child.name() {
-          if let Some(exp) = try_definitions(expression.clone(), name, ContextValueStore::UpValues, context) {
-            // todo: Return here or..?
-            // An up-value modifies this parent expression, so if a single up-value applies, return the new modified
-            // expression.
-            return if exp.hashed() != original_hash || evaluated_version != context.state_version() {
-              evaluate(exp, context)
-            } else {
-              exp
-            }
-          }
-        }
-      }
-
-      // Step 2: Evaluate children.
-      log(Channel::Debug, 4, "Evaluating children.");
-
-      // Todo: make work with functions with non-symbol heads.
-      // Which children are evaluated depends on the Hold* attributes of the function.
-      let new_children =  // the following match
-          match expression.name() {
-
-            Some(name)
-            => {
-              let attributes = context.get_attributes(name);
-
-              if attributes[Attribute::HoldRest] && expression.len()>1 {
-                let mut c = vec![
-                  evaluate(children[0].clone(), context),
-                  evaluate(children[1].clone(), context),
-                ];
-                c.extend(children[2..].iter().cloned());
-                c
-              }
-              else if attributes[Attribute::HoldFirst] && expression.len() > 0 {
-                let mut c = vec![
-                  children[0].clone(),
-                  children[1].clone(),
-                ];
-                c.extend(children[2..].iter().cloned().map(|exp| evaluate(exp, context)));
-                c
-              } else if attributes[Attribute::HoldAll] {
-                children.to_vec()
-              } else {
-                children.iter().map(|child| evaluate(child.clone(), context)).collect::<Vec<_>>()
-              }
-            }
+              Some((*name, attribute))
+            } // end if name branch
 
             _ => {
-              children.iter().map(|child| evaluate(child.clone(), context)).collect::<Vec<_>>()
+              None
             }
+          }; // end match on expression.name()
 
-          }; // end match on which children to evaluate
+      // In each match branch for `name_and_hold_attribute`, we do two this:
+      //    1. Look for `UpValues` for each unheld child.
+      //    2. Evaluate each unheld child.
+      let new_expression =
+        match name_and_hold_attribute {
 
-      let f = Atom::SExpression(Rc::new(new_children));
-      if original_hash != f.hashed() || evaluated_version != context.state_version() {
+          Some((_name, Attribute::HoldFirst)) => {
+            // Step 1: Look for `UpValues` for each unheld child.
+            // For UpValues, we match on the parent instead of the child expression that is associated with the up-value.
+            // log(Channel::Debug, 4, "Evaluating function. Checking for upvalues.");
+            if let Some(new_expression) = evaluate_up_values(&expression, &children[2..], context){
+              new_expression
+            }
+            // No applicable up-values.
+            // Step 2: Evaluate children.
+            else {
+              let mut evaluated_children = Vec::with_capacity(children.len());
+              evaluated_children.push(children[0].clone()); // This is expression.head()
+              evaluated_children.push(children[1].clone()); // ...and the first child
+              evaluated_children.extend(
+                children[2..].iter().cloned().map(|exp| evaluate(exp, context))
+              );
+              Atom::SExpression(Rc::new(evaluated_children))
+            }
+          } // end HoldFirst branch
+
+          Some((_name, Attribute::HoldRest)) => {
+            // Step 1: Look for `UpValues` for each unheld child.
+            // For UpValues, we match on the parent instead of the child expression that is associated with the up-value.
+            // log(Channel::Debug, 4, "Evaluating function. Checking for up-values.");
+            if let Some(new_expression) = evaluate_up_values(&expression, &children[1..2], context){
+              new_expression
+            }
+            // No applicable up-values.
+            // Step 2: Evaluate children.
+            else {
+              let mut evaluated_children = Vec::with_capacity(children.len());
+              evaluated_children.push(evaluate(children[0].clone(), context)); // This is expression.head()
+              evaluated_children.push(evaluate(children[1].clone(), context)); // ...and the first child
+              evaluated_children.extend(children[2..].iter().cloned());
+              Atom::SExpression(Rc::new(evaluated_children))
+            }
+          }
+
+          Some((_name, Attribute::HoldAll)) => {
+            // The silliest case: We cannot evaluate anything–a no-op!
+            expression
+          }
+
+          _ => {
+            // No restrictions – evaluate everything
+            // Step 1: Look for `UpValues` for each unheld child.
+            // For UpValues, we match on the parent instead of the child expression that is associated with the up-value.
+            // log(Channel::Debug, 4, "Evaluating function. Checking for up-values.");
+            if let Some(new_expression) = evaluate_up_values(&expression, &children[1..], context){
+              new_expression
+            }
+            // No applicable up-values.
+            // Step 2: Evaluate children.
+            else {
+              let mut evaluated_children
+                  = children.iter()
+                            .map(|child| evaluate(child.clone(), context))
+                            .collect::<Vec<_>>();
+              Atom::SExpression(Rc::new(evaluated_children))
+            }
+          } // end None branch
+
+        }; // end match on name_and_hold_attribute
+
+      // If steps 1 or 2 were successful, then we changed the expression somehow.
+      if new_expression.hashed() != original_hash || evaluated_version != context.state_version() {
         log(
           Channel::Debug,
           4,
-          format!(
-            "original hash: {} new hash:{} original eval version: {} new eval version: {}",
-            original_hash,
-            f.hashed(),
-            evaluated_version,
-            context.state_version()
-          ).as_str()
-        );
-        log(
-          Channel::Debug,
-          4,
-          "Evaluating children changed the expression. Evaluating again."
+          "Evaluating up-values and children changed the expression. Evaluating again."
         );
         // We have changed the expression or the context somehow, which
         // might affect the application of UpValues. Abort this evaluation in favor of evaluation of the new function.
-        return evaluate(f, context);
+        return evaluate(new_expression, context);
       }
 
-      // Step 3: Evaluate DownValues
-      log(Channel::Debug, 4, "Looking for down values.");
-      if let Some(name) = expression.name() {
-        if let Some(exp) = try_definitions(
-          expression.clone(),
+      // Step 3: Evaluate DownValues.
+      // We can only have down-values if the head has a name.
+      if let Some((name, _)) = name_and_hold_attribute {
+        log(Channel::Debug, 4, "Looking for down values.");
+        if let Some(new_expression) = try_definitions(
+          new_expression.clone(),
           name,
           ContextValueStore::DownValues,
           context
         ) {
-          return if evaluated_version != context.state_version() || original_hash != exp.hashed() {
+          if original_hash != new_expression.hashed()
+              || evaluated_version != context.state_version()
+          {
             log(
               Channel::Debug,
               4,
               "Evaluating DownValue changed the expression. Evaluating again."
             );
-            evaluate(exp, context)
+            evaluate(new_expression, context)
           } else {
             log(
               Channel::Debug,
               4,
               "Evaluating DownValue left expression unchanged. Returning."
             );
-            exp
+            new_expression
           }
         } else {
-          log(
-            Channel::Debug,
-            4,
-            "Down-values didn't match. Aborting evaluation."
-          );
-          expression
+          new_expression
         }
       } else {
-        log(
-          Channel::Debug,
-          4,
-          "Head has no name. Aborting evaluation."
-        );
-        expression
+        // No name, no DownValues.
+        new_expression
       }
+    } // end if expression is an s-expression
 
-      // Step 4: Done?
-    } // end Atom::SExpression arm.
+    _ => expression
+  }
+}
 
-    _any_other_expression => expression
-  } // end match on Atom enum.
-
-  // Ok(new_expression)
-} // end evaluate.
+/// Given an `expression` and a list of only its unheld `children`, returns the result of the first matching
+/// up-value, or None if there are no matching up-values.
+fn evaluate_up_values(expression: &Atom, children: &[Atom], context: &mut Context) -> Option<Atom> {
+  for child in children.iter() {
+    if let Some(name) = child.name() {
+      if let Some(exp) = try_definitions(expression.clone(), name, ContextValueStore::UpValues, context) {
+        // An up-value modifies this parent expression, so if a single up-value applies, return the new modified
+        // expression.
+        return Some(exp);
+      }
+    }
+  }
+  None
+}
 
 /**
 Evaluating rules with conditions is a bit meta, because evaluation is
