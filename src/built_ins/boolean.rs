@@ -12,39 +12,33 @@
 
  // For num_integer::binomial
 
-use crate::{
-  matching::{
-    display_solutions,
-    SolutionSet
-  },
-  parse,
-  atom::{
-    Symbol,
-    SExpression,
-    Atom
-  },
-  attributes::{
-    Attributes,
-    Attribute
-  },
-  context::*,
-  logging::{
-    log,
-    Channel
-  },
-  interner::{
-    interned_static
-  }
-};
+use crate::{matching::{
+  display_solutions,
+  SolutionSet
+}, parse, atom::{
+  Symbol,
+  SExpression,
+  Atom
+}, attributes::{
+  Attributes,
+  Attribute
+}, context::*, logging::{
+  log,
+  Channel
+}, interner::{
+  interned_static
+}, evaluate};
 use crate::built_ins::register_builtin;
 #[allow(unused_imports)]#[allow(unused_imports)]
 use crate::interner::resolve_str;
 #[allow(unused_imports)]
 use crate::logging::set_verbosity;
 
+
+/// Because And is short-circuiting, it has attribute HoldAll.
 /// Implements calls matching
 ///     `And[exp___] := built-in[exp]`
-pub(crate) fn And(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
+pub(crate) fn And(arguments: SolutionSet, _original: Atom, context: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
@@ -76,8 +70,18 @@ pub(crate) fn And(arguments: SolutionSet, _original: Atom, _: &mut Context) -> A
       }
 
       _ => {
-        // Indeterminate
-        new_children.push(child.clone())
+        let mut current_child = child.clone();
+        // Fully evaluate.
+        loop {
+          let old_hash = current_child.hashed();
+          let new_child = evaluate(current_child.clone(), context);
+          if old_hash == new_child.hashed() {
+            // Indeterminate
+            new_children.push(new_child.clone());
+            break;
+          }
+          current_child = new_child;
+        }
       }
 
     }
@@ -238,8 +242,8 @@ pub(crate) fn register_builtins(context: &mut Context) {
   let ac_function_attributes: Attributes
       = Attribute::Associative + Attribute::Commutative + Attribute::Protected + Attribute::Variadic;
 
-  register_builtin!(And, "And[exp___]", ac_function_attributes, context);
-  register_builtin!(Or, "Or[exp___]", ac_function_attributes, context);
+  register_builtin!(And, "And[exp___]", ac_function_attributes + Attribute::HoldAll, context);
+  register_builtin!(Or, "Or[exp___]", ac_function_attributes + Attribute::HoldAll, context);
   register_builtin!(SameQ, "SameQ[exp__]", Attribute::Protected+Attribute::Variadic+Attribute::Commutative, context);
   register_builtin!(Not, "Not[exp_]", Attribute::Protected.into(), context);
 

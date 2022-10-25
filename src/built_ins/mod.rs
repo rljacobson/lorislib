@@ -56,13 +56,15 @@ use numeric::register_builtins as register_numeric;
 pub const DEFAULT_REAL_PRECISION: u32 = 53;
 
 //                        f(substitutions, original_expression, context) -> evaluated_expression
-pub type BuiltinFn = fn(SolutionSet, Atom, &mut Context) -> Atom;
+pub type BuiltinFn = fn(SolutionSet, Atom, &Context) -> Atom;
+/// The signature of the built-in functions that require mutable access to the context.
+pub type BuiltinFnMut = fn(SolutionSet, Atom, &mut Context) -> Atom;
 
 #[macro_export]
 macro_rules! register_builtin {
   ($name:ident, $pattern:literal, $attributes:expr, $context:ident) => {
     {
-      let value = SymbolValue::BuiltIn {
+      let value = SymbolValue::BuiltInMut {
         pattern: parse($pattern).unwrap(),
         condition: None,
         built_in: $name,
@@ -72,6 +74,23 @@ macro_rules! register_builtin {
   }
 }
 pub use register_builtin;
+
+#[macro_export]
+macro_rules! register_builtin_mut {
+  ($name:ident, $pattern:literal, $attributes:expr, $context:ident) => {
+    {
+      let value = SymbolValue::BuiltInMut {
+        pattern: parse($pattern).unwrap(),
+        condition: None,
+        built_in: $name,
+      };
+      $context.set_down_value_attribute(interned_static(stringify!($name)), value, $attributes);
+    };
+  }
+}
+pub use register_builtin_mut;
+
+
 use crate::logging::{Channel, log};
 use crate::matching::display_solutions;
 
@@ -152,7 +171,7 @@ pub(crate) fn register_builtins(context: &mut Context) {
           return;
         }
       };
-      // set_verbosity(4);
+      set_verbosity(4);
       evaluate(expression, context);
     }
 

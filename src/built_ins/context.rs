@@ -18,34 +18,23 @@ use strum::{IntoEnumIterator};
 
 // For num_integer::binomial
 
-use crate::{
-  atom::SExpression::extract_thing_or_list_of_things,
-  matching::{
-    display_solutions,
-    SolutionSet
-  },
-  parse,
-  atom::{
-    Symbol,
-    SExpression,
-    SExpression::hold,
-    Atom
-  },
-  attributes::{
-    Attribute,
-    Attributes as SymbolAttributes, // Name collision with the built-in "Attributes"
-  },
-  context::*,
-  logging::{
-    log,
-    Channel
-  },
-  interner::{
-    interned_static
-  },
-  interner::InternedString,
-  interner::resolve_str
-};
+use crate::{atom::SExpression::extract_thing_or_list_of_things, matching::{
+  display_solutions,
+  SolutionSet
+}, parse, atom::{
+  Symbol,
+  SExpression,
+  SExpression::hold,
+  Atom
+}, attributes::{
+  Attribute,
+  Attributes as SymbolAttributes, // Name collision with the built-in "Attributes"
+}, context::*, logging::{
+  log,
+  Channel
+}, interner::{
+  interned_static
+}, interner::InternedString, interner::resolve_str, register_builtin_mut};
 #[allow(unused_imports)]
 use crate::logging::set_verbosity;
 
@@ -182,7 +171,8 @@ pub(crate) fn UpValues(arguments: SolutionSet, original: Atom, context: &mut Con
             match sv{
               SymbolValue::Definitions { def, .. } => hold(def.clone()),
               // todo: Handle case that built-in has a condition.
-              SymbolValue::BuiltIn { pattern, .. } => {
+              | SymbolValue::BuiltIn { pattern, .. }
+              | SymbolValue::BuiltInMut { pattern, .. } => {
                 hold(
                   Atom::SExpression(Rc::new(
                     vec![
@@ -230,7 +220,8 @@ pub(crate) fn DownValues(arguments: SolutionSet, _original: Atom, context: &mut 
               match sv {
                 SymbolValue::Definitions { def, .. } => def.clone(),
                 // todo: Handle case that built-in has a condition.
-                SymbolValue::BuiltIn { pattern, .. } => {
+                | SymbolValue::BuiltIn { pattern, .. }
+                | SymbolValue::BuiltInMut { pattern, .. } => {
                   Atom::SExpression(Rc::new(
                     vec![
                       Symbol::from_static_str("RuleDelayed"),

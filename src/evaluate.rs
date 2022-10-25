@@ -28,9 +28,344 @@ the "fully modified state" indicator. If `expr.evaluated_version < context.versi
 use std::{
   rc::Rc
 };
+use std::iter::Peekable;
+use std::ops::Deref;
+use regex::internal::Input;
 
-use crate::{matching::SolutionSet, context::SymbolValue, atom::Symbol, atom::SExpression, atom::Atom, matching::Matcher, matching::display_solutions, logging::log, logging::Channel, context::Context, attributes::Attribute, context::ContextValueStore, interner::InternedString, interner::resolve_str};
+use crate::{
+  matching::{
+    SolutionSet,
+    Matcher,
+    display_solutions,
+    self
+  },
+  context::{
+    SymbolValue,
+    Context,
+    ContextValueStore
+  },
+  atom::{
+    Symbol,
+    SExpression,
+    Atom
+  },
+  logging::{
+    log,
+    Channel
+  },
+  attributes::Attribute,
+  interner::{
+    InternedString,
+    resolve_str
+  }
+};
+use crate::built_ins::{BuiltinFn, BuiltinFnMut};
 
+enum UnevaluatedDefinitionMatch{
+  None,
+  /// To be passed to `replace_all_bound_variables(…)`
+  Definition{
+    rhs: Atom,
+    substitutions: SolutionSet
+  },
+  // To be applied to the expression argument to `find_matching_definition`
+  BuiltIn{
+    substitutions: SolutionSet,
+    built_in: BuiltinFn
+  },
+  // To be applied to the expression argument to `find_matching_definition`
+  BuiltInMut{
+    substitutions: SolutionSet,
+    built_in: BuiltinFnMut
+  }
+}
+
+impl UnevaluatedDefinitionMatch{
+  pub fn is_none(&self) -> bool {
+    match *self {
+      UnevaluatedDefinitionMatch::None => true,
+      _ => false,
+    }
+  }
+
+  pub fn is_some(&self) -> bool {
+    !self.is_none()
+  }
+
+  pub fn is_safe(&self) -> bool {
+    match self {
+      | UnevaluatedDefinitionMatch::None{..}
+      | UnevaluatedDefinitionMatch::BuiltInMut{..} => false,
+
+      _ => true
+    }
+  }
+/*
+  // todo: factor out common code with regular apply
+  pub fn safe_apply(self, expression: Atom, context: &Context) -> Atom {
+    match self {
+
+      UnevaluatedDefinitionMatch::None => { unreachable!("Called evaluate on a non-expression.") }
+
+      UnevaluatedDefinitionMatch::Definition { rhs, substitutions } => {
+        match replace_all_bound_variables(&rhs, &substitutions, context) {
+          None => {
+            rhs
+          }
+          Some(e) => {
+            e
+          }
+        }
+      }
+
+      UnevaluatedDefinitionMatch::BuiltIn { substitutions, built_in } => {
+        built_in(substitutions, expression, context)
+      }
+
+      UnevaluatedDefinitionMatch::BuiltInMut { substitutions, built_in } => {
+        // Not necessarily an error.
+        // log(Channel::Error, 1, "Tried to safely evaluate an unsafe expression.");
+        Symbol::from_static_str("Null")
+      }
+
+    }
+  }
+*/
+  pub fn apply(self, expression: Atom, context: &mut Context) -> Atom {
+    match self {
+
+      UnevaluatedDefinitionMatch::None => { unreachable!("Called evaluate on a non-expression. This is a bug.") }
+
+      UnevaluatedDefinitionMatch::Definition { rhs, substitutions } => {
+        match replace_all_bound_variables(&rhs, &substitutions, context) {
+          None => {
+            rhs
+          }
+          Some(e) => {
+            e
+          }
+        }
+      }
+
+      UnevaluatedDefinitionMatch::BuiltIn { substitutions, built_in } => {
+        built_in(substitutions, expression, context)
+      }
+
+      UnevaluatedDefinitionMatch::BuiltInMut { substitutions, built_in } => {
+        built_in(substitutions, expression, context)
+      }
+
+    }
+  }
+}
+/*
+// todo: factor out common  code with normal evaluate.
+/// Evaluates `expression` without mutating `context`.
+pub fn safe_evaluate(expression: Atom, context: &Context) -> Atom {
+  /*
+  The general strategy is to apply an operation to an expression, see if it has changed, and if it has, to evaluate
+  again, until the expression reaches a fixed-point.
+
+  Todo: Add recursion-limit
+  Todo: Add cycle detection
+
+  */
+
+  let expression = propagate_attributes(&expression, context);
+
+  // This function assumes the caller has already taken care of any `UpValues`.
+  // Numbers and variables evaluate to themselves. It suffices to only take care
+  // of the `Symbol` and `Function` cases.
+  match &expression {
+
+    Atom::Symbol(symbol) => {
+      // Look for OwnValues.
+      // log(Channel::Debug, 4, "Evaluating symbol. Checking for own-values.");
+
+      let original_hash = expression.hashed();
+      let unevaluated = find_matching_definition(
+        expression.clone(),
+        *symbol,
+        ContextValueStore::OwnValues,
+        context
+      );
+      if unevaluated.is_safe() {
+        let exp = unevaluated.safe_apply(expression, context);
+        if exp.hashed() != original_hash{
+          // Something has changed, so continue evaluating.
+          safe_evaluate(exp, context)
+        } else {
+          exp
+        }
+      } else {
+        // No own-values. Return original expression.
+        expression
+      }
+    } // end Atom::Symbol branch
+
+    Atom::SExpression(children) => {
+      let original_hash = expression.hashed();
+
+      // If the head is a name with `Hold*` attributes, we are not allowed to evaluate some or all of the children.
+      // In order to have attributes, the head needs to have a name in the first place. We do this in a single step.
+      let name_and_hold_attribute: Option<(InternedString, Attribute)> =
+          match &expression.name() {
+            Some(name) => {
+              let attributes = context.get_attributes(*name);
+              // It is convenient to have attributes be a statically matchable value.
+              // The following are precisely the conditions needed in the match arms below.
+              let attribute =
+                  if attributes[Attribute::HoldFirst]
+                      && children.len() > 1 // There needs to be a "first" to hold.
+                  {
+                    Attribute::HoldFirst
+                  } else if attributes[Attribute::HoldRest]
+                      && children.len() > 2 // There needs to be a "rest" to hold.
+                  {
+                    Attribute::HoldRest
+                  } else if attributes[Attribute::HoldAll]
+                      || attributes[Attribute::HoldAllComplete]
+                  {
+                    Attribute::HoldAll
+                  } else{
+                    // Some arbitrary value
+                    Attribute::Stub
+                  };
+
+              Some((*name, attribute))
+            } // end if name branch
+
+            _ => {
+              None
+            }
+          }; // end match on expression.name()
+
+      // In each match branch for `name_and_hold_attribute`, we do two this:
+      //    1. Look for `UpValues` for each unheld child.
+      //    2. Evaluate each unheld child.
+      let new_expression =
+          match name_and_hold_attribute {
+
+            Some((_name, Attribute::HoldFirst)) => {
+              // Step 1: Look for `UpValues` for each unheld child.
+              // For UpValues, we match on the parent instead of the child expression that is associated with the up-value.
+              // log(Channel::Debug, 4, "Evaluating function. Checking for upvalues.");
+              let unevaluated = evaluate_up_values(&expression, &children[2..], context);
+              if unevaluated.is_safe() {
+                unevaluated.safe_apply(expression, context)
+              }
+              // No applicable up-values.
+              // Step 2: Evaluate children.
+              else {
+                let mut evaluated_children = Vec::with_capacity(children.len());
+                evaluated_children.push(children[0].clone()); // This is expression.head()
+                evaluated_children.push(children[1].clone()); // ...and the first child
+                evaluated_children.extend(
+                  children[2..].iter().cloned().map(|exp| safe_evaluate(exp, context))
+                );
+                Atom::SExpression(Rc::new(evaluated_children))
+              }
+            } // end HoldFirst branch
+
+            Some((_name, Attribute::HoldRest)) => {
+              // Step 1: Look for `UpValues` for each unheld child.
+              // For UpValues, we match on the parent instead of the child expression that is associated with the up-value.
+              // log(Channel::Debug, 4, "Evaluating function. Checking for up-values.");
+              let unevaluated = evaluate_up_values(&expression, &children[1..2], context);
+              if unevaluated.is_safe() {
+                unevaluated.safe_apply(expression, context)
+              }
+              // No applicable up-values.
+              // Step 2: Evaluate children.
+              else {
+                let mut evaluated_children = Vec::with_capacity(children.len());
+                evaluated_children.push(safe_evaluate(children[0].clone(), context)); // This is expression.head()
+                evaluated_children.push(safe_evaluate(children[1].clone(), context)); // ...and the first child
+                evaluated_children.extend(children[2..].iter().cloned());
+                Atom::SExpression(Rc::new(evaluated_children))
+              }
+            }
+
+            Some((_name, Attribute::HoldAll)) => {
+              // The silliest case: We cannot evaluate anything–a no-op!
+              expression
+            }
+
+            _ => {
+              // No restrictions – evaluate everything
+              // Step 1: Look for `UpValues` for each unheld child.
+              // For UpValues, we match on the parent instead of the child expression that is associated with the up-value.
+              // log(Channel::Debug, 4, "Evaluating function. Checking for up-values.");
+              let unevaluated = evaluate_up_values(&expression, &children[1..], context);
+              if unevaluated.is_safe() {
+                unevaluated.safe_apply(expression, context)
+              }
+              // No applicable up-values.
+              // Step 2: Evaluate children.
+              else {
+                let evaluated_children
+                    = children.iter()
+                              .map(|child| safe_evaluate(child.clone(), context))
+                              .collect::<Vec<_>>();
+                Atom::SExpression(Rc::new(evaluated_children))
+              }
+            } // end None branch
+
+          }; // end match on name_and_hold_attribute
+
+      // If steps 1 or 2 were successful, then we changed the expression somehow.
+      if new_expression.hashed() != original_hash {
+        log(
+          Channel::Debug,
+          4,
+          "Evaluating up-values and children changed the expression. Evaluating again."
+        );
+        // We have changed the expression or the context somehow, which
+        // might affect the application of UpValues. Abort this evaluation in favor of evaluation of the new function.
+        return safe_evaluate(new_expression, context);
+      }
+
+      // Step 3: Evaluate DownValues.
+      // We can only have down-values if the head has a name.
+      if let Some((name, _)) = name_and_hold_attribute {
+        log(Channel::Debug, 4, "Looking for down values.");
+        let unevaluated = find_matching_definition(
+          new_expression.clone(),
+          name,
+          ContextValueStore::DownValues,
+          context
+        );
+        if unevaluated.is_safe(){
+          let new_expression = unevaluated.safe_apply(new_expression, context);
+          if original_hash != new_expression.hashed()
+          {
+            log(
+              Channel::Debug,
+              4,
+              "Evaluating DownValue changed the expression. Evaluating again."
+            );
+            safe_evaluate(new_expression, context)
+          } else {
+            log(
+              Channel::Debug,
+              4,
+              "Evaluating DownValue left expression unchanged. Returning."
+            );
+            new_expression
+          }
+        } else {
+          new_expression
+        }
+      } else {
+        // No name, no DownValues.
+        new_expression
+      }
+    } // end if expression is an s-expression
+
+    _ => expression
+  }
+}
+*/
 
 pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
   /*
@@ -63,12 +398,15 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
       // The "state version" of `context` that this expression was last evaluated at.
       let evaluated_version = context.state_version();
 
-      if let Some(exp) = try_definitions(
+      let unevaluated = find_matching_definition(
         expression.clone(),
         *symbol,
         ContextValueStore::OwnValues,
         context
-      ) {
+      ) ;
+      if unevaluated.is_some() {
+        let exp = unevaluated.apply(expression, context);
+
         if exp.hashed() != original_hash || evaluated_version != context.state_version() {
           // Something has changed, so continue evaluating.
           evaluate(exp, context)
@@ -130,8 +468,9 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
             // Step 1: Look for `UpValues` for each unheld child.
             // For UpValues, we match on the parent instead of the child expression that is associated with the up-value.
             // log(Channel::Debug, 4, "Evaluating function. Checking for upvalues.");
-            if let Some(new_expression) = evaluate_up_values(&expression, &children[2..], context){
-              new_expression
+            let new_expression  = evaluate_up_values(&expression, &children[2..], context);
+            if new_expression.is_some() {
+              new_expression.apply(expression, context)
             }
             // No applicable up-values.
             // Step 2: Evaluate children.
@@ -150,8 +489,9 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
             // Step 1: Look for `UpValues` for each unheld child.
             // For UpValues, we match on the parent instead of the child expression that is associated with the up-value.
             // log(Channel::Debug, 4, "Evaluating function. Checking for up-values.");
-            if let Some(new_expression) = evaluate_up_values(&expression, &children[1..2], context){
-              new_expression
+            let unevaluated = evaluate_up_values(&expression, &children[1..2], context);
+            if unevaluated.is_some() {
+              unevaluated.apply(expression, context)
             }
             // No applicable up-values.
             // Step 2: Evaluate children.
@@ -174,8 +514,9 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
             // Step 1: Look for `UpValues` for each unheld child.
             // For UpValues, we match on the parent instead of the child expression that is associated with the up-value.
             // log(Channel::Debug, 4, "Evaluating function. Checking for up-values.");
-            if let Some(new_expression) = evaluate_up_values(&expression, &children[1..], context){
-              new_expression
+            let unevaluated = evaluate_up_values(&expression, &children[1..], context);
+            if unevaluated.is_some() {
+              unevaluated.apply(expression, context)
             }
             // No applicable up-values.
             // Step 2: Evaluate children.
@@ -206,12 +547,14 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
       // We can only have down-values if the head has a name.
       if let Some((name, _)) = name_and_hold_attribute {
         log(Channel::Debug, 4, "Looking for down values.");
-        if let Some(new_expression) = try_definitions(
+        let unevaluated = find_matching_definition(
           new_expression.clone(),
           name,
           ContextValueStore::DownValues,
           context
-        ) {
+        );
+        if unevaluated.is_some()  {
+          let new_expression = unevaluated.apply(new_expression, context);
           if original_hash != new_expression.hashed()
               || evaluated_version != context.state_version()
           {
@@ -244,17 +587,18 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
 
 /// Given an `expression` and a list of only its unheld `children`, returns the result of the first matching
 /// up-value, or None if there are no matching up-values.
-fn evaluate_up_values(expression: &Atom, children: &[Atom], context: &mut Context) -> Option<Atom> {
+fn evaluate_up_values(expression: &Atom, children: &[Atom], context: &mut Context) -> UnevaluatedDefinitionMatch {
   for child in children.iter() {
     if let Some(name) = child.name() {
-      if let Some(exp) = try_definitions(expression.clone(), name, ContextValueStore::UpValues, context) {
+      let unevaluated_match = find_matching_definition(expression.clone(), name, ContextValueStore::UpValues, context);
+      if unevaluated_match.is_some() {
         // An up-value modifies this parent expression, so if a single up-value applies, return the new modified
         // expression.
-        return Some(exp);
+        return unevaluated_match;
       }
     }
   }
-  None
+  UnevaluatedDefinitionMatch::None
 }
 
 /**
@@ -267,104 +611,73 @@ conditions.
 fn check_condition(condition: Atom, substitutions: &SolutionSet, context: &mut Context)
     -> bool
 {
-
-  let condition_expression = replace_all_bound_variables(condition, substitutions, context);
-  log(Channel::Debug, 4, format!("Checking condition expression: {}", condition_expression).as_str());
+  log(Channel::Debug, 4, format!("Checking condition expression: {}\n  with substitutions: {}",
+                                 condition, display_solutions(substitutions)).as_str());
+  let condition_expression = match replace_all_bound_variables(&condition, substitutions, context) {
+    Some(expression) => expression,
+    None => condition
+  };
+  log(Channel::Debug, 4, format!("Evaluating condition expression: {}", condition_expression).as_str());
   let condition_result = evaluate(condition_expression, context);
   condition_result.is_true()
 }
 
-fn try_definitions(expression: Atom, symbol: InternedString, value_store: ContextValueStore, context: &mut Context)
-  -> Option<Atom>
+// Returns pair (&SymbolValue, Atom) if a definition pattern matches AND any required conditions are met.
+fn wrap_definition_match(symbol_value: &SymbolValue, substitutions: SolutionSet) -> UnevaluatedDefinitionMatch
 {
+  match &symbol_value {
+    SymbolValue::Definitions { rhs, .. } => {
+      return UnevaluatedDefinitionMatch::Definition { rhs: rhs.clone(), substitutions }
+    }
 
-  if let Some((symbol_value, substitutions))
-    = find_matching_definition(expression.clone(), symbol, value_store, context){
-    match symbol_value {
-      SymbolValue::Definitions {rhs, condition,..} => {
-        // Only try if the side condition is true
-        if condition.is_none()
-            || check_condition(condition.clone().unwrap(), &substitutions, context)
-        {
-          log(Channel::Debug, 4, format!("Doing substitutions for rhs = {}", &rhs).as_str());
-          let replaced  = replace_all_bound_variables(rhs, &substitutions, context);
-          log(Channel::Debug, 4, format!("After replacement: {}", &replaced).as_str());
-          Some(replaced)
-        } else {
-          log(
-            Channel::Debug,
-            4,
-            "Failed condition branch for SymbolValue::Definitions",
-          );
-          None
-        }
-
-      }
-      SymbolValue::BuiltIn {built_in, condition,..} => {
-        log(
-          Channel::Debug,
-          4,
-          "Found BuiltIn",
-        );
-        // Only try if the side condition is true
-        if let Some(condition) = condition {
-          log(
-            Channel::Debug,
-            4,
-            "Some(condition) branch for SymbolValue::BuiltIn",
-          );
-          if check_condition(condition.clone(), &substitutions, context) {
-            log(
-              Channel::Debug,
-              4,
-              format!("Passing {} to built-in function", display_solutions(&substitutions)).as_str()
-            );
-            Some(built_in(substitutions, expression, context))
-          } else {
-            log(
-              Channel::Debug,
-              4,
-              "Failed to pass condition branch for SymbolValue::BuiltIn",
-            );
-            None
-          }
-        } else {
-          // No condition. Just execute.
-          log(
-            Channel::Debug,
-            4,
-            format!("Passing {} to built-in function", display_solutions(&substitutions)).as_str()
-          );
-          Some(built_in(substitutions, expression, context))
-        }
+    SymbolValue::BuiltIn {built_in, .. } =>{
+      log(
+        Channel::Debug,
+        4,
+        "Found BuiltIn",
+      );
+      return UnevaluatedDefinitionMatch::BuiltIn{
+        substitutions,
+        built_in: *built_in
       }
     }
-  } else {
-    // log(
-    //   Channel::Debug,
-    //   4,
-    //     "No definitions found by find_matching_definition()",
-    // );
-    None
-  }
 
+
+    SymbolValue::BuiltInMut {condition, built_in, .. } => {
+      log(
+        Channel::Debug,
+        4,
+        "Found BuiltIn",
+      );
+      return UnevaluatedDefinitionMatch::BuiltInMut{
+        substitutions,
+        built_in: *built_in
+      };
+    }
+
+    // _ => UnevaluatedDefinitionMatch::None
+  }
 }
 
 /// If any of the patterns in the vector of ``SymbolValue``'s match, return the RHS and the substitutions for the match.
 fn find_matching_definition(ground: Atom, symbol: InternedString, value_store: ContextValueStore, context: &mut Context)
-    -> Option<(SymbolValue, SolutionSet)>
+    -> UnevaluatedDefinitionMatch
 {
   let definitions = {
-    let record = context.get_symbol_mut(symbol);
-    match value_store {
-      ContextValueStore::OwnValues  => &record.own_values,
-      ContextValueStore::UpValues   => &record.up_values,
-      ContextValueStore::DownValues => &record.down_values,
-      ContextValueStore::SubValues  => &record.sub_values,
-      _ => unimplemented!()
-      // ContextValueStore::NValues => {}
-      // ContextValueStore::DisplayFunction => {}
-    }.clone() // todo: Get rid of this egregious clone.
+    if let Some(record) = context.get_symbol(symbol) {
+      match value_store {
+        ContextValueStore::OwnValues => &record.own_values,
+        ContextValueStore::UpValues => &record.up_values,
+        ContextValueStore::DownValues => &record.down_values,
+        ContextValueStore::SubValues => &record.sub_values,
+        _ => unimplemented!()
+        // ContextValueStore::NValues => {}
+        // ContextValueStore::DisplayFunction => {}
+      }
+    } else {
+      // None to try
+      return UnevaluatedDefinitionMatch::None;
+    }
   };
 
   if !definitions.is_empty() {
@@ -379,44 +692,50 @@ fn find_matching_definition(ground: Atom, symbol: InternedString, value_store: C
 
   for symbol_value in definitions.iter() {
     log(Channel::Debug, 4, "Value found: ");
-    let pattern =
-      match symbol_value {
+    let (pattern, condition) =
+        match symbol_value {
 
-        SymbolValue::Definitions{lhs,..}=> {
-          lhs
+          SymbolValue::Definitions{lhs, condition,..}=> {
+            (lhs, condition)
+          }
+
+          | SymbolValue::BuiltIn {pattern, condition, ..}
+          | SymbolValue::BuiltInMut {pattern, condition, ..} => {
+            (pattern, condition)
+          }
+
+        };
+
+    log(Channel::Debug, 4, format!("pattern = {}", (pattern).to_string()).as_str());
+
+    let matches: Vec<SolutionSet> = Matcher::new(pattern.clone(), ground.clone(), context).collect();
+
+    for substitutions in matches {
+      if let Some(c) = condition{
+        if check_condition(c.clone(), &substitutions, context) {
+          // matched_set.push((&symbol_value, substitutions));
+          log(Channel::Debug, 4, format!("Pattern matched! Condition satisfied!").as_str());
+          return wrap_definition_match(symbol_value, substitutions);
+        } else {
+          log(Channel::Debug, 4, format!("Condition failed,").as_str());
         }
-
-        SymbolValue::BuiltIn {
-          pattern,
-          ..
-        } => {
-          pattern
-        }
-
-      };
-    log(
-      Channel::Debug,
-      4,
-      format!(
-        "pattern = {} ground = {}",
-        (*pattern).to_string(),
-        &ground
-      ).as_str()
-    );
-    let mut matcher = Matcher::new(pattern.clone(), ground.clone(), context);
-    if let Some(substitutions) = (&mut matcher).next() {
-      log(Channel::Debug, 4, format!("Pattern matched!").as_str());
-      return Some((symbol_value.clone(), substitutions));
-    } else {
-      log(Channel::Debug, 4, format!("Pattern failed to match.").as_str());
-    }
+      } else {
+        // No condition needs satisfying
+        return wrap_definition_match(symbol_value, substitutions);
+      }
+    } // end iterate over substitutions
   } // end iterate over definitions
-  None
+
+  log(Channel::Debug, 4, format!("Pattern failed to matched while satisfying condition.").as_str());
+
+  UnevaluatedDefinitionMatch::None
 }
 
 
 /// Performs all substitutions in the given solution set on expression.
-pub fn replace_all_bound_variables(expression: Atom, substitutions: &SolutionSet, context: &mut Context) -> Atom {
+pub fn replace_all_bound_variables(expression: &Atom, substitutions: &SolutionSet, context: &Context)
+  -> Option<Atom>
+{
   match &expression {
 
     Atom::SExpression(children) => {
@@ -424,10 +743,15 @@ pub fn replace_all_bound_variables(expression: Atom, substitutions: &SolutionSet
       // Do a `ReplaceAll` on the children
       let new_children =
           children.iter()
-                  .map(|c| replace_all_bound_variables(c.clone(), substitutions, context))
+                  .map(|c| {
+                    match replace_all_bound_variables(c, substitutions, context) {
+                      Some(e) => e,
+                      None => c.clone()
+                    }
+                  })
                   .collect();
 
-      Atom::SExpression(Rc::new(new_children))
+      Some(Atom::SExpression(Rc::new(new_children)))
     }
 
     Atom::Symbol(name) => {
@@ -435,27 +759,27 @@ pub fn replace_all_bound_variables(expression: Atom, substitutions: &SolutionSet
       for (pattern, substitution) in substitutions {
         if let Some(pattern_name) = pattern.is_variable() {
           if pattern_name == *name {
-            return substitution.clone();
+            return Some(substitution.clone());
           }
         }
         else if let Some(pattern_name) = pattern.is_null_sequence_variable() {
           if pattern_name == *name {
-            return substitution.clone();
+            return Some(substitution.clone());
           }
         }
         else if let Some(pattern_name) = pattern.is_sequence_variable() {
           if pattern_name == *name {
-            return substitution.clone();
+            return Some(substitution.clone());
           }
         }
 
         // unreachable!("Nonvariable pattern in a variable binding: {} -> {}", pattern_name, *name);
       }
       // None apply.
-      expression
+      None
     }
 
-    _ => expression
+    _ => None
   }
 }
 

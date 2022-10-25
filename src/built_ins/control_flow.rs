@@ -12,29 +12,20 @@ Program Control Flow Built-ins
 
  // For num_integer::binomial
 
-use crate::{
-  matching::{
-    display_solutions,
-    SolutionSet
-  },
-  parse,
-  atom::{
-    SExpression,
-    Atom
-  },
-  attributes::{
-    Attribute
-  },
-  context::*,
-  logging::{
-    log,
-    Channel
-  },
-  interner::{
-    interned_static
-  },
-  evaluate
-};
+use crate::{matching::{
+  display_solutions,
+  SolutionSet
+}, parse, atom::{
+  SExpression,
+  Atom
+}, attributes::{
+  Attribute
+}, context::*, logging::{
+  log,
+  Channel
+}, interner::{
+  interned_static
+}, evaluate, register_builtin_mut};
 use crate::atom::Symbol;
 use super::register_builtin;
 #[allow(unused_imports)]#[allow(unused_imports)]
@@ -61,7 +52,7 @@ pub(crate) fn If(arguments: SolutionSet, original: Atom, context: &mut Context) 
   let truepath  = &arguments[&SExpression::variable_static_str("truepath")];
   let falsepath = &arguments[&SExpression::variable_static_str("falsepath")];
 
-  // The condition has already been evalauted. We need only check its value.
+  // The condition has already been evaluated. We need only check its value.
   match cond {
 
     Atom::Symbol(name) if *name == interned_static("True") => {
@@ -116,8 +107,8 @@ pub(crate) fn CompoundExpression(arguments: SolutionSet, original: Atom, context
 pub(crate) fn register_builtins(context: &mut Context) {
 
   //If[cond_, truepath_, falsepath_] := BuiltIn
-  register_builtin!(If, "If[cond_, truepath_, falsepath_]", Attribute::Protected+Attribute::HoldRest, context);
-  register_builtin!(
+  register_builtin_mut!(If, "If[cond_, truepath_, falsepath_]", Attribute::Protected+Attribute::HoldRest, context);
+  register_builtin_mut!(
     CompoundExpression, "CompoundExpression[exp___]", Attribute::Protected+Attribute::HoldAll, context
   );
 

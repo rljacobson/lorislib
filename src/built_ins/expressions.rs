@@ -35,15 +35,19 @@ use crate::{
   context::*,
   logging::{
     log,
-    Channel,
-    set_verbosity
+    Channel
   },
   interner::{
-    interned_static,
-    resolve_str
+    interned_static
   },
-  built_ins::{occurs_check, register_builtin},
 };
+use crate::built_ins::{occurs_check, register_builtin};
+#[allow(unused_imports)]#[allow(unused_imports)]
+use crate::interner::resolve_str;
+#[allow(unused_imports)]
+use crate::logging::set_verbosity;
+
+
 
 
 /// Implements calls matching
@@ -166,7 +170,6 @@ pub(crate) fn replace_all(expression: Atom, substitutions: &SolutionSet, context
     }
 
   }
-
 }
 
 
@@ -186,7 +189,7 @@ pub(crate) fn ReplaceAll(arguments: SolutionSet, original: Atom, context: &mut C
   let rules_expression = &arguments[&SExpression::variable_static_str("rules")];
 
   let rules: SolutionSet = // the following match
-      match rules_expression{
+      match rules_expression {
 
         // Three cases: A list of rules, or a single rule, or invalid input.
         Atom::SExpression(children) => {
@@ -195,7 +198,7 @@ pub(crate) fn ReplaceAll(arguments: SolutionSet, original: Atom, context: &mut C
             // Now validate each element of the list.
             let rule_list: Vec<(Atom, Atom)> = children[1..].iter().map_while(|r| r.is_rule()).collect::<Vec<_>>();
 
-            if rule_list.len() != children.len()-1 {
+            if rule_list.len() != children.len() -1 {
               // Not all calls to `is_rule()` returned Some(…)
               log(
                 Channel::Error,

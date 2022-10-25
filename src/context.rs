@@ -27,6 +27,7 @@ use crate::{atom::{
   BuiltinFn,
   register_builtins
 }};
+use crate::built_ins::BuiltinFnMut;
 use crate::interner::{interned_static, InternedString, resolve_str};
 use crate::logging::set_verbosity;
 // use crate::parsing::{Lexer, parse};
@@ -301,6 +302,11 @@ pub enum SymbolValue{
     pattern  : Atom,
     condition: Option<Atom>,
     built_in : BuiltinFn
+  },
+  BuiltInMut {
+    pattern  : Atom,
+    condition: Option<Atom>,
+    built_in : BuiltinFnMut
   }
 }
 
@@ -313,6 +319,13 @@ impl PartialEq for SymbolValue {
       (
         SymbolValue::BuiltIn {pattern: p1, condition: c1, built_in: _b1},
         SymbolValue::BuiltIn {pattern: p2, condition: c2, built_in: _b2},
+      ) => {
+        p1==p2 && c1==c2 //&& (b1 as *const _ == b2 as *const _)
+      }
+
+      (
+        SymbolValue::BuiltInMut {pattern: p1, condition: c1, built_in: _b1},
+        SymbolValue::BuiltInMut {pattern: p2, condition: c2, built_in: _b2},
       ) => {
         p1==p2 && c1==c2 //&& (b1 as *const _ == b2 as *const _)
       }
@@ -352,6 +365,16 @@ impl Debug for SymbolValue {
         write!(
           f,
           "SymbolValue::Definitions{{ pattern: {}, condition: {:?}, built_in: {:?}}}",
+          pattern,
+          condition,
+          built_in as *const _
+        )
+      }
+
+      SymbolValue::BuiltInMut { pattern, condition, built_in } => {
+        write!(
+          f,
+          "SymbolValue::Definitions{{ pattern: {}, condition: {:?}, built_in: mut {:?}}}",
           pattern,
           condition,
           built_in as *const _
