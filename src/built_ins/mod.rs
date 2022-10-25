@@ -9,6 +9,9 @@ Todo: Implement Constants
  */
 #![allow(non_snake_case)]
 
+
+
+
 use crate::{
   matching::{
     SolutionSet
@@ -49,7 +52,7 @@ use boolean::register_builtins as register_boolean;
 use context::register_builtins as register_context;
 use numeric::register_builtins as register_numeric;
 
-pub(crate) use context::Set;
+
 
 
 // todo: store this in the global context as an own-value.
@@ -72,12 +75,12 @@ pub static STANDARD_PREAMBLE: [&str; 14] = [
   // Differentiation
   "D[x_, y_] := 0 /; NumberQ[x]",                                  // Constants. No matching on `Head`
   "D[x_, y_] := 1 /; SameQ[x, y]",                                // Identity
-  "D[x_^n_, y_] ^:= n*x_^(n-1)*D[x, y] /; Occurs[y, x]", // Power Rule,
+  "D[x_^n_, y_] ^:= n*x_^(n-1)*D[x, y] /; OccursQ[x, y]", // Power Rule,
 
-  "D[Sin[x_], y_] ^:= Cos[x]*D[x, y] /; Occurs[y, x]",
-  "D[Cos[x_], y_] ^:= -Sin[x]*D[x, y] /; Occurs[y, x]",
-  "D[Tan[x_], y_] ^:= Sec[x]^2*D[x, y] /; Occurs[y, x]",
-  "D[Sec[x_], y_] ^:= Sec[x]*Tan[x]*D[x, y] /; Occurs[y, x]",
+  "D[Sin[x_], y_] ^:= Cos[x]*D[x, y] /; OccursQ[x, y]",
+  "D[Cos[x_], y_] ^:= -Sin[x]*D[x, y] /; OccursQ[x, y]",
+  "D[Tan[x_], y_] ^:= Sec[x]^2*D[x, y] /; OccursQ[x, y]",
+  "D[Sec[x_], y_] ^:= Sec[x]*Tan[x]*D[x, y] /; OccursQ[x, y]",
 ];
 // endregion
 
@@ -98,6 +101,49 @@ macro_rules! register_builtin {
   }
 }
 pub use register_builtin;
+use crate::logging::{Channel, log};
+use crate::matching::display_solutions;
+
+// region Currently homeless built-ins
+
+/// Sets the (global) verbosity level of the message logging system. Level 0 is off--not recommended. Level 1 is
+/// "normal" enabled. Level 4 gives evaluation progress. Level 5 gives matching progress. Level n includes all
+/// messages in levels m < n.
+/// Implements calls matching
+///     `SetVerbosity[exp_] := built-in[exp]`
+pub(crate) fn SetVerbosity(arguments: SolutionSet, original: Atom, _: &mut Context) -> Atom {
+  log(
+    Channel::Debug,
+    4,
+    format!(
+      "SetVerbosity called with arguments {}",
+      display_solutions(&arguments)
+    ).as_str()
+  );
+
+  // The argument is a single expression
+  let  rhs = &arguments[&SExpression::variable_static_str("exp")];
+  match rhs {
+
+    Atom::Integer(n) => {
+      set_verbosity(n.to_i32_wrapping());
+      Symbol::from_static_str("Ok")
+    }
+
+    _ => {
+      log(
+        Channel::Error,
+        1,
+        "SetVerbosity must be called with an integer value."
+      );
+      original
+    }
+  }
+
+}
+
+
+// endregion
 
 pub(crate) fn register_builtins(context: &mut Context) {
   // todo: When is something read-only vs protected? What permissions should these symbols have?
@@ -121,16 +167,39 @@ pub(crate) fn register_builtins(context: &mut Context) {
   context.set_attribute(interned_static("UpValues"), Attribute::HoldAll).ok();
   context.set_attribute(interned_static("DownValues"), Attribute::HoldAll).ok();
   context.set_attribute(interned_static("OwnValues"), Attribute::HoldAll).ok();
-
   // endregion
 
   // region Preamble
 
-  for n in 0..7  {
-    let definition = parse(STANDARD_PREAMBLE[n]).unwrap();
-    evaluate(definition, context);
-  }
+  register_builtin!(SetVerbosity, "SetVerbosity[exp_]", Attribute::Protected.into(), context);
 
+
+  match std::fs::read_to_string("./lorislib/lib/preamble.m"){
+    Ok(text) => {
+      set_verbosity(5);
+      let expression = match parse(text.as_str()) {
+        Ok(expression) => expression,
+        Err(_) => {
+          log(
+            Channel::Error,
+            1,
+            format!("Failed to parse preamble.m.").as_str()
+          );
+          return;
+        }
+      };
+      set_verbosity(4);
+      evaluate(expression, context);
+    }
+
+    Err(e) => {
+      log(
+        Channel::Error,
+        1,
+        format!("Failed to read preamble.m: {}", e).as_str()
+      );
+    }
+  }
 
   // endregion
 
@@ -162,7 +231,13 @@ pub fn collect_symbol_or_head_symbol(pattern_function: Atom) -> Vec<InternedStri
   child_iter.filter_map(|c| {
     match c {
       Atom::Symbol(name) => Some(*name),
-      Atom::SExpression(f)=> Some(f[0].name().unwrap()),
+      Atom::SExpression(f)=> {
+        if c.is_any_variable_kind() {
+          None
+        } else {
+          Some(f[0].name().unwrap())
+        }
+      },
       _ => None
     }
   }).collect()
@@ -203,6 +278,7 @@ mod tests {
     Context,
     parse
   };
+  use crate::built_ins::context::Set;
 
   use super::*;
 

@@ -32,6 +32,7 @@ use crate::{
     InternedString
   }
 };
+use crate::logging::{Channel, log};
 
 /*
 To have dynamic lexing of operators, the lexer needs facilities for adding and removing operators.
@@ -49,51 +50,53 @@ const REAL_IDX          : usize = 1;
 const INTEGER_IDX       : usize = 2;
 const IDENTIFIER_IDX    : usize = 3;
 const WHITESPACE_IDX    : usize = 4;
-const COMMENT_IDX       : usize = 5;
+// const COMMENT_IDX       : usize = 5;
 
 lazy_static! {
-  pub static ref REGEXES: [Regex; 6] = [
+  pub static ref REGEXES: [Regex; 4] = [
     // Any non -quote or -slash; any even number of slashes; an escaped character (including quote); and repeat as many
     // times as possible.
     Regex::new(r#""(?:[^"\\]|\\\\|\\.)*""#).unwrap(), //  0. StringLiteral  todo: Make strings more sophisticated.
     Regex::new(r"[0-9]+\.[0-9]+").unwrap(),           //  1. Real
     Regex::new(r"[0-9]+").unwrap(),                   //  2. Integer
     Regex::new(r"[a-zA-Z][a-zA-Z0-9]*").unwrap(),     //  3. Identifiers,
-    Regex::new(r"[ \t\n\f]+").unwrap(),               //  4. Whitespace
-    // Any number of non- slashes, -backslashes and -stars; any even number of backslashes; any escaped character
-    // (including "*"); a slash followed by a non-star; a star followed by a non-slash; and repeat as
-    // many times as possible.
-    Regex::new(r"/\*(:?[^\\/*]|\\\\|\\/.|/[^*]|\*[^\\])*/\*").unwrap(), //  5. Comments
+    // Regex::new(r"[ \t\n\f]+").unwrap(),            //  4. Whitespace
   ];
 }
 
-static TOKENS: [&'static str; 26] = [
-  r"___", //  6. BlankSequence
-  r"==",  //  7. SameQ
-  r"^=",  //  8. UpSet
-  r":=",  //  9. SetDelayed
-  r"^:=", // 10. UpSetDelayed
-  r"=.",  // 11. Clear
-  r"/;",  // 12. Condition
-  r"[[",  // 13. OpenIndex
-  r"]]",  // 14. CloseIndex
-  r"__",  // 15. Sequence
-  r"[",   // 16. Construct
-  r"]",   // 17. CloseConstruct
-  r"√",   // 18. Root
-  r"^",   // 19. Power
-  r"-",   // 20. Minus or Subtract
-  r"*",   // 21. Times
-  r"/",   // 22. Divide
-  r"+",   // 23. Plus
-  r"=",   // 24. Set
-  r",",   // 25. Sequence
-  r"(",   // 26. OpenParenthesis
-  r")",   // 27. CloseParenthesis
-  r"_",   // 28. Blank
-  r";",   // 29. Statement separator
-  r"{",   // 30. OpenCurlyBrace
-  r"}",   // 31. CloseCurlyBrace
+static TOKENS: [&'static str; 32] = [
+  "___", //  IntoBlankNullSequence
+  "__",  //  IntoBlankSequence
+  "_",   //  IntoBlank
+  "[[",  //  Part
+  "]]",  //  Part
+  "[",   //  Construct
+  "]",   //  Construct
+  "^",   //  Power
+  "-",   //  Minus
+  "*",   //  Times
+  "/",   //  Divide
+  "-",   //  Subtract
+  "+",   //  Plus
+  "&&",  //  And
+  "||",  //  Or
+  "===", //  SameQ
+  "==",  //  Equal
+  "/;",  //  Condition
+  ":>",  //  RuleDelayed
+  "->",  //  Rule
+  "/.",  //  ReplaceAll
+  "=",   //  Set
+  "^=",  //  UpSet
+  ":=",  //  SetDelayed
+  "^:=", //  UpSetDelayed
+  "=.",  //  Unset
+  ",",   //  Sequence
+  ";",   //  CompoundExpression
+  "(",   //  Sequence
+  ")",   //  Sequence
+  "{",   //  List
+  "}",   //  List
 ];
 
 
@@ -175,23 +178,104 @@ impl<'t> Lexer<'t> {
   }
 
   /// Skips over whitespace and comments.
-  fn eat_ignorables(&mut self) {
+  fn eat_ignorables(&mut self) -> Result<(), ()> {
     loop {
       let old_start = self.start;
 
       // Eat whitespace.
-      let stripped = self.text[self.start..].trim_start();
-      self.start = self.text.len() - stripped.len();
+      let mut character = self.text[self.start..].char_indices();
+      let mut skipped = 0; // A count of whitespace characters skipped (sort of, counts bytes).
+      while let Some((position, c)) = character.next() {
+        if !c.is_whitespace() {
+          break;
+        }
+        skipped = position + 1;
+      }
+      self.start += skipped;
 
       // Eat comments. We don't care about the result of the match, only that `get_match` updated `self.start`.
-      self.get_match(REGEXES[COMMENT_IDX].find(&self.text[self.start..])).ok();
+      self.eat_comments()?;
 
       // If neither of these moved the start, we're done.
       if old_start == self.start {
-        return;
+        return Ok(());
       }
     }
+  }
 
+  /// Scans comments.
+  fn eat_comments(&mut self) -> Result<(), ()> {
+    if self.text[self.start..].starts_with("(*") {
+      log(
+        Channel::Debug,
+        6,
+        "Comment opened."
+      );
+
+      let mut character = self.text[self.start+2..].char_indices().peekable();
+      loop{
+        if let Some((p, c)) = character.next(){
+
+
+          match (p, c) {
+            (_, '\\') => {
+              log(
+                Channel::Debug,
+                6,
+                "Found escaped."
+              );
+              // An escaped character. Skip over it.
+              character.next();
+            }
+
+            (_, '*') => {
+              log(
+                Channel::Debug,
+                6,
+                "Found *, peeking."
+              );
+              if let Some(&(p, ')')) = character.peek(){
+                // Close of comment.
+                // character.next();
+                // self.start += p;
+                log(
+                  Channel::Debug,
+                  4,
+                  format!(
+                    "COMMENT:\n\"{}\"",
+                    &self.text[self.start..self.start+p+3]
+                  ).as_str()
+                );
+                self.start += p + 3;
+                return Ok(());
+              } else if let Some(&(_, c)) = character.peek(){
+                log(
+                  Channel::Debug,
+                  6, format!("Not closing, found `{}`.", c).as_str()
+                );
+              }
+            }
+
+            _ => continue
+          }
+        } else {
+          break;
+        } // end destructure next character.
+      } // end loop
+
+      // if we get this far then the comment is unterminated.
+      log(
+        Channel::Error,
+        1,
+        format!(
+          "Unterminated comment starting at byte offset {}.",
+          self.start
+        ).as_str()
+      );
+      return Err(());
+    }
+    // No open comment
+    Ok(())
   }
 
   // This method is a copy+paste, because `aho_corasick::Match` is a different type from `regex::Match`.
@@ -201,6 +285,7 @@ impl<'t> Lexer<'t> {
       Some(token) => {
 
         if token.start() != 0{
+          eprintln!("OPERATOR MATCHER FAILED");
           // Token must start at beginning of the string.
           let error_start: usize = self.start;
           self.start += token.start(); // Skip over this unrecognized token.
@@ -258,7 +343,10 @@ impl<'t> Lexer<'t> {
   /// OpToken. Consumes the token.
   pub fn expect(&mut self, expected: InternedString) -> Option<Token> {
 
-    self.eat_ignorables();
+    if self.eat_ignorables().is_err() {
+      // Unterminated comment.
+      return None;
+    }
 
     let expected_str = resolve_str(expected);
 
@@ -293,15 +381,17 @@ impl<'t> Iterator for Lexer<'t> {
   //       leaf type, which is required for the hypothetical future.
   fn next(&mut self) -> Option<Self::Item> {
 
-    // Eat ignorables.
-    self.eat_ignorables();
-
-    let old_start  = self.start;
+    if self.eat_ignorables().is_err() {
+      // Unterminated comment.
+      return None;
+    }
 
     // No text remaining.
     if self.start == self.text.len() {
       return None;
     }
+    let old_start  = self.start;
+
 
     match self.text[self.start..].as_bytes()[0] {
       b'"' => {

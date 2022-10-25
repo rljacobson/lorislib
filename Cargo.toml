@@ -6,8 +6,8 @@ edition     = "2021"
 description = "A pattern matching engine that supports commutative and associative theories."
 categories  = ["algorithms", "compilers", "parsing", "mathematics"]
 keywords    = ["computer algebra", "Mathematica", "pattern matching", "term rewriting"]
-homepage    = "http://www.github.com/rljacobson/loris"
-repository  = "http://www.github.com/rljacobson/loris"
+homepage    = "http://www.github.com/rljacobson/lorislib"
+repository  = "http://www.github.com/rljacobson/lorislib"
 license     = "BSD"
 
 
@@ -48,6 +48,7 @@ features = [
 
 [features]
 default = ["strict-associativity"]
+#default = []
 
 # For matching in associative theories, associativity is "strict".
 strict-associativity     = []

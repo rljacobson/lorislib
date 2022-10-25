@@ -1,0 +1,74 @@
+{
+  "simple": [
+    {
+      "category": "numeric",
+      "register_template": "register_builtin!({name}, \"{name}[{arguments}]\", {attributes}, context);",
+      "argument_extraction_template": "  let {arg} = &arguments[&SExpression::variable_static_str(\"{arg}\")];\n",
+      "function_template": "pub(crate) fn name(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {{\n  log(\n    Channel::Debug,\n    4,\n    format!(\n      \"{name} called with arguments {{}}\",\n      display_solutions(&arguments)\n    ).as_str()\n  );\n\n  {argument_extraction}\n  match { arg_list[0] } {{\n\n    {body}\n\n    _other => {{\n      return original;\n    }}\n  }}\n}}",
+      "items": [
+        {
+          "name": "Plus",
+          "args": [
+            "exp___"
+          ],
+          "attrs": [
+            "Associative",
+            "Commutative",
+            "Listable",
+            "NumericFunction",
+            "OneIdentity",
+            "Protected"
+          ],
+          "body": "",
+          "description": "Plus[exp1, exp2, …] gives the sum of its arguments."
+        },
+        {
+          "name": "Minus",
+          "args": [
+            "exp___"
+          ],
+          "attrs": [
+            "Associative",
+            "Commutative",
+            "Listable",
+            "NumericFunction"
+          ],
+          "body": "",
+          "description": "`Minus[exp]` gives the negation of its argument. It is equivalent to `Times[-1, exp]`."
+        }
+      ]
+    },
+
+    {
+      "category": "control_flow",
+      "register_template": "register_builtin!({name}, \"{name}[{arguments}]\", {attributes}, context);",
+      "argument_extraction_template": "  let {arg} = &arguments[&SExpression::variable_static_str(\"{arg}\")];\n",
+      "function_template": "pub(crate) fn name(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {{\n  log(\n    Channel::Debug,\n    4,\n    format!(\n      \"{name} called with arguments {{}}\",\n      display_solutions(&arguments)\n    ).as_str()\n  );\n\n  {argument_extraction}\n  match { arg_list[0] } {{\n\n    {body}\n\n    _other => {{\n      return original;\n    }}\n  }}\n}}",
+      "items": [
+        {
+          "name": "If",
+          "args": ["cond_", "truepath_", "falsepath_"],
+          "attrs": ["HoldRest", "Protected"]
+        },
+        {
+          "name": "Which",
+          "args": [
+            "exp___"
+          ],
+          "attrs": ["HoldAll", "Protected"]
+        },
+        {
+          "name": "For",
+          "args": [
+            "start_",
+            "test_",
+            "incr_",
+            "body___"
+          ],
+          "attrs": ["HoldAll", "Protected"],
+          "comments": "The body is optional. Requires `CompoundExpression` to be useful."
+        }
+      ]
+    }
+  ]
+}

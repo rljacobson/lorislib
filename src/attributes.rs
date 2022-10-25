@@ -7,11 +7,15 @@ Attributes are implemented as a bitfield.
 */
 #![allow(dead_code)]
 
-use std::ops::{Add, Index};
+use std::{
+  ops::{Add, Index}
+};
+use std::iter::Sum;
 
-use strum_macros::{Display, IntoStaticStr};
 
-#[derive(Copy, Clone, PartialEq, Eq, Display, IntoStaticStr, Debug)]
+use strum_macros::{Display, IntoStaticStr, EnumString, EnumIter};
+
+#[derive(Copy, Clone, PartialEq, Eq, Display, IntoStaticStr, Debug, EnumString, EnumIter)]
 #[repr(u32)]
 pub enum Attribute {
   Commutative = 0,
@@ -175,6 +179,16 @@ impl Attributes {
 }
 
 // region Attribute addition implementations.
+
+impl Sum<Attributes> for Attributes {
+  fn sum<I: Iterator<Item=Attributes>>(iter: I) -> Self {
+    let mut attributes: Attributes = Attributes::default();
+    for a in iter{
+      attributes.update(a);
+    }
+    attributes
+  }
+}
 
 impl Add<Attribute> for Attributes {
   type Output = Self;

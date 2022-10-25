@@ -14,31 +14,25 @@ use rug::{Integer as BigInteger, Float as BigFloat, Float, Assign, ops::AddFrom,
 use rug::ops::CompleteRound;
  // For num_integer::binomial
 
-use crate::{
-  matching::{
-    display_solutions,
-    SolutionSet
-  },
-  parse,
-  atom::{
-    Symbol,
-    SExpression,
-    Atom
-  },
-  attributes::{
-    Attributes,
-    Attribute
-  },
-  context::*,
-  logging::{
-    log,
-    Channel
-  },
-  interner::{
-    interned_static
-  }
-};
+use crate::{matching::{
+  display_solutions,
+  SolutionSet
+}, parse, atom::{
+  Symbol,
+  SExpression,
+  Atom
+}, attributes::{
+  Attributes,
+  Attribute
+}, context::*, logging::{
+  log,
+  Channel
+}, interner::{
+  interned_static
+}, evaluate};
+use crate::atom::SExpression::{apply, apply_binary};
 use crate::built_ins::{DEFAULT_REAL_PRECISION, register_builtin};
+use crate::evaluate::replace_all_bound_variables;
 #[allow(unused_imports)]#[allow(unused_imports)]
 use crate::interner::resolve_str;
 #[allow(unused_imports)]
@@ -187,7 +181,13 @@ pub(crate) fn Minus(arguments: SolutionSet, _original: Atom, _: &mut Context) ->
       Atom::Real(r.neg().complete(DEFAULT_REAL_PRECISION))
     }
 
-    _ => rhs.clone()
+    _ => {
+      apply_binary(
+        "Times",
+        Atom::Integer(BigInteger::from(-1)),
+        rhs.clone()
+      )
+    }
   }
 
 }
@@ -317,7 +317,6 @@ pub(crate) fn Divide(arguments: SolutionSet, original_expression: Atom, _: &mut 
 
         Atom::Real(denom)    => {
           log(
-
             Channel::Debug,
             5,
             format!(
@@ -350,13 +349,7 @@ pub(crate) fn Divide(arguments: SolutionSet, original_expression: Atom, _: &mut 
           let reduced_num    = Atom::Integer(num.div(&common_divisor).complete());
           let reduced_denom  = Atom::Integer(denom.div(&common_divisor).complete());
 
-          Atom::SExpression(Rc::new(
-            [
-              Symbol::from_static_str("Divide"),
-              reduced_num,
-              reduced_denom
-            ].to_vec()
-          ))
+          apply_binary("Divide", reduced_num, reduced_denom)
         }
 
         _ => { original_expression }
@@ -365,10 +358,16 @@ pub(crate) fn Divide(arguments: SolutionSet, original_expression: Atom, _: &mut 
 
     _other => {
       match denominator {
-        | Atom::Real(_r) if *_r == 0
-        => Symbol::from_static_str("ComplexInfinity"),
-        | Atom::Integer(_n) if *_n == 0
-        => Symbol::from_static_str("ComplexInfinity"),
+        Atom::Real(_r) if *_r == 0
+          => Symbol::from_static_str("ComplexInfinity"),
+        Atom::Integer(_n) if *_n == 0
+          => Symbol::from_static_str("ComplexInfinity"),
+
+        Atom::Real(_r) if *_r == 1.0
+          => numerator.clone(),
+
+        Atom::Integer(_n) if *_n == 1
+          => numerator.clone(),
 
         _ => original_expression
       }
@@ -434,11 +433,80 @@ pub(crate) fn Binomial(arguments: SolutionSet, original: Atom, _: &mut Context) 
     _ => original
 
   }
-
-
-
 }
 
+
+/// Implements calls matching
+///     `Series[f_, {x_, c_, n_}] := builtin[n,m]`
+// Todo: Rewrite this using list primitives when they exist. Or not?
+pub(crate) fn Series(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
+  log(
+    Channel::Debug,
+    4,
+    format!(
+      "Series called with arguments {}",
+      display_solutions(&arguments)
+    ).as_str()
+  );
+  // Two arguments
+  let f = &arguments[&SExpression::variable_static_str("f")];
+  let x_variable = SExpression::variable_static_str("x"); // We'll need this again later.
+  let x = &arguments[&x_variable];
+  let c = &arguments[&SExpression::variable_static_str("c")];
+  let n = &arguments[&SExpression::variable_static_str("n")];
+
+  let n: u32 = match n {
+    Atom::Integer(m) => m.to_u32_wrapping(),
+    other => {
+      log(
+        Channel::Error,
+        1,
+        format!(
+          "Series order needs to be a nonnegative integer. Got {}.",
+          other
+        ).as_str()
+      );
+      return original;
+    }
+  };
+
+  let x_to_c: SolutionSet = SolutionSet::from([(x_variable, c.clone())]);
+  let mut new_children: Vec<Atom> = Vec::with_capacity(n as usize + 2); // Includes the head and the order
+  new_children.push(Symbol::from_static_str("Plus")); // Head
+  // The zeroth derivative: evaluate f[c]
+  new_children.push(replace_all_bound_variables(f.clone(), &x_to_c, context));
+
+  // Derivatives 1 through n
+  let mut derivative: Atom = f.clone();
+  for m in 1..n {
+    derivative = // D[derivative, x]
+        evaluate(
+          apply_binary("D", derivative.clone(), x.clone()),
+          context
+        );
+
+    let coeff: Atom = // f^{(m)}(c)/m!
+        apply_binary(
+          "Divide",
+          replace_all_bound_variables(derivative.clone(), &x_to_c, context),
+          Atom::Integer(BigInteger::factorial(m).complete())
+        );
+
+    let monomial: Atom = // (x-c)^m
+        apply_binary(
+          "Power",
+          apply_binary("Subtract", x.clone(), c.clone()),
+          Atom::Integer(BigInteger::from(m))
+        );
+
+    new_children.push(apply_binary("Times", coeff, monomial))
+  }
+
+  // + O[n+1]
+  new_children.push(apply("O", Atom::Integer(BigInteger::from(n+1))));
+
+  Atom::SExpression(Rc::new(new_children))
+}
 
 
 pub(crate) fn register_builtins(context: &mut Context) {
@@ -460,5 +528,6 @@ pub(crate) fn register_builtins(context: &mut Context) {
   register_builtin!(Times, "Times[exp___]", plus_attributes, context);
   register_builtin!(Divide, "Divide[num_, denom_]", read_only_attributes, context);
   register_builtin!(Binomial, "Binomial[n_, m_]", read_only_attributes + Attribute::NHoldAll, context);
+  register_builtin!(Series, "Series[f_, {x_, c_, n_}]", Attribute::Protected.into(), context);
 
 }

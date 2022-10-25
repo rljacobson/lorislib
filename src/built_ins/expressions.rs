@@ -49,13 +49,13 @@ use crate::logging::set_verbosity;
 
 
 /// Implements calls matching
-///     `Occurs[needle_, haystack_] := built-in[needle, haystack]`
-pub(crate) fn Occurs(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
+///     `OccursQ[haystack_, needle_] := built-in[haystack, needle]`
+pub(crate) fn OccursQ(arguments: SolutionSet, _original: Atom, _: &mut Context) -> Atom {
   log(
     Channel::Debug,
     4,
     format!(
-      "Occurs called with arguments {}",
+      "OccursQ called with arguments {}",
       display_solutions(&arguments)
     ).as_str()
   );
@@ -338,6 +338,6 @@ pub(crate) fn register_builtins(context: &mut Context) {
   register_builtin!(NodeCount, "NodeCount[exp_]", Attribute::Protected.into(), context);
   register_builtin!(Replace, "Replace[exp_, rules_]", Attribute::Protected.into(), context);
   register_builtin!(ReplaceAll, "ReplaceAll[exp_, rules_]", Attribute::Protected.into(), context);
-  register_builtin!(Occurs, "Occurs[needle_, haystack_]", Attribute::Protected.into(), context);
+  register_builtin!(OccursQ, "OccursQ[haystack_, needle_]", Attribute::Protected.into(), context);
 
 }

@@ -2,20 +2,24 @@
 
 Context Manipulation
 
+Todo: Should a lot of these functions be factored out into methods on `Context`?
+
 */
 #![allow(non_snake_case)]
 
 use std::{
-  rc::Rc
+  cmp::max,
+  rc::Rc,
+  str::FromStr
 };
 
+use strum::{IntoEnumIterator};
 
 
-
-
- // For num_integer::binomial
+// For num_integer::binomial
 
 use crate::{
+  atom::SExpression::extract_thing_or_list_of_things,
   matching::{
     display_solutions,
     SolutionSet
@@ -28,7 +32,8 @@ use crate::{
     Atom
   },
   attributes::{
-    Attribute
+    Attribute,
+    Attributes as SymbolAttributes, // Name collision with the built-in "Attributes"
   },
   context::*,
   logging::{
@@ -37,10 +42,10 @@ use crate::{
   },
   interner::{
     interned_static
-  }
+  },
+  interner::InternedString,
+  interner::resolve_str
 };
-#[allow(unused_imports)]#[allow(unused_imports)]
-use crate::interner::resolve_str;
 #[allow(unused_imports)]
 use crate::logging::set_verbosity;
 
@@ -88,7 +93,7 @@ pub(crate) fn Set(arguments: SolutionSet, original: Atom, context: &mut Context)
   };
 
   // If pattern is a symbol, not a function, then this is an OwnValue we are setting.
-  if let Atom::Symbol(name) = pattern {
+  if let Atom::Symbol(_name) = pattern {
 
     match context.set_own_value(pattern.name().unwrap(), value) {
       Ok(()) => {}
@@ -258,6 +263,103 @@ pub(crate) fn DownValues(arguments: SolutionSet, _original: Atom, context: &mut 
 }
 
 
+/// Implements calls matching the pattern
+///     `SetAttributes[sym_, attr_]`
+pub(crate) fn SetAttributes(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
+  // Two arguments
+  let symb: &Atom = &arguments[&SExpression::variable_static_str("sym")];
+  let attr = &arguments[&SExpression::variable_static_str("attr")];
+
+  // symb is either a symbol or a list of symbols. Normalize to a `Vec<InternedString>`
+  let symbols: Vec<InternedString> =
+      extract_thing_or_list_of_things(symb, |e| e.name());
+  // Error check: Was every child a thing that has a name?
+  if symbols.len() != max(symb.len(), 1) {
+    // If symb is a single thing, max(…) == 1, and if symb is a NONEMPTY list of things, `max(…)` needs to be the
+    // length of that list. If the if-condition is violated, then either we were given an empty list or we were given
+    // things without names.
+    log(
+      Channel::Error,
+      1,
+      format!("Expected a list of symbols, got {}", symb).as_str()
+    );
+    return original;
+  }
+
+  // attr is either an `Attribute` or a list of attributes.
+  let attributes_list: Vec<SymbolAttributes> = {
+    // Good grief.
+    let a_strs: Vec<InternedString> = extract_thing_or_list_of_things(attr, |e| e.name());
+    a_strs.iter()
+        .filter_map(|s| Attribute::from_str(resolve_str(*s)).ok())
+        .map(|a| a.into()).collect()
+  };
+
+  // Error check - see previous for explanation.
+  if attributes_list.len() != max(attr.len(), 1) {
+    log(
+      Channel::Error,
+      1,
+      format!("Expected a list of attributes, got {}", attr).as_str()
+    );
+    return original;
+  }
+
+  let attributes: SymbolAttributes = attributes_list.into_iter().map(|a| a.into()).sum();
+
+  // For each symbol, set all attributes.
+  for name in symbols {
+    if let Err(reason) = context.set_attributes(name, attributes){
+      log(
+        Channel::Error,
+        1,
+        format!("Failed to set attributes for symbol {}: {}", resolve_str(name), reason).as_str()
+      );
+    };
+  }
+
+  Symbol::from_static_str("Ok")
+}
+
+
+/// Returns a List of upvalues for the provided symbol
+/// Implements calls matching the pattern
+///     `Attributes[sym_]`
+pub(crate) fn Attributes(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
+  // Two arguments
+  let symbol = &arguments[&SExpression::variable_static_str("sym")];
+
+  if let Atom::Symbol(name) = symbol {
+    let found_attributes = context.get_attributes(*name);
+    let mut children = vec![Symbol::from_static_str("List")];
+    children.extend(
+      Attribute::iter()
+          .filter_map(|attr| {
+            if found_attributes.get(attr){
+              Some(attr)
+            } else {
+              None
+            }
+          })
+          .map(|a|{
+            Symbol::from_static_str(a.into())
+          })
+    );
+    Atom::SExpression(Rc::new(children))
+  } else {
+    log(
+      Channel::Error,
+      1,
+      format!("Expected symbol, got {}", symbol).as_str()
+    );
+    original
+  }
+}
+
+
+
+
+
 pub(crate) fn register_builtins(context: &mut Context) {
 
   register_builtin!(Set, "Set[lhs_, rhs_]", Attribute::Protected.into(), context);
@@ -266,5 +368,7 @@ pub(crate) fn register_builtins(context: &mut Context) {
   register_builtin!(UpSetDelayed, "UpSetDelayed[lhs_, rhs_]", Attribute::Protected+Attribute::HoldRest, context);
   register_builtin!(UpValues, "UpValues[sym_]", Attribute::Protected.into(), context);
   register_builtin!(DownValues, "DownValues[sym_]", Attribute::Protected.into(), context);
+  register_builtin!(SetAttributes, "SetAttributes[sym_, attr_]", Attribute::Protected.into(), context);
+  register_builtin!(Attributes, "Attributes[sym_]", Attribute::Protected.into(), context);
 
 }

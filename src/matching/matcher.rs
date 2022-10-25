@@ -520,7 +520,7 @@ pub fn display_solutions(solution_set: &SolutionSet) -> String {
         )
         .collect::<Vec<String>>();
     subs.sort();
-    subs.join(", ")
+    format!("[ {} ]", subs.join(", "))
   }
 }
 

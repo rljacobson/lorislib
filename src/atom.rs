@@ -2,6 +2,11 @@
 
 Primitive expression node types.
 
+Clones are cheap! An `Atom` is at most a couple of fat pointers. S-expressions store their children is an
+`Rc<Vec<Atom>>`, which is cheap to clone. Clone `Atom`s all day long. The cost comes when we have to clone every
+child, which admittedly happens a lot. Long-term goal is to reduce this, but not before benchmarking to see if it's a
+bottleneck. But most s-expressions only have one or two children, so even that is cheap the majority of the time.
+
 */
 
 use std::{
@@ -305,6 +310,21 @@ impl Formattable for Atom {
         format!("{}", resolve_str(*v))
       }
       Atom::SExpression(v) => {
+        if formatter.form == DisplayForm::Full{
+          let mut child_iter = v.iter();
+          let head = child_iter.next().unwrap();
+          return
+          format!(
+            // "{}({})",
+            // "{}❨{}❩",
+            "{}[{}]",
+            head.format(formatter),
+            child_iter.map(|c| c.format(formatter))
+                      .collect::<Vec<_>>()
+                      .join(", ")
+          );
+        }
+
         if let Some(name) = self.is_variable() {
           match formatter.form {
             DisplayForm::Matcher => {
@@ -314,7 +334,20 @@ impl Formattable for Atom {
               format!("{}_", resolve_str(name))
             }
           }
-        } else if let Some(name) = self.is_sequence_variable() {
+        }
+        // The `is_null_sequence_variable` case must come first because right now self.is_sequence_variable() is true
+        // for both `BlankNullSequence` and `BlankSequence`.
+        else if let Some(name) = self.is_null_sequence_variable() {
+          match formatter.form {
+            DisplayForm::Matcher => {
+              format!("«{}»", resolve_str(name))
+            }
+            _ => {
+              format!("{}___", resolve_str(name))
+            }
+          }
+        }
+        else if let Some(name) = self.is_sequence_variable() {
           // todo: distinguish sequence variables from null sequence variables
           match formatter.form {
             DisplayForm::Matcher => {
@@ -324,16 +357,8 @@ impl Formattable for Atom {
               format!("{}__", resolve_str(name))
             }
           }
-        } else if let Some(name) = self.is_null_sequence_variable() {
-          match formatter.form {
-            DisplayForm::Matcher => {
-              format!("«{}»", resolve_str(name))
-            }
-            _ => {
-              format!("{}___", resolve_str(name))
-            }
-          }
-        } else if let Some(children) = self.is_sequence() {
+        }
+        else if let Some(children) = self.is_sequence() {
           match formatter.form {
             DisplayForm::Matcher => {
               format!(
@@ -354,7 +379,8 @@ impl Formattable for Atom {
               )
             }
           }
-        } else {
+        }
+        else {
           // A "normal" function
           match formatter.form {
 
@@ -496,6 +522,7 @@ pub(crate) mod SExpression {
   use crate::interner::{
     InternedString
   };
+  // Todo: Housekeeping - remove unused, refactor to make use of better primitives.
 
   // region Convenience construction functions
   // Using these functions decreases the probability of an incorrectly constructed expression.
@@ -516,6 +543,42 @@ pub(crate) mod SExpression {
   /// We often have a need to create an expression for some standard built-in or stdlib symbol.
   pub(crate) fn with_symbolic_head(head: InternedString) -> Atom {
     Atom::SExpression(Rc::new(vec![Atom::Symbol(head)]))
+  }
+
+  /// Often a function takes "one or more" in the form of a thing or else a list of things, and in order to DIY, if
+  /// we get a single thing we make it into a singleton vector.
+  ///
+  /// We convert `Atom`s to "things" of type T with `function` by applying `filter_map(function)` to an iterator
+  /// over the children. Thus, `function` should be a `Fn(&Atom)->Option<T>`.
+  ///
+  /// Note that `expression` can be any s-expression, not just a `List`.
+  pub(crate) fn extract_thing_or_list_of_things<T, F: Fn(&Atom)->Option<T>>(expression: &Atom, function: F)
+    ->Vec<T>
+  {
+    match expression {
+      Atom::SExpression(children) => {
+        // Skip the head.
+        children[1..].iter().filter_map(function).collect::<Vec<T>>()
+      }
+      thing => {
+        // When we make a promise, we keep it, dammit!
+        vec![thing].into_iter().filter_map(function).collect::<Vec<T>>()
+      }
+    }
+  }
+
+  /// Forms the expression `name[expression]`
+  pub(crate) fn apply(name: &'static str, expression: Atom) -> Atom {
+    Atom::SExpression(Rc::new(
+      vec![Symbol::from_static_str(name), expression]
+    ))
+  }
+
+  /// Forms the expression `name[expression]`
+  pub(crate) fn apply_binary(name: &'static str, lhs: Atom, rhs: Atom) -> Atom {
+    Atom::SExpression(Rc::new(
+      vec![Symbol::from_static_str(name), lhs, rhs]
+    ))
   }
 
   /// Creates an empty `Sequence[]`.

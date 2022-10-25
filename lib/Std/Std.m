@@ -1,7 +1,7 @@
 (* Loris Package *)
 
 (* :Title: System *)
-(* :Context: System` *)
+(* :Context: Std` *)
 (* :Author: Robert Jacobson *)
 (* :Date: 2022-10-21 *)
 
@@ -12,16 +12,11 @@
 (* :Discussion: *)
 
 (* For new style packages see: https://mathematica.stackexchange.com/a/176489) *)
-(* Declare package context *)
-Package["System`"]
 
-(* Import other packages *)
-PackageImport["GeneralUtilities`"]
+Package["Std`"]
 
-(* Keep function package private *)
-PackageScope["privateFunc"]
-privateFunc[x_] := x^2;
+PackageImport["Std`Definitions`"]
+PackageImport["Std`Simplification`"]
+PackageImport["Std`Display`"]
+PackageImport["Std`Differentiation`"]
 
-(* Export functions *)
-PackageExport["exportedFunc"]
-exportedFunc[] := "Hello World";

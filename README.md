@@ -2,6 +2,9 @@
 
 ### A Term Rewriting and Computer Algebra System
 
+<img src="loris.jpg" alt="Loris" style="zoom: 33%;" />
+
+
 Loris is a term rewriting and computer algebra system based on pattern matching algorithms developed by Besik 
 Dundua, Temur Kutsia, and Mircea Marin. (See below.) To my knowledge, this is the first and only implementation of 
 these algorithms. 
@@ -37,8 +40,6 @@ a_*x_ + b_*y_ ^:= (a + b)*x /; And[SameQ[x, y], NumberQ[a], NumberQ[b]]
 When I implement Algorithm $M$ from [Dundua et al, 2021], this limitation will be removed.
 
 # An experiment in pattern matching algorithms.
-
-<img src="loris.jpg" alt="Loris" style="zoom: 33%;" />
 
 Loris started as an implementation of the pattern matching algorithms described in the paper:
 

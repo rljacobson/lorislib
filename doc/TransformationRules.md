@@ -9,8 +9,8 @@ The table represents two distinct matching procedures according to whether assoc
 
 ## Table Form
 
-| Name              | Description                                            |                 Given Equation                 | Condition |   | Resulting Equations Γ  |  Solution Set S  |
-| ----------------- | ------------------------------------------------------ |:------------------------------------------:|-----| :--------------------: | :--------------: |
+| Name              | Description                                            |                 Given Equation                 | Condition |    Resulting Equations Γ  |  Solution Set S  |
+|-----------------|------------------------------------------------------|:------------------------------------------:|-----|:--------------------:|:--------------:|
 |                   |                                                        |                                            |     |                        |                  |
 |                   | ***Common Rules***                                     |                                            |     |                        |                  |
 | **T**             | Trivial                                                |                   s ≪ᴱs                    |     |           ∅            |        ∅         |

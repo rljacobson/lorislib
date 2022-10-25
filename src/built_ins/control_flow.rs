@@ -35,6 +35,7 @@ use crate::{
   },
   evaluate
 };
+use crate::atom::Symbol;
 use super::register_builtin;
 #[allow(unused_imports)]#[allow(unused_imports)]
 use crate::interner::resolve_str;
@@ -79,10 +80,45 @@ pub(crate) fn If(arguments: SolutionSet, original: Atom, context: &mut Context) 
 }
 
 
+/// Implements calls matching
+///     `CompoundExpression[exp___]`
+pub(crate) fn CompoundExpression(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {
+  log(
+    Channel::Debug,
+    4,
+    format!(
+      "CompoundExpression called with arguments {}",
+      display_solutions(&arguments)
+    ).as_str()
+  );
+
+  // One argument
+  let exp = &arguments[&SExpression::null_sequence_variable_static_str("exp")];
+
+  if let Atom::SExpression(children) = exp {
+    // Evaluate each non-head child, returning the result of the last one.
+    let mut last_result = Symbol::from_static_str("Null");
+
+    for child in children[1..].iter() {
+      // todo: How do we stop on an error? We have no exception support yet.
+      //       We keep evaluating unless the error is "critical".
+      last_result = evaluate(child.clone(), context);
+    }
+    last_result
+  } else {
+    original
+  }
+
+}
+
+
 
 pub(crate) fn register_builtins(context: &mut Context) {
 
   //If[cond_, truepath_, falsepath_] := BuiltIn
   register_builtin!(If, "If[cond_, truepath_, falsepath_]", Attribute::Protected+Attribute::HoldRest, context);
+  register_builtin!(
+    CompoundExpression, "CompoundExpression[exp___]", Attribute::Protected+Attribute::HoldAll, context
+  );
 
 }

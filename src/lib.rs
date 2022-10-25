@@ -18,6 +18,7 @@ mod built_ins;
 pub use context::Context;
 pub use evaluate::evaluate;
 pub use parsing::parse;
+pub use format::{DisplayForm, ExpressionFormatter, Formattable};
 
 
 #[cfg(test)]

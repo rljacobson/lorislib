@@ -29,15 +29,7 @@ use std::{
   rc::Rc
 };
 
-use crate::{context::SymbolValue, atom::{
-  Atom,
-  SExpression,
-  Symbol
-}, matching::{
-  Matcher,
-  SolutionSet,
-  display_solutions
-}, logging::{log, Channel}, context::Context, attributes::{Attribute, Attributes}, context::ContextValueStore, interner::{InternedString, resolve_str}, context};
+use crate::{matching::SolutionSet, context::SymbolValue, atom::Symbol, atom::SExpression, atom::Atom, matching::Matcher, matching::display_solutions, logging::log, logging::Channel, context::Context, attributes::Attribute, context::ContextValueStore, interner::InternedString, interner::resolve_str};
 
 
 pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
@@ -49,6 +41,8 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
   Todo: Add cycle detection
 
   */
+
+  let expression = propagate_attributes(&expression, context);
 
   // This function assumes the caller has already taken care of any `UpValues`.
   // Numbers and variables evaluate to themselves. It suffices to only take care
@@ -180,7 +174,7 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
             // No applicable up-values.
             // Step 2: Evaluate children.
             else {
-              let mut evaluated_children
+              let evaluated_children
                   = children.iter()
                             .map(|child| evaluate(child.clone(), context))
                             .collect::<Vec<_>>();
@@ -267,7 +261,9 @@ conditions.
 fn check_condition(condition: Atom, substitutions: &SolutionSet, context: &mut Context)
     -> bool
 {
+
   let condition_expression = replace_all_bound_variables(condition, substitutions, context);
+  log(Channel::Debug, 4, format!("Checking condition expression: {}", condition_expression).as_str());
   let condition_result = evaluate(condition_expression, context);
   condition_result.is_true()
 }
@@ -424,10 +420,23 @@ pub fn replace_all_bound_variables(expression: Atom, substitutions: &SolutionSet
     Atom::Symbol(name) => {
       // If `expression` itself matches a key in `substitutions`, replace it. This is the base case for the recursion.
       for (pattern, substitution) in substitutions {
-        let pattern_name = pattern.is_variable().expect("Nonvariable pattern in a variable binding.");
-        if pattern_name == *name {
-          return substitution.clone();
+        if let Some(pattern_name) = pattern.is_variable() {
+          if pattern_name == *name {
+            return substitution.clone();
+          }
         }
+        else if let Some(pattern_name) = pattern.is_null_sequence_variable() {
+          if pattern_name == *name {
+            return substitution.clone();
+          }
+        }
+        else if let Some(pattern_name) = pattern.is_sequence_variable() {
+          if pattern_name == *name {
+            return substitution.clone();
+          }
+        }
+
+        // unreachable!("Nonvariable pattern in a variable binding: {} -> {}", pattern_name, *name);
       }
       // None apply.
       expression
@@ -439,7 +448,7 @@ pub fn replace_all_bound_variables(expression: Atom, substitutions: &SolutionSet
 
 /// Threads `N` over functions while respecting any `NHold*` attributes.
 #[allow(non_snake_case)]
-pub fn propogate_N(expression: Atom, context: &mut Context) -> Atom {
+pub fn propagate_N(expression: Atom, context: &mut Context) -> Atom {
   let child = &SExpression::children(&expression)[1];
   // If child isn't an SExpression, it doesn't have an `NHold*` attribute.
   let grandchildren = match child.is_function() {
@@ -451,7 +460,7 @@ pub fn propogate_N(expression: Atom, context: &mut Context) -> Atom {
 
   match grandchildren[0] {
     Atom::Symbol(name) => {
-      /// Fetch attributes and check for NHold*.
+      // Fetch attributes and check for NHold*.
       let attributes = context.get_attributes(name);
 
       let new_children = // the result of this if
@@ -462,7 +471,7 @@ pub fn propogate_N(expression: Atom, context: &mut Context) -> Atom {
           let mut c = vec![grandchildren[0].clone(), grandchildren[1].clone()];
 
           c.extend(grandchildren[2..].iter().map(|e|
-              propogate_N(
+              propagate_N(
                 SExpression::new(expression.head(), vec![e.clone()]),
                 context
               )
@@ -471,7 +480,7 @@ pub fn propogate_N(expression: Atom, context: &mut Context) -> Atom {
         }
         else if attributes[Attribute::NHoldRest] {
           let mut c: Vec<Atom> = grandchildren[..2].iter().map(|e| {
-            propogate_N(
+            propagate_N(
               SExpression::new(expression.head(), vec![e.clone()]),
               context
             )
@@ -481,7 +490,7 @@ pub fn propogate_N(expression: Atom, context: &mut Context) -> Atom {
         }
         else { // Hold none
           grandchildren.iter().map(|e| {
-            propogate_N(
+            propagate_N(
               SExpression::new(expression.head(), vec![e.clone()]),
               context
             )
@@ -494,7 +503,7 @@ pub fn propogate_N(expression: Atom, context: &mut Context) -> Atom {
     _ => {
       // The head is not a symbol, so apply N to everything.
       let new_children = grandchildren.iter().map(|e|
-          propogate_N(
+          propagate_N(
             SExpression::new(expression.head(), vec![e.clone()]),
             context
           )
@@ -506,29 +515,29 @@ pub fn propogate_N(expression: Atom, context: &mut Context) -> Atom {
 }
 
 
-/// Threads `Listable` functions, evaluates the `OneIdentity` property. Note that these two attributes are
-/// mutually exclusive.
-pub fn propogate_attributes(expression: Atom, context: &mut Context) -> Atom {
+/// Threads `Listable` functions, evaluates the `OneIdentity` property, flattens associative functions.. Note that
+/// `OneIdentity` and `Associative` are individually mutually exclusive with `Listable`.
+pub fn propagate_attributes(expression: &Atom, context: &mut Context) -> Atom {
   // todo: This code is… ugly. Nothing wrong with it, but… ugly.
-  match &expression {
+  match expression {
 
     Atom::SExpression(children) => {
       let outer_head = children[0].clone();
       // N is a special case because its child can have NHoldAll, NHoldRest, or NHoldFirst
       if outer_head == Symbol::from_static_str("N"){
-        return propogate_N(expression, context);
+        return propagate_N(expression.clone(), context);
       }
-      let record = context.get_symbol_mut(outer_head.name().unwrap());
+      let attributes = context.get_attributes(outer_head.name().unwrap());
 
-      if record.attributes.listable() && children.len() == 2 {
+      if attributes.listable() && children.len() == 2 {
         match &children[1] {
           Atom::SExpression(inner_children) => {
 
             let new_children = inner_children[1..].iter()
                                                  .map(|e| {
                                                    // apply outer_head to e and recurse.
-                                                   propogate_attributes(
-                                                     Atom::SExpression(Rc::new(
+                                                   propagate_attributes(
+                                                     &Atom::SExpression(Rc::new(
                                                        vec![outer_head.clone(), e.clone()]
                                                      )),
                                                      context
@@ -538,19 +547,46 @@ pub fn propogate_attributes(expression: Atom, context: &mut Context) -> Atom {
             SExpression::new(inner_children[0].clone(), new_children)
           } // end match to function
 
-          _ => expression
+          _ => expression.clone()
         } // end match on only child.
       } // end if listable
       // OneIdentity
-      else if record.attributes.one_identity() && children.len()==2 {
-        propogate_attributes(children[1].clone(), context)
-      } else {
-        expression
+      else if attributes.one_identity() && children.len()==2 {
+        propagate_attributes(&children[1], context)
+
+      }
+      // "Flat", i.e. associative
+      else if attributes.associative() {
+        // Todo: This is terribly inefficient. Every associative function gets completely recreated on every call to
+        //       evaluate.
+        // Visit in post order.
+        let mut new_children = vec![children[0].clone()];
+        for child in &children[1..] {
+          let new_child = propagate_attributes(&child, context);
+          if let Some(grandchildren) = new_child.is_function() {
+            // if (head of child) == (head of expression) …
+            if grandchildren[0] == children[0]{
+              // splice
+              new_children.extend(grandchildren[1..].iter().cloned());
+              } else {
+              // splice
+              new_children.push(new_child);
+            }
+          } else {
+            new_children.push(new_child);
+          }
+        }
+
+        Atom::SExpression(Rc::new(new_children))
+      }
+      // No special attributes
+      else {
+        Atom::SExpression(Rc::new(children.iter().map(|a| propagate_attributes(a, context)).collect()))
       }
 
     }
 
-    _ => expression
+    _ => expression.clone()
   }
 }
 

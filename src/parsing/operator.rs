@@ -415,6 +415,7 @@ pub(crate) fn get_operator_tables() -> OperatorTables {
       l_token: interned_static("&&"),
     },
 
+    // Todo: This doesn't parse correctly.
     Operator::BinaryInfix {
       name: interned_static("Or"),
       precedence: 95,
@@ -422,8 +423,18 @@ pub(crate) fn get_operator_tables() -> OperatorTables {
       l_token: interned_static("||"),
     },
 
+    // (* Returns `True` if lhs is identical to rhs, `False` otherwise. *)
     Operator::BinaryInfix {
       name: interned_static("SameQ"),
+      precedence: 90,
+      associativity: Associativity::Non,
+      l_token: interned_static("==="),
+    },
+
+
+    // (* Returns `True` if lhs is identical to rhs. *)
+    Operator::BinaryInfix {
+      name: interned_static("Equal"),
       precedence: 90,
       associativity: Associativity::Non,
       l_token: interned_static("=="),
@@ -467,9 +478,30 @@ pub(crate) fn get_operator_tables() -> OperatorTables {
 
     Operator::BinaryInfix {
       name: interned_static("Condition"),
-      precedence: 90, // Higher precedence than `*Set`
-      associativity: Associativity::Non,  // Todo: Associativity of `Conditon`?
+      precedence: 85, // Higher precedence than `*Set`
+      associativity: Associativity::Left,  // Todo: Associativity of `Condition`?
       l_token: interned_static("/;"),
+    },
+
+    Operator::BinaryInfix {
+      name: interned_static("RuleDelayed"),
+      precedence: 84, // Higher precedence than `*Set`, lower than `Condition`
+      associativity: Associativity::Right,
+      l_token: interned_static(":>")
+    },
+
+    Operator::BinaryInfix {
+      name: interned_static("Rule"),
+      precedence: 84, // Higher precedence than `*Set`, lower than `Condition`
+      associativity: Associativity::Right,
+      l_token: interned_static("->")
+    },
+
+    Operator::BinaryInfix {
+      name: interned_static("ReplaceAll"),
+      precedence: 83, // Higher precedence than `*Set`, lower than `Condition`
+      associativity: Associativity::Right,
+      l_token: interned_static("/.")
     },
 
     Operator::BinaryInfix {
@@ -514,15 +546,16 @@ pub(crate) fn get_operator_tables() -> OperatorTables {
       l_token: interned_static(",")
     },
 
-    Operator::Postfix {
+    Operator::BinaryInfix {
       name: interned_static("CompoundExpression"),
       precedence: 50,
+      associativity: Associativity::Full, // Chaining.
       l_token: interned_static(";")
     },
 
     Operator::Matchfix {
-      name: interned_static("Sequence"), // A sequence of one expression will automatically be spliced into its
-      // parent.
+      // A sequence of one expression will automatically be spliced into its parent.
+      name: interned_static("Sequence"),
       precedence: 10,
       n_token: interned_static("("),
       o_token: interned_static(")")
@@ -535,6 +568,21 @@ pub(crate) fn get_operator_tables() -> OperatorTables {
       o_token: interned_static("}")
     },
   ];
+
+  /*
+  // Print a list of op tokens.
+  for op in OPERATORS.iter(){
+    if let Some(s) = op.l_token(){
+      println!("\"{}\", //  {}", resolve_str(s), resolve_str(op.name()));
+    }
+    if let Some(s) = op.n_token(){
+      println!("\"{}\", //  {}", resolve_str(s), resolve_str(op.name()));
+    }
+    if let Some(s) = op.o_token(){
+      println!("\"{}\", //  {}", resolve_str(s), resolve_str(op.name()));
+    }
+  }
+  */
 
   let mut n_command_table = OperatorTable::new();
   for op in OPERATORS.iter().filter(|op| op.n_token().is_some()) {

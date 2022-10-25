@@ -75,6 +75,7 @@ SUCCESS: To obtain additional matches, proceed from Step 3.b to Step 1.a.ii.
 
 use std::{collections::HashMap, fmt::Display};
 
+
 pub use matcher::{Matcher, display_solutions};
 use crate::{
   atom::{
@@ -83,6 +84,7 @@ use crate::{
   },
   format::{DisplayForm, Formattable}
 };
+use crate::atom::SExpression::apply_binary;
 
 
 // todo: Use TinyMap instead of SolutionSet.
@@ -127,6 +129,19 @@ pub struct Substitution{
   ground  : Atom
 }
 
+/// Turns a `Substitution` into an `RuleDelayed` expression.
+impl From<Substitution> for Atom {
+  fn from(substitution: Substitution) -> Self {
+    apply_binary("RuleDelayed", substitution.variable, substitution.ground)
+  }
+}
+
+/// Turns a `Substitution` into a `SolutionSet` (a `HashMap<Atom, Atom>`).
+impl From<Substitution> for SolutionSet {
+  fn from(substitution: Substitution) -> Self {
+    HashMap::from([(substitution.variable, substitution.ground)])
+  }
+}
 
 impl Display for Substitution {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -157,6 +172,24 @@ mod tests {
   use crate::logging::set_verbosity;
 
   use super::*;
+
+  /// Solve  Plus[x_, Times[y_, z_], exp___] << Plus[a, Times[b, a]]
+  #[test]
+  fn empty_sequence_test() {
+    let mut context: Context = Context::new_global_context();
+    let pattern = parse("Plus[x_, Times[y_, z_], exp___]").unwrap();
+    let ground  = parse("Plus[a, Times[b, a]]").unwrap();
+
+    set_verbosity(5);
+
+    println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
+
+    let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
+    let result : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+
+    println!("SOLUTIONS: {}", result.join(", "));
+
+  }
 
   /// Solve  Plus[Times[a_, x_], Times[b_, y_]] << Plus[Times[3, x], Times[4, x]]
   #[test]

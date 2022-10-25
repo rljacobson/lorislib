@@ -68,8 +68,7 @@ use crate::{
   parsing::{
     lexer::{
       Token,
-      Lexer,
-      new_lexer
+      Lexer
     },
     operator::{
       get_operator_tables,
@@ -88,7 +87,7 @@ static mut OPERATOR_TABLES: Option<OperatorTables> = None;
 
 
 pub fn parse(input: &str) -> Result<Atom, ()>{
-  let mut lexer: Lexer = new_lexer(input);
+  let mut lexer: Lexer = Lexer::new(input);
 
   // Initialize operator tables if needed.
   unsafe {
@@ -624,6 +623,11 @@ fn push_child(parent: &mut Atom, child: Atom) -> Result<(), ()> {
 
 #[allow(unused_parens)]
 /// Push `child` onto `parent`, applying fix-ups for "Construct", "Sequence", "Parentheses", and "Into*Sequence".
+// Todo: The problem with using `Sequence` in this way is that it gets "evaluated" in the parser, which means the users
+//       of the language cannot use it in its held form. Same for `Construct`. The others have no user-land usage. The
+//       solution is to either use a temporary or else use a private symbol in the `Std\`Private\`` context
+//       (namespace).
+//       EDIT: What about `Splice`? https://reference.wolfram.com/language/ref/Splice.html
 fn fix_up(parent: &mut Atom, mut child: Atom) -> Result<(), ()> {
   // Destructure parent…
   if let Atom::SExpression(children) = parent {

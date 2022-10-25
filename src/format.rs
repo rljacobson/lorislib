@@ -21,19 +21,19 @@ use strum::EnumString;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString, Hash)]
 pub enum DisplayForm {
-  #[strum(serialize = "System`InputForm")]
+  #[strum(serialize = "Std`InputForm")]
   Input,
-  #[strum(serialize = "System`FullForm")]
+  #[strum(serialize = "Std`FullForm")]
   Full,
-  #[strum(serialize = "System`TraditionalForm")]
+  #[strum(serialize = "Std`TraditionalForm")]
   Traditional,
-  #[strum(serialize = "System`TeXForm")]
+  #[strum(serialize = "Std`TeXForm")]
   TeX,
-  #[strum(serialize = "System`StandardForm")]
+  #[strum(serialize = "Std`StandardForm")]
   Standard,
-  #[strum(serialize = "System`OutputForm")]
+  #[strum(serialize = "Std`OutputForm")]
   Output,
-  #[strum(serialize = "System`MatcherForm")]
+  #[strum(serialize = "Std`MatcherForm")]
   Matcher,
 
 }

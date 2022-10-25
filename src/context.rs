@@ -7,7 +7,7 @@ A lot of things need access to the `Context` in order to read `*Values` or funct
 during evaluation. The codebase is transitioning to a `Context` model of shared mutable state via interior
 mutability.
 
-Todo: Predefined and built-in symbols should live in the `System` context. Contexts should be able to define
+Todo: Predefined and built-in symbols should live in the `Std` context. Contexts should be able to define
       visibility and other finer-grained access controls, like read-only attributes, etc. In other words, make
       `Context`s modules.
 
@@ -18,19 +18,15 @@ Todo: Predefined and built-in symbols should live in the `System` context. Conte
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
-use crate::{
-  atom::{
-    Atom
-  },
-  attributes::{
-    Attributes,
-    Attribute
-  },
-  built_ins::{
-    BuiltinFn,
-    register_builtins
-  },
-};
+use crate::{atom::{
+  Atom
+}, attributes::{
+  Attributes,
+  Attribute
+}, built_ins::{
+  BuiltinFn,
+  register_builtins
+}};
 use crate::interner::{interned_static, InternedString, resolve_str};
 // use crate::parsing::{Lexer, parse};
 
@@ -95,23 +91,38 @@ impl Context {
   /// This method does not check for read-only! Only use for registering built-ins.
   pub(crate) fn set_down_value_attribute(&mut self, symbol: InternedString, value: SymbolValue, attributes: Attributes) {
     let record = self.get_symbol_mut(symbol);
-    record.down_values.push(value);
+
+    if !record.down_values.contains(&value) {
+      record.down_values.push(value);
+    }
     record.attributes.update(attributes);
   }
 
-  pub fn set_attribute(&mut self, symbol: InternedString, attribute: Attribute) -> Result<(), String> {
-    let record = self.get_symbol_mut(symbol);
 
-    // if record.attributes.attributes_read_only() {
-    //   Err(format!("Symbol {} has read-only attributes", resolve_str(symbol)))
-    // } else {
-      record.attributes.set(attribute);
+  pub fn set_attributes(&mut self, symbol: InternedString, attributes: Attributes) -> Result<(), String> {
+    {
+      let record = self.get_symbol_mut(symbol);
+
+      // Todo: Fix enforcement of read/write-protection.
+      // if record.attributes.attributes_read_only() {
+      //   Err(format!("Symbol {} has read-only attributes", resolve_str(symbol)))
+      // } else {
+      record.attributes.update(attributes);
       Ok(())
-    // }
+      // }
+    }
+  }
+
+  // todo: We should only have `set_attributes(…)` since `Attribute` implements `Into<Attributes>`.
+  pub fn set_attribute(&mut self, symbol: InternedString, attribute: Attribute) -> Result<(), String> {
+    self.set_attributes(symbol, attribute.into())
   }
 
   pub fn set_down_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
+    if record.down_values.contains(&value) {
+      return Ok(());
+    }
 
     // if record.attributes.read_only() {
     //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
@@ -137,6 +148,9 @@ impl Context {
 
   pub fn set_up_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
+    if record.up_values.contains(&value) {
+      return Ok(());
+    }
 
     // if record.attributes.read_only() {
     //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
@@ -149,6 +163,9 @@ impl Context {
 
   pub fn set_own_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
+    if record.own_values.contains(&value) {
+      return Ok(());
+    }
 
     // if record.attributes.read_only() {
     //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
@@ -161,6 +178,9 @@ impl Context {
 
   pub fn set_sub_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
+    if record.sub_values.contains(&value) {
+      return Ok(());
+    }
 
     // if record.attributes.read_only() {
     //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
@@ -221,6 +241,8 @@ pub enum ContextValueStore {
   DisplayFunction,
 }
 
+// todo: Should `SymbolRecord` store `Rc<SymbolValue>`s? These are all basicly read-only, because the vector is
+//       usually wiped for re-definitions.
 pub struct SymbolRecord {
   pub symbol: InternedString,
   pub attributes: Attributes,
@@ -245,6 +267,8 @@ impl SymbolRecord {
   pub fn new(name: InternedString) -> SymbolRecord{
     SymbolRecord {
       symbol: name,
+      // Todo: Store attributes separately. They need to be accessed very frequently, very often for symbols that do
+      //       not yet exist in the context. Not so much for efficiency as programmer ergonomics.
       attributes: Default::default(),
       own_values: vec![],
       up_values: vec![],

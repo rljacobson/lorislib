@@ -68,12 +68,12 @@ pub static STANDARD_PREAMBLE: [&str; 14] = [
   // Differentiation
   "D[x_, y_] := 0 /; NumberQ[x]",                                  // Constants. No matching on `Head`
   "D[x_, y_] := 1 /; SameQ[x, y]",                                // Identity
-  "D[x_^n_, y_] ^:= n*x_^(n-1)*D[x, y] /; Occurs[y, x]", // Power Rule,
+  "D[x_^n_, y_] ^:= n*x_^(n-1)*D[x, y] /; OccursQ[x, y]", // Power Rule,
 
-  "D[Sin[x_], y_] ^:= Cos[x]*D[x, y] /; Occurs[y, x]",
-  "D[Cos[x_], y_] ^:= -Sin[x]*D[x, y] /; Occurs[y, x]",
-  "D[Tan[x_], y_] ^:= Sec[x]^2*D[x, y] /; Occurs[y, x]",
-  "D[Sec[x_], y_] ^:= Sec[x]*Tan[x]*D[x, y] /; Occurs[y, x]",
+  "D[Sin[x_], y_] ^:= Cos[x]*D[x, y] /; OccursQ[x, y]",
+  "D[Cos[x_], y_] ^:= -Sin[x]*D[x, y] /; OccursQ[x, y]",
+  "D[Tan[x_], y_] ^:= Sec[x]^2*D[x, y] /; OccursQ[x, y]",
+  "D[Sec[x_], y_] ^:= Sec[x]*Tan[x]*D[x, y] /; OccursQ[x, y]",
 ];
 
 

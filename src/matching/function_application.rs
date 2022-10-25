@@ -518,7 +518,7 @@ impl<T> Iterator for RuleSVE<T>
     #[cfg(not(feature = "strict-associativity"))]
     match &mut self.afa_generator {
       None => {
-        self.afa_generator = Some(Box::new(T::new(SExpression::duplicate_with_head(self.match_equation.ground))));
+        self.afa_generator = Some(Box::new(T::new(SExpression::duplicate_with_head(&self.match_equation.ground))));
         // Return the empty sequence.
         self.make_next(Sequence::default())
       },
@@ -536,7 +536,7 @@ impl<T> Iterator for RuleSVE<T>
                 // Take the next term from the ground function.
                 self.ground_sequence.push(
                   SExpression::part(
-                    self.match_equation.ground,
+                    &self.match_equation.ground,
                     self.ground_sequence.len() + 1 // add 1 to skip head
                   )
                 );
