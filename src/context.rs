@@ -28,6 +28,7 @@ use crate::{atom::{
   register_builtins
 }};
 use crate::interner::{interned_static, InternedString, resolve_str};
+use crate::logging::set_verbosity;
 // use crate::parsing::{Lexer, parse};
 
 
@@ -50,6 +51,7 @@ impl Context {
     };
 
     register_builtins(&mut context);
+    context.set_verbosity(1);
     context
   }
 
@@ -66,6 +68,12 @@ impl Context {
 
   pub fn state_version(&self) -> u64 {
     self.state
+  }
+
+  /// Sets the logging verbosity, the level at which messages are reported to the user.
+  // todo: Make this an actual variable in the context instead of a global.
+  pub fn set_verbosity(&mut self, verbosity: i32) {
+    set_verbosity(verbosity)
   }
 
   pub fn get_attributes(&self, symbol: InternedString) -> Attributes {

@@ -4,39 +4,63 @@ Numeric Computation
 
  */
 #![allow(non_snake_case)]
+
 use std::{
-  rc::Rc
+  rc::Rc,
+  ops::{AddAssign, Div, MulAssign, Neg}
 };
 
-use std::ops::{AddAssign, Div, MulAssign, Neg};
+use rug::{
+  Integer as BigInteger,
+  Float as BigFloat,
+  Float,
+  Assign,
+  ops::{
+    AddFrom,
+    CompleteRound,
+    Pow,
+    PowAssign
+  },
+  Complete,
+};
+// For num_integer::binomial
 
-use rug::{Integer as BigInteger, Float as BigFloat, Float, Assign, ops::AddFrom, Complete};
-use rug::ops::CompleteRound;
- // For num_integer::binomial
-
-use crate::{matching::{
-  display_solutions,
-  SolutionSet
-}, parse, atom::{
-  Symbol,
-  SExpression,
-  Atom
-}, attributes::{
-  Attributes,
-  Attribute
-}, context::*, logging::{
-  log,
-  Channel
-}, interner::{
-  interned_static
-}, evaluate};
-use crate::atom::SExpression::{apply, apply_binary};
-use crate::built_ins::{DEFAULT_REAL_PRECISION, register_builtin};
-use crate::evaluate::replace_all_bound_variables;
-#[allow(unused_imports)]#[allow(unused_imports)]
-use crate::interner::resolve_str;
-#[allow(unused_imports)]
-use crate::logging::set_verbosity;
+use crate::{
+  evaluate::{
+    evaluate,
+    replace_all_bound_variables
+  },
+  interner::{
+    interned_static,
+    resolve_str
+  },
+  logging::{
+    log,
+    Channel,
+    set_verbosity
+  },
+  context::*,
+  attributes::{
+    Attributes,
+    Attribute
+  },
+  parse,
+  matching::{
+    display_solutions,
+    SolutionSet
+  },
+  atom::{
+    SExpression::apply,
+    Atom,
+    SExpression,
+    Symbol,
+    SExpression::apply_binary
+  },
+  built_ins::{
+    DEFAULT_REAL_PRECISION,
+    register_builtin
+  }
+};
 
 
 // todo: None of this code allows for BigReal precision other than the default 53 bits (f64).
@@ -435,6 +459,137 @@ pub(crate) fn Binomial(arguments: SolutionSet, original: Atom, _: &mut Context) 
   }
 }
 
+/// Implements calls matching
+///     `Power[base_, exp_]`
+pub(crate) fn Power(arguments: SolutionSet, original: Atom, _: &mut Context) -> Atom {
+  log(
+    Channel::Debug,
+    4,
+    format!(
+      "Power called with arguments {}",
+      display_solutions(&arguments)
+    ).as_str()
+  );
+  // Two arguments
+  let base = &arguments[&SExpression::variable_static_str("base")];
+  let exp = &arguments[&SExpression::variable_static_str("exp")];
+
+  match (base, exp) {
+    (Atom::Integer(n), Atom::Integer(m)) => {
+      let result: BigInteger = n.clone();
+      // todo: We have to decide how to handle reciprocals and stuff.
+      if m < &0i32 {
+        // We compute n^-m and then return the reciprocal.
+        let positive_exponent = m.clone().neg();
+        let within_range: u32 = match positive_exponent.try_into() {
+          Ok(v) => v,
+          Err(_) => {
+            log(
+              Channel::Error,
+              1,
+          "Exponent is out of range."
+            );
+            return original;
+          }
+        };
+        let result = result.pow(within_range);
+
+        apply_binary(
+          "Divide",
+          Atom::Integer(BigInteger::from(1)),
+          Atom::Integer(result)
+        )
+      } else if m == &0 {
+        if n == &0 {
+          Symbol::from_static_str("Indeterminate")
+        } else {
+          Atom::Integer(BigInteger::from(1))
+        }
+      } else {
+        let within_range: u32 = match m.try_into() {
+          Ok(v) => v,
+          Err(e) => {
+            log(
+              Channel::Error,
+              1,
+              format!("Exponent is out of range: {}", e).as_str(),
+            );
+            return original;
+          }
+        };
+        let result = result.pow(within_range);
+        Atom::Integer(result)
+      }
+    } // end branch if both are integers
+
+    (Atom::Real(r), Atom::Integer(m)) => {
+      let result: BigFloat = r.clone();
+      if m < &0i32 {
+        // We compute n^-m and then return the reciprocal: // r^-p = 1/(r^p)
+        let positive_exponent = m.clone().neg();
+        let within_range: u32 = match positive_exponent.try_into() {
+          Ok(v) => v,
+          Err(_) => {
+            log(
+              Channel::Error,
+              1,
+              "Exponent is out of range."
+            );
+            return original;
+          }
+        };
+        let result: BigFloat = result.pow(within_range);
+        // r^-m = 1/(r^m)
+        Atom::Real(result.recip())
+      } else if m == &0 {
+        if r.is_zero() {
+          Symbol::from_static_str("Indeterminate")
+        } else{
+          Atom::Real(BigFloat::with_val(DEFAULT_REAL_PRECISION, 1))
+        }
+      } else {
+        let within_range: u32 = match m.try_into() {
+          Ok(v) => v,
+          Err(_) => {
+            log(
+              Channel::Error,
+              1,
+              "Exponent is out of range."
+            );
+            return original;
+          }
+        };
+        let result = result.pow(within_range);
+        Atom::Real(result)
+      }
+    }
+
+    (Atom::Integer(n), Atom::Real(r)) => {
+      // todo: Complex numbers from fractional roots
+      if n < &0 && r < &1.0 && r > &-1.0 {
+        log(Channel::Error, 1, "Complex numbers haven't been invented yet.");
+        original
+      }
+      else if n == &0 && r.is_zero() {
+        Symbol::from_static_str("Indeterminate")
+      } else if n == &0 {
+        Atom::Integer(BigInteger::from(0))
+      } else if r.is_zero() {
+        Atom::Real(BigFloat::with_val(DEFAULT_REAL_PRECISION, 1))
+      } else {
+        let real_n = BigFloat::with_val(DEFAULT_REAL_PRECISION,n);
+        Atom::Real(real_n.pow(r))
+      }
+    }
+
+    _ => {
+      // We do not automatically expand things like (1+x)^2
+      original
+    }
+
+  }
+}
+
 
 /// Implements calls matching
 ///     `Series[f_, {x_, c_, n_}] := builtin[n,m]`
@@ -526,8 +681,9 @@ pub(crate) fn register_builtins(context: &mut Context) {
   register_builtin!(Plus, "Plus[exp___]", plus_attributes, context);
   // Same attributes as Plus
   register_builtin!(Times, "Times[exp___]", plus_attributes, context);
-  register_builtin!(Divide, "Divide[num_, denom_]", read_only_attributes, context);
   register_builtin!(Binomial, "Binomial[n_, m_]", read_only_attributes + Attribute::NHoldAll, context);
+  register_builtin!(Divide, "Divide[num_, denom_]", read_only_attributes, context);
+  register_builtin!(Power, "Power[base_, exp_]", read_only_attributes, context);
   register_builtin!(Series, "Series[f_, {x_, c_, n_}]", Attribute::Protected.into(), context);
 
 }
