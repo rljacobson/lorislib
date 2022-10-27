@@ -45,7 +45,6 @@ mod context;
 mod numeric;
 
 
-
 use control_flow::register_builtins as register_control_flow;
 use expressions::register_builtins as register_expressions;
 use boolean::register_builtins as register_boolean;
@@ -53,36 +52,8 @@ use context::register_builtins as register_context;
 use numeric::register_builtins as register_numeric;
 
 
-
-
 // todo: store this in the global context as an own-value.
 pub const DEFAULT_REAL_PRECISION: u32 = 53;
-
-// region Preamble
-pub static STANDARD_PREAMBLE: [&str; 14] = [
-  // Definitions
-
-  "NumberQ[n_]:=If[Head[n]==Real, True, If[Head[n]==Integer, True, False]]",
-  "Subtract[x_, rest_]:=Plus[x, Minus[rest]]",
-  "Sqrt[x_]:=Root[2, x]", // Poorly named, perhaps.
-  "Ln[x_]:=Log[E, x]",
-  "Exp[x_]:=Power[E, x]",
-
-  // Simplifications
-  "a_*x_ + b_*y_ ^:= (a + b)*x /; And[SameQ[x, y], NumberQ[a], NumberQ[b]]",
-  "(a_*x_)/(b_*y_) ^:= a / b /; SameQ[x, y]",
-
-  // Differentiation
-  "D[x_, y_] := 0 /; NumberQ[x]",                                  // Constants. No matching on `Head`
-  "D[x_, y_] := 1 /; SameQ[x, y]",                                // Identity
-  "D[x_^n_, y_] ^:= n*x_^(n-1)*D[x, y] /; OccursQ[x, y]", // Power Rule,
-
-  "D[Sin[x_], y_] ^:= Cos[x]*D[x, y] /; OccursQ[x, y]",
-  "D[Cos[x_], y_] ^:= -Sin[x]*D[x, y] /; OccursQ[x, y]",
-  "D[Tan[x_], y_] ^:= Sec[x]^2*D[x, y] /; OccursQ[x, y]",
-  "D[Sec[x_], y_] ^:= Sec[x]*Tan[x]*D[x, y] /; OccursQ[x, y]",
-];
-// endregion
 
 //                        f(substitutions, original_expression, context) -> evaluated_expression
 pub type BuiltinFn = fn(SolutionSet, Atom, &mut Context) -> Atom;
@@ -167,28 +138,30 @@ pub(crate) fn register_builtins(context: &mut Context) {
   context.set_attribute(interned_static("UpValues"), Attribute::HoldAll).ok();
   context.set_attribute(interned_static("DownValues"), Attribute::HoldAll).ok();
   context.set_attribute(interned_static("OwnValues"), Attribute::HoldAll).ok();
+
   // endregion
 
   // region Preamble
 
   register_builtin!(SetVerbosity, "SetVerbosity[exp_]", Attribute::Protected.into(), context);
 
+  let preamble_path = "./lorislib/lib/preamble2.m";
 
-  match std::fs::read_to_string("./lorislib/lib/preamble.m"){
+  match std::fs::read_to_string(preamble_path){
     Ok(text) => {
-      set_verbosity(5);
+      // set_verbosity(5);
       let expression = match parse(text.as_str()) {
         Ok(expression) => expression,
         Err(_) => {
           log(
             Channel::Error,
             1,
-            format!("Failed to parse preamble.m.").as_str()
+            format!("Failed to parse {}.", preamble_path).as_str()
           );
           return;
         }
       };
-      set_verbosity(4);
+      // set_verbosity(4);
       evaluate(expression, context);
     }
 

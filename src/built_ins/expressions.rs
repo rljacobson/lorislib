@@ -129,9 +129,17 @@ pub(crate) fn ReplaceAll(arguments: SolutionSet, original: Atom, context: &mut C
             // Now validate each element of the list.
             let rule_list: Vec<(Atom, Atom)> = children[1..].iter().map_while(|r| r.is_rule()).collect::<Vec<_>>();
 
-            if rule_list.len() != children.len() -1 {
+            if rule_list.len() != children.len()-1 {
               // Not all calls to `is_rule()` returned Some(…)
-              log(Channel::Error, 1, "Invalid input provided to Replace.");
+              log(
+                Channel::Error,
+                1,
+                format!(
+                  "Invalid input provided to Replace: rule_list.len={}, children.len={}",
+                  rule_list.len(),
+                  children.len()-1
+                ).as_str()
+              );
               return original;
             }
 
@@ -140,7 +148,7 @@ pub(crate) fn ReplaceAll(arguments: SolutionSet, original: Atom, context: &mut C
           }
 
           // Single Rule
-          else if let Some((lhs, rhs)) = expression.is_rule() {
+          else if let Some((lhs, rhs)) = rules_expression.is_rule() {
             // Internally a rule is a hashmap entry.
             HashMap::from([(lhs, rhs)])
           }
