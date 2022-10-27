@@ -8,6 +8,7 @@ mod free_functions;
 mod function_application;
 mod match_generator;
 mod matcher;
+mod abstract_matcher;
 
 /*
 
@@ -76,11 +77,11 @@ SUCCESS: To obtain additional matches, proceed from Step 3.b to Step 1.a.ii.
 use std::{collections::HashMap, fmt::Display};
 
 
-pub use matcher::{Matcher, display_solutions};
+pub use matcher::{display_solutions, Matcher};
 use crate::{
   atom::{
-    SExpression,
     Atom,
+    SExpression,
   },
   format::{DisplayForm, Formattable}
 };
@@ -163,9 +164,7 @@ mod tests {
     Atom,
     SExpression,
     Symbol,
-  }, attributes::{
-    Attribute,
-  }, Context, matching::matcher::display_solutions, interner::interned_static, parse};
+  }, attributes::Attribute, Context, interner::interned_static, matching::matcher::display_solutions, parse};
 
 
   #[allow(unused_imports)]

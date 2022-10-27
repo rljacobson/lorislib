@@ -110,7 +110,7 @@ pub struct Matcher<'c> {
   match_stack: Vec<MatchStack>,
   /// The match equations that still need to be solved.
   equation_stack: Vec<MatchEquation>,
-  /// The symbol table recording all veriable/sequence variable bindings.
+  /// The symbol table recording all variable/sequence variable bindings.
   substitutions: SolutionSet,
   /// The matcher needs to be able to look up the attributes of functions from the context.
   context: &'c Context
@@ -154,7 +154,7 @@ impl<'c> Matcher<'c> {
 
 
   /// Undoes the effects of the last call to `next()` and, for convenience, returns
-  /// the responsible match generator in the form of an `Rc<MatchGenerator>` object.
+  /// the responsible match generator in the form of an `Box<dyn MatchGenerator>` object.
   /// Upon return the `MatchGenerator` will be active, i.e. on top of the match
   /// stack.
   fn undo(&mut self) -> BoxedMatchGenerator {

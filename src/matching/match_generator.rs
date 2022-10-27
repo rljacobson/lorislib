@@ -4,8 +4,7 @@ A `MatchGenerator` enumerates every possible way for the pattern it represents t
 against the subject. A `MatchGenerator` corresponds to a "solved equation" in Dundua
 (Def. 3, p. 10), denoted by `S`. We refer to matchers according to the rule in
 Dundua they correspond to or to the pattern object they represent when there is
-no ambiguity in doing so. The rules guarantee that there is only one choice of
-match generator at any given point in the algorithm.
+no ambiguity in doing so.
 
 For some patterns (e.g. literal patterns), there is only one possible
 substitution. For others, there are multiple possible substitutions.
