@@ -540,7 +540,7 @@ pub(crate) fn get_operator_tables() -> OperatorTables {
     },
 
     Operator::BinaryInfix {
-      name: interned_static("Sequence"),
+      name: interned_static("IntoSequence"),
       precedence: 60,
       associativity: Associativity::Full,
       l_token: interned_static(",")
@@ -555,7 +555,7 @@ pub(crate) fn get_operator_tables() -> OperatorTables {
 
     Operator::Matchfix {
       // A sequence of one expression will automatically be spliced into its parent.
-      name: interned_static("Sequence"),
+      name: interned_static("IntoSequence"),
       precedence: 10,
       n_token: interned_static("("),
       o_token: interned_static(")")

@@ -663,8 +663,8 @@ fn fix_up(parent: &mut Atom, mut child: Atom) -> Result<(), ()> {
 
       // Collapse "Sequence" and "Parentheses"
       Atom::SExpression(ref mut grand_children)
-      if Symbol::from_static_str("Sequence") == grand_children[0]
-          || Symbol::from_static_str("Parentheses") == grand_children[0]
+      if Symbol::from_static_str("IntoSequence") == grand_children[0]
+          // || Symbol::from_static_str("Parentheses") == grand_children[0]
       => {
         // Splice in the sequence's children, skipping the head.
         Rc::get_mut(children).unwrap().extend(grand_children[1..].iter().cloned());
@@ -734,6 +734,24 @@ mod tests {
   #[allow(unused_imports)]
   use crate::logging::set_verbosity;
   use super::*;
+
+  #[test]
+  fn function_condition_test() {
+    let text = "D[x_, y_] := 1 /; SameQ[x, y]";
+    let expected = "SetDelayed[D[x_, y_], Condition[1, SameQ[x, y]]]";
+    set_verbosity(5);
+
+    match parse(text) {
+
+      Ok(e) => {
+        assert_eq!(expected, e.to_string().as_str());
+        println!("Success: {}", e);
+      },
+
+      Err(_) => assert!(false)
+
+    };
+  }
 
   #[test]
   fn set_delayed_test() {

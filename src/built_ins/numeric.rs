@@ -18,8 +18,7 @@ use rug::{
   ops::{
     AddFrom,
     CompleteRound,
-    Pow,
-    PowAssign
+    Pow
   },
   Complete,
 };
@@ -31,13 +30,11 @@ use crate::{
     replace_all_bound_variables
   },
   interner::{
-    interned_static,
-    resolve_str
+    interned_static
   },
   logging::{
     log,
-    Channel,
-    set_verbosity
+    Channel
   },
   context::*,
   attributes::{
@@ -670,7 +667,7 @@ pub(crate) fn register_builtins(context: &mut Context) {
 
   // Numeric Floating Point Conversion
   register_builtin!(N, "N[exp_]", Attribute::Protected+Attribute::Listable, context);
-  register_builtin!(Minus, "Minus[exp_]", Attribute::Protected+Attribute::Listable, context);
+  register_builtin!(Minus, "Minus[exp_]", Attribute::Protected.into(), context);
 
   let plus_attributes
       = read_only_attributes +

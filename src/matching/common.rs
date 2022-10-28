@@ -66,10 +66,7 @@ impl RuleT {
   pub fn try_rule(match_equation: &MatchEquation) -> Option<Self> {
     if match_equation.pattern == match_equation.ground {
       Some(
-        RuleT{
-          match_equation: match_equation.clone(),
-          exhausted     : false
-        }
+        RuleT::new(match_equation.clone())
       )
     } else {
       None
@@ -117,18 +114,22 @@ impl Iterator for RuleIVE {
 
 
 impl RuleIVE {
+  pub fn new(match_equation: MatchEquation) -> RuleIVE {
+    RuleIVE {
+      match_equation,
+      exhausted: false
+    }
+  }
+
   pub fn try_rule(match_equation: &MatchEquation) -> Option<Self> {
     // Pattern:  x_
     // Ground: Not a sequence or sequence variable.
-    if match_equation.pattern.is_variable().is_some()
+    if match_equation.pattern.is_any_variable_kind()
         && match_equation.ground.is_sequence().is_none()
         && match_equation.ground.is_sequence_variable().is_none()
     {
       Some(
-            RuleIVE {
-              match_equation: match_equation.clone(),
-              exhausted: false
-            }
+            RuleIVE::new(match_equation.clone())
           )
     } else {
       None
@@ -186,16 +187,21 @@ impl Iterator for RuleFVE {
 
 
 impl RuleFVE {
+
+  pub fn new(match_equation: MatchEquation) -> RuleFVE {
+    RuleFVE {
+      match_equation,
+      exhausted: false
+    }
+  }
+
   pub fn try_rule(match_equation: &MatchEquation) -> Option<Self> {
     // Pattern: <f>[…]
     // Ground :  g[…]
     if SExpression::is_head_variable(&match_equation.pattern).is_some()
         && match_equation.ground.kind() == AtomKind::SExpression {
       Some(
-        RuleFVE{
-          match_equation: match_equation.clone(),
-          exhausted     : false,
-        }
+        RuleFVE::new(match_equation.clone())
       )
     } else {
       None

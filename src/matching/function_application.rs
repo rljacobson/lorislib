@@ -125,6 +125,8 @@ impl Iterator for AFAGenerator<EnumerateAll> {
   fn next(&mut self) -> Option<Sequence> {
     let n = min(self.function.len(), 32);
     if n==0 {
+      // In cases where f can be empty, we handle it in the client code of this generator, because this code only
+      // works for n > 0.
       return None;
     }
     // The (n-1) in the formula below is because there are (n-1) spaces between n
@@ -493,9 +495,9 @@ pub struct RuleSVE<T>
   */
   // Todo: Determine the "right" way to have different variants of associativity.
   // This is `None` if we have not yet produced the empty sequence.
-  #[cfg(not(feature = "strict-associativity"))]
+  #[cfg(not(feature = "strict_associativity"))]
   afa_generator: Option<Box<T>>,
-  #[cfg(feature = "strict-associativity")]
+  #[cfg(feature = "strict_associativity")]
   afa_generator: Box<T>
 }
 
@@ -515,7 +517,7 @@ impl<T> Iterator for RuleSVE<T>
   fn next(&mut self) -> MaybeNextMatchResult {
     // Have we produced the empty sequence?
 
-    #[cfg(not(feature = "strict-associativity"))]
+    #[cfg(not(feature = "strict_associativity"))]
     match &mut self.afa_generator {
       None => {
         self.afa_generator = Some(Box::new(T::new(SExpression::duplicate_with_head(&self.match_equation.ground))));
@@ -542,7 +544,7 @@ impl<T> Iterator for RuleSVE<T>
                 );
 
                 // Create a new AFAGenerator.
-                let mut afa_function = SExpression::new(self.match_equation.ground.head(), self.ground_sequence.clone());
+                let afa_function = SExpression::new(self.match_equation.ground.head(), self.ground_sequence.clone());
 
                 let mut new_afa_generator = T::new(afa_function);
                 let next_result = new_afa_generator.next().unwrap();
@@ -558,7 +560,7 @@ impl<T> Iterator for RuleSVE<T>
       }
     }
 
-    #[cfg(feature = "strict-associativity")]
+    #[cfg(feature = "strict_associativity")]
     {
     let ordered_sequence = // The result of this match
       match self.afa_generator.next() {
@@ -568,24 +570,12 @@ impl<T> Iterator for RuleSVE<T>
             // No more terms.
             return None;
           }
-          //
-          // log(
-          //   Channel::Debug,
-          //   5,
-          //   format!(
-          //     "GROUND SEQUENCE: [{}]",
-          //     self.ground_sequence.iter()
-          //         .map(|a| a.format(&DisplayForm::Matcher.into()) )
-          //         .collect::<Vec<String>>()
-          //         .join(", ")
-          //   ).as_str(),
-          // );
 
           // Take the next term from the ground function.
           self.ground_sequence.push(
             SExpression::part(
               &self.match_equation.ground,
-              self.ground_sequence.len()+1 // add 1 to skip head
+              self.ground_sequence.len() + 1 // add 1 to skip head
             )
           );
 
@@ -613,15 +603,21 @@ impl<T> RuleSVE<T>
 {
   pub fn new(me: MatchEquation) -> RuleSVE<T> {
 
-    #[cfg(feature = "strict-associativity")]
+    #[cfg(feature = "strict_associativity")]
     let afa_generator = Box::new(T::new(SExpression::duplicate_with_head(&me.ground)));
+
+
+    #[cfg(not(feature = "strict_associativity"))]
+    log(Channel::Debug, 4, "Using NONSTRICT-ASSOCIATIVITY matching.");
+    #[cfg(feature = "strict_associativity")]
+    log(Channel::Debug, 4, "Using STRICT-ASSOCIATIVITY matching.");
 
     RuleSVE{
       match_equation: me,
       ground_sequence: Sequence::default(),
-      #[cfg(not(feature = "strict-associativity"))]
+      #[cfg(not(feature = "strict_associativity"))]
       afa_generator  : None,
-      #[cfg(feature = "strict-associativity")]
+      #[cfg(feature = "strict_associativity")]
       afa_generator,
     }
   } // end new RuleSVE<T
@@ -656,31 +652,13 @@ impl<T> RuleSVE<T>
 
 
   pub fn try_rule(me: &MatchEquation) -> Option<Self> {
-    // log(
-    //   Channel::Debug,
-    //   5,
-    //   format!(
-    //     "TRYING RuleSVEAC. Pattern: {} Ground: {} pattern.len={} ground.len={}",
-    //     me.pattern,
-    //     me.ground,
-    //     me.pattern.len(),
-    //     me.ground.len(),
-    //   ).as_str()
-    // );
 
     // The only requirement is that pattern's first child is a sequence variable.
     if me.pattern.len() > 0
       && SExpression::part(&me.pattern, 1).is_sequence_variable().is_some() {
 
       Some(
-        Self{
-          match_equation : me.clone(),
-          ground_sequence: Sequence::default(),
-          #[cfg(not(feature = "strict-associativity"))]
-          afa_generator  : None,
-          #[cfg(feature = "strict-associativity")]
-          afa_generator  : Box::new(T::new(SExpression::duplicate_with_head(&me.ground))),
-        }
+        Self::new(me.clone())
       )
     } else {
       None

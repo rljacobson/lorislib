@@ -65,11 +65,7 @@ impl RuleDecNonCommutative<NonAssociative> {
         && SExpression::part(&me.pattern, 1).is_sequence_variable().is_none()
     {
       Some(
-        RuleDecNonCommutative {
-          me: me.clone(),
-          exhausted     : false,
-          phantom       : std::marker::PhantomData::<NonAssociative>::default()
-        }
+        RuleDecNonCommutative::<NonAssociative>::new(me.clone())
       )
     } else {
       None
@@ -89,11 +85,7 @@ impl RuleDecNonCommutative<Associative> {
         && SExpression::part(&me.pattern, 1).is_sequence_variable().is_none()
     {
       Some(
-        RuleDecNonCommutative {
-          me: me.clone(),
-          exhausted     : false,
-          phantom       : std::marker::PhantomData::default()
-        }
+        RuleDecNonCommutative::new(me.clone())
       )
     } else {
       None

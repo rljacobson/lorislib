@@ -40,6 +40,12 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
   Todo: Add recursion-limit
   Todo: Add cycle detection
 
+  Todo: If a grandparent has attribute SequenceHold, for example, that affects how the expression is evaluated. This
+        problem also exists for evaluating `N` (with NHold), but we solved that by giving it its own evaluation
+        function. Instead, we need an Evaluator that holds state across calls to evaluate, just like we do with
+        `Formattable`/`ExpressionFormatter`. So far it would just hold and `Attributes`, but...maybe it holds the
+        context.
+
   */
 
   let expression = propagate_attributes(&expression, context);
@@ -92,11 +98,11 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
                   if attributes[Attribute::HoldFirst]
                       && children.len() > 1 // There needs to be a "first" to hold.
                   {
-                    Attribute::HoldRest
+                    Attribute::HoldFirst
                   } else if attributes[Attribute::HoldRest]
                       && children.len() > 2 // There needs to be a "rest" to hold.
                   {
-                    Attribute::HoldFirst
+                    Attribute::HoldRest
                   } else if attributes[Attribute::HoldAll]
                       || attributes[Attribute::HoldAllComplete]
                   {
@@ -159,7 +165,7 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
           }
 
           Some((_name, Attribute::HoldAll)) => {
-            // The silliest case: We cannot evaluate anything–a no-op!
+            // The silliest case: We cannot evaluate any of the children.
             expression
           }
 
@@ -348,14 +354,13 @@ fn try_definitions(expression: Atom, symbol: InternedString, value_store: Contex
 fn find_matching_definition(ground: Atom, symbol: InternedString, value_store: ContextValueStore, context: &mut Context)
     -> Option<(SymbolValue, SolutionSet)>
 {
-
   let definitions = {
     let record = context.get_symbol_mut(symbol);
     match value_store {
-      ContextValueStore::OwnValues => &record.own_values,
-      ContextValueStore::UpValues => &record.up_values,
+      ContextValueStore::OwnValues  => &record.own_values,
+      ContextValueStore::UpValues   => &record.up_values,
       ContextValueStore::DownValues => &record.down_values,
-      ContextValueStore::SubValues => &record.sub_values,
+      ContextValueStore::SubValues  => &record.sub_values,
       _ => unimplemented!()
       // ContextValueStore::NValues => {}
       // ContextValueStore::DisplayFunction => {}
@@ -389,13 +394,21 @@ fn find_matching_definition(ground: Atom, symbol: InternedString, value_store: C
         }
 
       };
-    log(Channel::Debug, 4, format!("pattern = {}", (*pattern).to_string()).as_str());
+    log(
+      Channel::Debug,
+      4,
+      format!(
+        "pattern = {} ground = {}",
+        (*pattern).to_string(),
+        &ground
+      ).as_str()
+    );
     let mut matcher = Matcher::new(pattern.clone(), ground.clone(), context);
     if let Some(substitutions) = (&mut matcher).next() {
       log(Channel::Debug, 4, format!("Pattern matched!").as_str());
       return Some((symbol_value.clone(), substitutions));
     } else {
-      log(Channel::Debug, 4, format!("Pattern failed to matched.").as_str());
+      log(Channel::Debug, 4, format!("Pattern failed to match.").as_str());
     }
   } // end iterate over definitions
   None

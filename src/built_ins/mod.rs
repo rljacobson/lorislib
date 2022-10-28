@@ -128,16 +128,7 @@ pub(crate) fn register_builtins(context: &mut Context) {
 
   // region Attributes for functions without definition
 
-  context.set_attribute(interned_static("RuleDelayed"), Attribute::Protected).ok();
-  context.set_attribute(interned_static("RuleDelayed"), Attribute::HoldRest).ok();
-
   context.set_attribute(interned_static("List"), Attribute::Protected).ok();
-  context.set_attribute(interned_static("Hold"), Attribute::Protected).ok();
-  context.set_attribute(interned_static("Hold"), Attribute::HoldAll).ok();
-
-  context.set_attribute(interned_static("UpValues"), Attribute::HoldAll).ok();
-  context.set_attribute(interned_static("DownValues"), Attribute::HoldAll).ok();
-  context.set_attribute(interned_static("OwnValues"), Attribute::HoldAll).ok();
 
   // endregion
 
@@ -145,7 +136,7 @@ pub(crate) fn register_builtins(context: &mut Context) {
 
   register_builtin!(SetVerbosity, "SetVerbosity[exp_]", Attribute::Protected.into(), context);
 
-  let preamble_path = "./lorislib/lib/preamble2.m";
+  let preamble_path = "./lorislib/lib/preamble.m";
 
   match std::fs::read_to_string(preamble_path){
     Ok(text) => {
@@ -169,7 +160,7 @@ pub(crate) fn register_builtins(context: &mut Context) {
       log(
         Channel::Error,
         1,
-        format!("Failed to read preamble.m: {}", e).as_str()
+        format!("Failed to read {}: {}", preamble_path, e).as_str()
       );
     }
   }

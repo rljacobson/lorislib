@@ -58,7 +58,7 @@ pub struct RuleSVEF {
   */
   // Todo: Determine the "right" way to have different variants of associativity.
 
-  #[cfg(not(feature = "strict-associativity"))]
+  // #[cfg(not(feature = "strict_associativity"))]
   /// Have we produced the empty sequence as the first result yet?
   empty_produced: bool,
   /// A `Sequence`, holds the terms of the ground that we have attempted to match
@@ -79,7 +79,7 @@ impl Iterator for RuleSVEF {
   fn next(&mut self) -> MaybeNextMatchResult {
 
     // If we haven't produced the empty sequence, do that.
-    #[cfg(not(feature = "strict-associativity"))]
+    // #[cfg(not(feature = "strict_associativity"))]
     if !self.empty_produced {
       self.empty_produced = true;
       return Some(self.make_next());
@@ -110,7 +110,7 @@ impl RuleSVEF {
       match_equation: me,
       ground_sequence: Vec::new(),
       // Se note in the struct definition.
-      #[cfg(not(feature = "strict-associativity"))]
+      #[cfg(not(feature = "strict_associativity"))]
       empty_produced : false
     }
   } // end new RuleSVEF
@@ -149,15 +149,11 @@ impl RuleSVEF {
   pub fn try_rule(me: &MatchEquation) -> Option<Self> {
     if me.pattern.len() > 0
         && SExpression::part(&me.pattern, 1).is_sequence_variable().is_some()
-        && me.ground.len() > 0 {
+        // && me.ground.len() > 0
+    {
 
       Some(
-        RuleSVEF {
-          match_equation : me.clone(),
-          #[cfg(not(feature = "strict-associativity"))]
-          empty_produced : false,
-          ground_sequence: Vec::new()
-        }
+        RuleSVEF::new(me.clone())
       )
 
     } else {
@@ -180,7 +176,7 @@ mod tests {
       Symbol
     },
   };
-  
+
 
 
   #[test]
@@ -219,9 +215,9 @@ mod tests {
     let result = rule_svea.flatten().map(|r| r.to_string()).collect::<Vec<String>>();
     let expected = [
 
-      #[cfg(not(feature = "strict-associativity"))]
+      #[cfg(not(feature = "strict_associativity"))]
       "ƒ❨u, v, w❩ ≪ ƒ❨a, b, c❩",
-      #[cfg(not(feature = "strict-associativity"))]
+      #[cfg(not(feature = "strict_associativity"))]
       "«x»→()", // Not allowed by strict-associativity.
 
       "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩",

@@ -17,8 +17,8 @@ generality to the extent that is possible. For now, we just have them manually i
 ReleaseHold[exp_] := exp/.{Hold[x_]->x};
 SetAttributes[ReleaseHold, HoldAll];
 
-FreeQ[exp1, exp2] := Not[OccursQ[exp1_, exp2_]];
-SetAttributes[OccursQ, HoldAll];
+FreeQ[exp1_, exp2_] := Not[OccursQ[exp1, exp2]];
+SetAttributes[FreeQ, HoldAll];
 
 (*Ln[x_]:=Log[x];*)
 
@@ -81,6 +81,7 @@ Ln[a_^x_]^:=x*Ln[a];
 (** Differential Calculus **)
 
 (* Freshman  Calculus *)
+D[x_, y_] := 1 /; SameQ[x, y];
 D[x_, y_] := 0 /; FreeQ[x, y];
 (*
 The Chain Rule is a down-value, because function composition is implicit. The problem is with functions of arity
@@ -89,7 +90,7 @@ rule is already written  in terms of the Chain Rule, so this issue is moot.
 *)
 (*  D[f_[g_[x_]], y_] := Derivative[f, g[x]] * D[g[x], y] /; OccursQ[x, y] *)(* Chain Rule *)
 
-D[x_^n_, y_] ^:= n*x_^(n-1)*D[x, y] /; OccursQ[x, y] && FreeQ[n, y] && Not[n===0]; (*Power Rule*)
+D[x_^n_, y_] ^:= n*x^(n-1)*D[x, y] /; OccursQ[x, y] && FreeQ[n, y] && Not[n===0]; (*Power Rule*)
 (*D[x_*y_*exp___, z_] ^:= x*D[y*exp, z] /; FreeQ[x, z], Folded into product rule *)(* Constant Multiple Rule *)
 D[x_+y_+exp___, z_] ^:= D[x, z] + D[y + exp, z]; (* Linearity *)
 D[x_*y_*exp___, z_] ^:= x*D[y*exp, z] + D[x, z]*y*exp; (* Product Rule *)

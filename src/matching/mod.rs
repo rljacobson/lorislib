@@ -173,12 +173,12 @@ mod tests {
 
   use super::*;
 
-  /// Solve  Plus[x_, Times[y_, z_], exp___] << Plus[a, Times[b, a]]
   #[test]
-  fn empty_sequence_test() {
+  fn oddball_test() {
     let mut context: Context = Context::new_global_context();
-    let pattern = parse("Plus[x_, Times[y_, z_], exp___]").unwrap();
-    let ground  = parse("Plus[a, Times[b, a]]").unwrap();
+    let pattern = parse("exp___").unwrap();
+    let ground = parse("f[a, Sequence[d, e]]").unwrap();
+    let expected = "[ «exp» = f❨a, (d, e)❩ ]";
 
     set_verbosity(5);
 
@@ -186,8 +186,50 @@ mod tests {
 
     let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
     let result : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let result = result.join(", ");
+    println!("Expected: {}\nFound: {}", expected, result);
 
-    println!("SOLUTIONS: {}", result.join(", "));
+    assert_eq!(result, expected);
+  }
+
+  #[test]
+  fn fancy_empty_sequence_test(){
+    let mut context: Context = Context::new_global_context();
+    let pattern = parse("exp_[exp1___, Sequence[exp2___], exp3___]").unwrap();
+    let ground  = parse("f[a, Sequence[d, e]]").unwrap();
+    let expected = "[ «exp1» = a, «exp2» = (d, e), «exp3» = (), ‹exp› = f ]";
+
+    set_verbosity(5);
+
+    println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
+
+    let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
+    let result : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let result = result.join(", ");
+    println!("Expected: {}\nFound: {}", expected, result);
+
+    assert_eq!(result, expected);
+  }
+
+  /// Solve  Plus[x_, Times[y_, z_], exp___] << Plus[a, Times[b, a]]
+  #[test]
+  fn empty_sequence_test() {
+    let mut context: Context = Context::new_global_context();
+    let pattern = parse("Plus[x_, g, exp___]").unwrap();
+    let ground  = parse("Plus[a, g]").unwrap();
+    let expected = "[ «exp» = a, ‹x› = Plus❨❩ ], [ «exp» = Plus❨a❩, ‹x› = Plus❨❩ ], [ «exp» = (), ‹x› = Plus❨a❩ ], [ \
+    «exp» = (), ‹x› = a ]" ;
+
+    set_verbosity(5);
+
+    println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
+
+    let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
+    let result : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let result = result.join(", ");
+    println!("Expected: {}\nFound: {}", expected, result);
+
+    assert_eq!(result, expected);
 
   }
 
@@ -381,13 +423,13 @@ mod tests {
     let matcher = Matcher::new(me.pattern.clone(), me.ground, &mut context);
 
     let expected = [ // ƒ❨a❩
-      #[cfg(not(feature = "strict-associativity"))]
+      #[cfg(not(feature = "strict_associativity"))]
           "‹x› = ƒ❨❩, ‹y› = ƒ❨a, b❩", // Not allowed by strict-associativity.
       "‹x› = ƒ❨a❩, ‹y› = ƒ❨b❩",
       "‹x› = ƒ❨a❩, ‹y› = b",
       "‹x› = ƒ❨b❩, ‹y› = ƒ❨a❩",
       "‹x› = ƒ❨b❩, ‹y› = a",
-      #[cfg(not(feature = "strict-associativity"))]
+      #[cfg(not(feature = "strict_associativity"))]
           "‹x› = ƒ❨a, b❩, ‹y› = ƒ❨❩", // Not allowed by strict-associativity.
       "‹x› = a, ‹y› = ƒ❨b❩",
       "‹x› = a, ‹y› = b",
@@ -435,9 +477,9 @@ mod tests {
     let matcher: Matcher     = Matcher::new(me.pattern.clone()                  , me.ground, &context);
     let result     : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
 
-    #[cfg(not(feature = "strict-associativity"))]
+    #[cfg(not(feature = "strict_associativity"))]
     assert_eq!("‹x› = ƒ❨❩", result.join(", "));
-    #[cfg(feature = "strict-associativity")]
+    #[cfg(feature = "strict_associativity")]
     assert_eq!("", result.join(", ")); // Empty
   }
 }

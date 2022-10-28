@@ -10,6 +10,7 @@ use std::{
 use std::collections::HashMap;
 
 
+
 use rug::{Integer as BigInteger};
 
  // For num_integer::binomial
@@ -25,7 +26,8 @@ use crate::{
     Symbol,
     SExpression,
     Atom,
-    AtomKind
+    AtomKind,
+    SExpression::make_variable
   },
   attributes::{
     Attribute
@@ -33,19 +35,15 @@ use crate::{
   context::*,
   logging::{
     log,
-    Channel
+    Channel,
+    set_verbosity
   },
   interner::{
-    interned_static
+    interned_static,
+    resolve_str
   },
+  built_ins::{occurs_check, register_builtin},
 };
-use crate::built_ins::{occurs_check, register_builtin};
-#[allow(unused_imports)]#[allow(unused_imports)]
-use crate::interner::resolve_str;
-#[allow(unused_imports)]
-use crate::logging::set_verbosity;
-
-
 
 
 /// Implements calls matching
@@ -73,34 +71,102 @@ pub(crate) fn OccursQ(arguments: SolutionSet, _original: Atom, _: &mut Context) 
 /// Internal version of `ReplaceAll`
 /// Performs all substitutions in the given solution set on expression.
 pub(crate) fn replace_all(expression: Atom, substitutions: &SolutionSet, context: &mut Context) -> Atom {
-  // If `expression` itself matches a key in `substitutions`, replace it. This is the base case for the recursion.
-  for (pattern, substitution) in substitutions {
-    let mut matcher = Matcher::new(pattern.clone(), expression.clone(), context);
-    match matcher.next() {
-      Some(_) => {
-        return substitution.clone()
-      }
-      None => {
-        continue;
-      }
-    }
+  // The first time this function is called, the substitutions might be a set of `Rule`s with nontrivial patterns on
+  // their lhs, patterns that may have several variables to bind--or no variables at all. Therefore, we cannot assume
+  // that `substitutions` is just a set of variables and the values they are bound to.
+  //
+  // However, once a complicated pattern has matched, the result _is_ just a (possibly empty) set of variables and
+  // their values.
+
+  // Is expression a key in substitutions?
+  if let Some(replacement) = substitutions.get(&expression){
+    return replacement.clone();
   }
 
+
   match &expression {
-
     Atom::SExpression(children) => {
+      // If expression is an s-expression, two (remaining) possibilities:
+      //   1. There is a non-simple pattern that matches expression, creating a set of variable bindings.
+      //   2. or there isn't a top-level match and the process needs to recurse into the children.
 
-      // Do a `ReplaceAll` on the children
-      let new_children =
-          children.iter()
-                  .map(|c| replace_all(c.clone(), substitutions, context))
-                  .collect();
+      for (pattern, substitution) in substitutions {
+        if pattern.is_any_variable_kind() {
+          // A variable will *match*, but it won't be the right replacement.
+          continue;
+        }
+
+        log(
+          Channel::Debug,
+          4,
+          format!("Replacing all occurrences of pattern {} with {} in {}.", pattern, substitution, expression).as_str()
+        );
+        let mut matcher = Matcher::new(pattern.clone(), expression.clone(), context);
+        match matcher.next() {
+          Some(matched_substitution) => {
+
+            // On the other hand, matched_substitution might be a binding of several variables, or maybe a single
+            // variable that is a child  or  a grandchild of `expression`. In this case, we must continue replacing
+            // the bound variables in `substitution`
+            log(
+              Channel::Debug,
+              4,
+              format!(
+                "Pattern match gave substitutions {}, doing replacement in {}",
+                display_solutions(&matched_substitution),
+                &substitution
+              ).as_str()
+            );
+            // The pattern bound some variables.
+            let result = replace_all(substitution.clone(), &matched_substitution, context);
+            log(
+              Channel::Debug,
+              4,
+              format!("...after replacement: {}.", result).as_str()
+            );
+            return result;
+          }
+          None => {
+            continue;
+          }
+        }
+
+      } // end loop over patterns
+
+      // Recurse into children.
+      let new_children = children.iter().map(|c| replace_all(c.clone(), substitutions, context)).collect();
 
       Atom::SExpression(Rc::new(new_children))
     }
 
-    _ => expression
+    Atom::Symbol(name) => {
+      // If expression is a symbol, it could be the name of a variable binding. This is a little annoying to check in
+      // constant time. Because the keys are pattern variables, not symbols, we need to make variable version of
+      // expresssion.
+
+      // Look for a variable with the same name is a key in `substitutions`.
+      let var = make_variable(expression.clone(), "Blank");
+      if let Some(replacement) = substitutions.get(&var) {
+        return replacement.clone();
+      }
+      let seq_var = make_variable(expression.clone(), "BlankSequence");
+      if let Some(replacement) = substitutions.get(&seq_var) {
+        return replacement.clone();
+      }
+      let null_seq_var = make_variable(expression.clone(), "BlankNullSequence");
+      if let Some(replacement) = substitutions.get(&null_seq_var) {
+        return replacement.clone();
+      }
+      expression
+    }
+
+    other => {
+      // Remaining cases are literals. We already checked that we are not a key at the top of this function.
+      expression
+    }
+
   }
+
 }
 
 
@@ -120,7 +186,7 @@ pub(crate) fn ReplaceAll(arguments: SolutionSet, original: Atom, context: &mut C
   let rules_expression = &arguments[&SExpression::variable_static_str("rules")];
 
   let rules: SolutionSet = // the following match
-      match rules_expression {
+      match rules_expression{
 
         // Three cases: A list of rules, or a single rule, or invalid input.
         Atom::SExpression(children) => {
@@ -338,14 +404,65 @@ pub(crate) fn Head(arguments: SolutionSet, _original: Atom, _: &mut Context) -> 
   arg.head()
 }
 
+/// Implements calls matching
+///     `exp[exp___] if exp is a sequence with Sequence occurring.
+pub(crate) fn Sequence(arguments: SolutionSet, original: Atom, _: &mut Context) -> Atom {
+  log(
+    Channel::Debug,
+    4,
+    format!(
+      "Sequence called with arguments {}",
+      display_solutions(&arguments)
+    ).as_str()
+  );
+
+  // If exp has attribute SequenceHold, then do nothing.
+
+  if let Atom::SExpression(mut children) = original {
+    let mut new_children: Vec<Atom> = Vec::new();
+
+    for mut child in Rc::make_mut(&mut children).drain(..) {
+      match child {
+
+        Atom::SExpression(ref mut grand_children) => {
+          if grand_children[0] == Symbol::from_static_str("Sequence"){
+            new_children.extend(Rc::make_mut(&mut *grand_children).drain(1.. ));
+          } else {
+            new_children.push(child);
+          }
+        }
+
+        _ => {
+          new_children.push(child);
+        }
+      }
+    }
+
+    Atom::SExpression(Rc::new(new_children))
+  } else {
+    original
+  }
+}
+
 
 pub(crate) fn register_builtins(context: &mut Context) {
 
-  register_builtin!(Head, "Head[exp_]", Attribute::Protected.into(), context);
-  register_builtin!(Part, "Part[exp_, n_]", Attribute::Protected.into(), context);
-  register_builtin!(NodeCount, "NodeCount[exp_]", Attribute::Protected.into(), context);
-  register_builtin!(Replace, "Replace[exp_, rules_]", Attribute::Protected.into(), context);
-  register_builtin!(ReplaceAll, "ReplaceAll[exp_, rules_]", Attribute::Protected.into(), context);
-  register_builtin!(OccursQ, "OccursQ[haystack_, needle_]", Attribute::Protected.into(), context);
-
+  register_builtin!(Head      , "Head[exp_]"                               , Attribute::Protected.into(), context);
+  register_builtin!(Part      , "Part[exp_, n_]"                           , Attribute::Protected.into(), context);
+  register_builtin!(NodeCount , "NodeCount[exp_]"                          , Attribute::Protected.into(), context);
+  register_builtin!(Replace   , "Replace[exp_, rules_]"                    , Attribute::Protected.into(), context);
+  register_builtin!(ReplaceAll, "ReplaceAll[exp_, rules_]"                 , Attribute::Protected.into(), context);
+  register_builtin!(OccursQ   , "OccursQ[haystack_, needle_]"              , Attribute::Protected.into(), context);
+  // Sequence is a bit of an oddball in that we don't care how the variables bind, and it is really only useful as an
+  // up-value.
+  {
+    let symbol = interned_static("Sequence");
+    let value  = SymbolValue::BuiltIn {
+      pattern  : parse("exp___").unwrap(),
+      condition: None,
+      built_in : Sequence,
+    };
+    context.set_up_value(symbol, value);
+    context.set_attribute(symbol, Attribute::Protected)
+  };
 }

@@ -361,14 +361,32 @@ pub(crate) fn Attributes(arguments: SolutionSet, original: Atom, context: &mut C
 
 
 pub(crate) fn register_builtins(context: &mut Context) {
+  let delayed_functions: SymbolAttributes = Attribute::Protected + Attribute::HoldAll + Attribute::SequenceHold;
+  let set_functions: SymbolAttributes = Attribute::Protected + Attribute::HoldFirst;
+  let holdall_protected: SymbolAttributes = Attribute::Protected + Attribute::HoldAll;
 
-  register_builtin!(Set, "Set[lhs_, rhs_]", Attribute::Protected.into(), context);
-  register_builtin!(SetDelayed, "SetDelayed[lhs_, rhs_]", Attribute::Protected+Attribute::HoldRest, context);
-  register_builtin!(UpSet, "UpSet[lhs_, rhs_]", Attribute::Protected.into(), context);
-  register_builtin!(UpSetDelayed, "UpSetDelayed[lhs_, rhs_]", Attribute::Protected+Attribute::HoldRest, context);
-  register_builtin!(UpValues, "UpValues[sym_]", Attribute::Protected.into(), context);
-  register_builtin!(DownValues, "DownValues[sym_]", Attribute::Protected.into(), context);
-  register_builtin!(SetAttributes, "SetAttributes[sym_, attr_]", Attribute::Protected.into(), context);
-  register_builtin!(Attributes, "Attributes[sym_]", Attribute::Protected.into(), context);
+
+  context.set_attributes(
+    interned_static("RuleDelayed"),
+    Attribute::HoldRest  // Why not HoldAll?
+        + Attribute::SequenceHold
+        + Attribute::Protected
+  ).ok();
+  context.set_attributes(
+    interned_static("Rule"),
+        Attribute::SequenceHold
+        + Attribute::Protected
+  ).ok();
+  context.set_attributes(interned_static("Hold"), holdall_protected).ok();
+  context.set_attributes(interned_static("OwnValues"), holdall_protected).ok();
+
+  register_builtin!(Set, "Set[lhs_, rhs_]", set_functions, context);
+  register_builtin!(SetDelayed, "SetDelayed[lhs_, rhs_]", delayed_functions, context);
+  register_builtin!(UpSet, "UpSet[lhs_, rhs_]", set_functions, context);
+  register_builtin!(UpSetDelayed, "UpSetDelayed[lhs_, rhs_]", delayed_functions, context);
+  register_builtin!(UpValues, "UpValues[sym_]", holdall_protected, context);
+  register_builtin!(DownValues, "DownValues[sym_]", holdall_protected, context);
+  register_builtin!(SetAttributes, "SetAttributes[sym_, attr_]", holdall_protected, context);
+  register_builtin!(Attributes, "Attributes[sym_]", holdall_protected, context);
 
 }
