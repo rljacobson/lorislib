@@ -6,6 +6,7 @@ ignore
 go
 gor
 history.txt
+**/rubi
 
 # Rust
 **/Cargo.lock

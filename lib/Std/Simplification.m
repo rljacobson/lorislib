@@ -9,9 +9,8 @@
 (* :Loris Version: 0.1.0 *)
 (* :Copyright: (c) 2022 Robert Jacobson *)
 (* :Keywords: simplify, simplification *)
-(* :Discussion: A small collection of algebraic and trigonometric simplification rules. *)
-
-(* For new style packages see: https://mathematica.stackexchange.com/a/176489) *)
+(* :Discussion: A small collection of algebraic and trigonometric simplification rules. Most of this belongs in the
+module in which the relevant functions where derived. *)
 
 Package["Std`Simplification`"]
 

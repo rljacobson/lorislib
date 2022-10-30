@@ -1,34 +1,32 @@
 (* Loris Package *)
 
 (* :Title: Definitions *)
-(* :Context: Definitions` *)
-(* :Author: rljacobson *)
+(* :Context: Std`Definitions` *)
+(* :Author: Robert Jacobson *)
 (* :Date: 2022-10-23 *)
 
 (* :Package Version: 0.1 *)
 (* :Mathematica Version: 13.1 *)
-(* :Copyright: (c) 2022 rljacobson *)
+(* :Copyright: (c) 2022 Robert Jacobson *)
 (* :Keywords: *)
 (* :Discussion: *)
 
-(* For new style packages see: https://mathematica.stackexchange.com/a/176489) *)
 
 Package["Std`Definitions`"]
 
-PackageExport["Derivative"]
 PackageExport["ReleaseHold"]
 PackageExport["SymbolicApply"]
 PackageExport["OccursQ"]
 (* For benefit of WL IntelliJ plugin only. *)
 PackageExport["Ln"]
 
+SetAttributes[ESimpleExamples]  = {HoldAll};
+SetAttributes[EFurtherExamples] = {HoldAll};
+SetAttributes[EKnownFailures]   = {HoldAll};
+
 (* Applies f to a formal symbolic version of g and then evaluates the result at x. *)
 SymbolicApply[f_, g_, x_]:=ReplaceAll[D[f[Hold[tmp]], Hold[tmp]], Hold[tmp]:>g[x]];
 SetAttributes[SymbolicApply, HoldAll];
-
-(* Differentiation of pure functions. Sort of. Until we can have non-symbolic heads. *)
-Derivative[f_, x_]:= SymbolicApply[f, D, Sequence[x, x]];
-SetAttributes[Derivative, HoldAll];
 
 (* Removes `Hold` from any held expressions. *)
 ReleaseHold[exp_] := exp/.{Hold[x_]->x};

@@ -2,12 +2,12 @@
 
 (* :Title: Differentiation *)
 (* :Context: Differentiation` *)
-(* :Author: rljacobson *)
+(* :Author: Robert Jacobson *)
 (* :Date: 2022-10-23 *)
 
 (* :Package Version: 0.1 *)
 (* :Mathematica Version: 13.1 *)
-(* :Copyright: (c) 2022 rljacobson *)
+(* :Copyright: (c) 2022 Robert Jacobson *)
 (* :Keywords: *)
 (* :Discussion: *)
 
@@ -18,16 +18,13 @@ Package["Std`Differentiation`"]
 (* Import other packages *)
 PackageImport["Std`Definitions`"]
 
-(* Keep function package private *)
-(*PackageScope["privateFunc"]*)
-(*privateFunc[x_] := x^2;*)
 
-(* Export functions *)
-(*PackageExport["exportedFunc"]*)
-(*exportedFunc[] := "Hello World";*)
+(* Differentiation of pure functions. Sort of. Until we can have non-symbolic heads. *)
+Derivative[f_, x_]:= SymbolicApply[f, D, Sequence[x, x]];
+SetAttributes[Derivative, HoldAll];
 
 
-DifferentiationDownValues = {
+$DifferentiationDownValues = {
   (* Freshman  Calculus *)
   D[x_, y_] :> 0 /; FreeQ[x, y]
   (*
@@ -39,7 +36,7 @@ DifferentiationDownValues = {
 
 };
 
-DifferentiationUpValues = {
+$DifferentiationUpValues = {
   (* Freshman  Calculus *)
   D[x_^n_, y_] :> n*x_^(n-1)*D[x, y] /; OccursQ[x, y] && FreeQ[n, y] && Not[n===0], (*Power Rule*)
   (*D[x_*y_*exp___, z_] :> x*D[y*exp, z] /; FreeQ[x, z], Folded into product rule *)(* Constant Multiple Rule *)

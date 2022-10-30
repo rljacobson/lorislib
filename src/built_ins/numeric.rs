@@ -72,10 +72,6 @@ pub(crate) fn N(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
     format!(
       "N called with arguments {}",
       display_solutions(&arguments)
-      // &arguments.iter().map(|(e, f)| {
-      //   format!("{} -> {}", e.to_string(), f.to_string())
-      // }
-      // ).collect::<Vec<_>>().join(", ")
     ).as_str()
   );
 
