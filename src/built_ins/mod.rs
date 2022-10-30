@@ -56,7 +56,7 @@ use numeric::register_builtins as register_numeric;
 pub const DEFAULT_REAL_PRECISION: u32 = 53;
 
 //                        f(substitutions, original_expression, context) -> evaluated_expression
-pub type BuiltinFn = fn(SolutionSet, Atom, &Context) -> Atom;
+pub type BuiltinFn = fn(SolutionSet, Atom, &mut Context) -> Atom;
 /// The signature of the built-in functions that require mutable access to the context.
 pub type BuiltinFnMut = fn(SolutionSet, Atom, &mut Context) -> Atom;
 
@@ -171,7 +171,7 @@ pub(crate) fn register_builtins(context: &mut Context) {
           return;
         }
       };
-      set_verbosity(4);
+      // set_verbosity(4);
       evaluate(expression, context);
     }
 
@@ -215,7 +215,7 @@ pub fn collect_symbol_or_head_symbol(pattern_function: Atom) -> Vec<InternedStri
     match c {
       Atom::Symbol(name) => Some(*name),
       Atom::SExpression(f)=> {
-        if c.is_any_variable_kind() {
+        if c.is_any_variable_kind().is_some() {
           None
         } else {
           Some(f[0].name().unwrap())
@@ -302,7 +302,7 @@ mod tests {
 
     // Check.
     let record = context.get_symbol(interned_static("Set")).unwrap();
-    assert_eq!(record.down_values[0], value);
+    assert_eq!((&*record.down_values).borrow()[0], value);
   }
 
   #[test]

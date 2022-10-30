@@ -86,7 +86,7 @@ pub(crate) mod verbosity {
   use yansi::Paint;
 
   // todo: Put `VERBOSITY` behind a mutex to get rid of `unsafe` and make thread safe.
-  pub(crate) static mut VERBOSITY: i32    = 0;
+  pub(crate) static mut VERBOSITY: i32    = 1;
   lazy_static! {
     static ref LOGGING_STREAM: Mutex<Stdout> = Mutex::new(stdout());
   }

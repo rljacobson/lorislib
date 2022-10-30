@@ -15,8 +15,11 @@ Todo: Predefined and built-in symbols should live in the `Std` context. Contexts
 #![allow(dead_code)]
 
 
+use std::borrow::{Borrow, BorrowMut};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
+use std::rc::Rc;
 
 use crate::{atom::{
   Atom
@@ -28,27 +31,29 @@ use crate::{atom::{
   register_builtins
 }};
 use crate::built_ins::BuiltinFnMut;
-use crate::interner::{interned_static, InternedString, resolve_str};
+use crate::interner::{interned_static, InternedString, resolve_str, interned};
 use crate::logging::set_verbosity;
 // use crate::parsing::{Lexer, parse};
 
 
 pub struct Context{
   // todo: Should there be a context path object?
-  name   : InternedString,
-  symbols: HashMap<InternedString, SymbolRecord>,
-  state: u64
+  name          : InternedString,
+  symbols       : HashMap<InternedString, SymbolRecord>,
+  /// Incremented every time this context is modified. It is accessed publicly by `state_version` and used during
+  /// evaluation to determine if an expression is completely evaluated.
+  state         : u64,
+  next_fresh_var: u64,
 }
 
 impl Context {
 
   pub fn new_global_context() -> Context {
     let mut context = Context{
-      name: interned_static("Global"),
-      symbols: HashMap::new(),
-      /// Incremented every time this context is modified. It is accessed publicly by `state_version` and used during
-      /// evaluation to determine if an expression is completely evaluated.
-      state: 0
+      name          : interned_static("Global"),
+      symbols       : HashMap::new(),
+      state         : 0,
+      next_fresh_var: 0,
     };
 
     register_builtins(&mut context);
@@ -60,8 +65,9 @@ impl Context {
   pub(crate) fn without_built_ins(name: InternedString) -> Context {
     Context{
       name,
-      symbols: HashMap::new(),
-      state: 0
+      next_fresh_var: 0,
+      symbols       : HashMap::new(),
+      state         : 0,
     }
   }
 
@@ -69,6 +75,12 @@ impl Context {
 
   pub fn state_version(&self) -> u64 {
     self.state
+  }
+
+  pub fn fresh_variable(&mut self) -> Atom {
+    let name = format!("tmp${}", self.next_fresh_var);
+    self.next_fresh_var += 1;
+    Atom::Symbol(interned(name.as_str()))
   }
 
   /// Sets the logging verbosity, the level at which messages are reported to the user.
@@ -101,8 +113,8 @@ impl Context {
   pub(crate) fn set_down_value_attribute(&mut self, symbol: InternedString, value: SymbolValue, attributes: Attributes) {
     let record = self.get_symbol_mut(symbol);
 
-    if !record.down_values.contains(&value) {
-      record.down_values.push(value);
+    if !(&*record.down_values).borrow().contains(&value) {
+      (&*record.down_values).borrow_mut().push(value);
     }
     record.attributes.update(attributes);
   }
@@ -129,14 +141,14 @@ impl Context {
 
   pub fn set_down_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
-    if record.down_values.contains(&value) {
+    if (&*record.down_values).borrow().contains(&value) {
       return Ok(());
     }
 
     // if record.attributes.read_only() {
     //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
     // } else {
-      record.down_values.push(value);
+      (&*record.down_values).borrow_mut().push(value);
       self.state += 1;
       Ok(())
     // }
@@ -149,7 +161,7 @@ impl Context {
     // if record.attributes.read_only() {
     //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
     // } else {
-      record.down_values.push(value);
+      (&*record.down_values).borrow_mut().push(value);
       self.state += 1;
       Ok(())
     // }
@@ -157,14 +169,14 @@ impl Context {
 
   pub fn set_up_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
-    if record.up_values.contains(&value) {
+    if (&*record.up_values).borrow().contains(&value) {
       return Ok(());
     }
 
     // if record.attributes.read_only() {
     //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
     // } else {
-      record.up_values.push(value);
+      (&*record.up_values).borrow_mut().push(value);
       self.state += 1;
       Ok(())
     // }
@@ -172,14 +184,14 @@ impl Context {
 
   pub fn set_own_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
-    if record.own_values.contains(&value) {
+    if (&*record.own_values).borrow().contains(&value) {
       return Ok(());
     }
 
     // if record.attributes.read_only() {
     //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
     // } else {
-      record.own_values.push(value);
+      (&*record.own_values).borrow_mut().push(value);
       self.state += 1;
       Ok(())
     // }
@@ -187,14 +199,14 @@ impl Context {
 
   pub fn set_sub_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
-    if record.sub_values.contains(&value) {
+    if (&*record.sub_values).borrow().contains(&value) {
       return Ok(());
     }
 
     // if record.attributes.read_only() {
     //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
     // } else {
-      record.sub_values.push(value);
+      (&*record.sub_values).borrow_mut().push(value);
       self.state += 1;
       Ok(())
     // }
@@ -257,19 +269,19 @@ pub struct SymbolRecord {
   pub attributes: Attributes,
 
   /// OwnValues define how the symbol appearing alone should be evaluated. They have the form `x :> expr` or `x=expr`.
-  pub own_values: Vec<SymbolValue>,
+  pub own_values: Rc<RefCell<Vec<SymbolValue>>>,
 
   /// UpValues define how M-expressions having the symbol as an argument should be evaluated. They typically have the
   /// form `f[pattern,g[pattern],pattern]:>expr`. UpValues are applied before DownValues.
-  pub up_values:  Vec<SymbolValue>,
+  pub up_values:  Rc<RefCell<Vec<SymbolValue>>>,
 
   /// DownValues define how M-expressions having the symbol as their head should be evaluated. They typically have the
   /// form `f[pattern]:>expr`
-  pub down_values: Vec<SymbolValue>,
+  pub down_values: Rc<RefCell<Vec<SymbolValue>>>,
 
   /// SubValues define how M-expressions having an M-expression with the symbol as a head should be evaluated. They
   /// typically have the form `f[pat][pat]:>exp`.
-  pub sub_values: Vec<SymbolValue>,
+  pub sub_values: Rc<RefCell<Vec<SymbolValue>>>,
 }
 
 impl SymbolRecord {
@@ -278,11 +290,13 @@ impl SymbolRecord {
       symbol: name,
       // Todo: Store attributes separately. They need to be accessed very frequently, very often for symbols that do
       //       not yet exist in the context. Not so much for efficiency as programmer ergonomics.
-      attributes: Default::default(),
-      own_values: vec![],
-      up_values: vec![],
-      down_values: vec![],
-      sub_values: vec![]
+      attributes : Default::default(),
+      // Todo: Putting these vectors into `Rc<RefCell<…>>`s is not a solution, because the same `*value` of the same
+      //       symbol could still be accessed, and if that access is mutable, we explode.
+      own_values : Rc::new(RefCell::new(vec![])),
+      up_values  : Rc::new(RefCell::new(vec![])),
+      down_values: Rc::new(RefCell::new(vec![])),
+      sub_values : Rc::new(RefCell::new(vec![])),
     }
   }
 }

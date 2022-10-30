@@ -1,6 +1,11 @@
 #![feature(type_alias_impl_trait)]
 #![allow(dead_code)]
+/*
 
+ToDo: Since we link to the log (v0.4.17) crate anyway, we should use it. Look at flexi_logger:
+      https://docs.rs/flexi_logger/0.24.0/flexi_logger/filter/index.html
+
+*/
 #[macro_use]
 mod atom;
 mod attributes;

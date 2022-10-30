@@ -456,6 +456,137 @@ pub(crate) fn Binomial(arguments: SolutionSet, original: Atom, _: &mut Context) 
   }
 }
 
+/// Implements calls matching
+///     `Power[base_, exp_]`
+pub(crate) fn Power(arguments: SolutionSet, original: Atom, _: &mut Context) -> Atom {
+  log(
+    Channel::Debug,
+    4,
+    format!(
+      "Power called with arguments {}",
+      display_solutions(&arguments)
+    ).as_str()
+  );
+  // Two arguments
+  let base = &arguments[&SExpression::variable_static_str("base")];
+  let exp = &arguments[&SExpression::variable_static_str("exp")];
+
+  match (base, exp) {
+    (Atom::Integer(n), Atom::Integer(m)) => {
+      let result: BigInteger = n.clone();
+      // todo: We have to decide how to handle reciprocals and stuff.
+      if m < &0i32 {
+        // We compute n^-m and then return the reciprocal.
+        let positive_exponent = m.clone().neg();
+        let within_range: u32 = match positive_exponent.try_into() {
+          Ok(v) => v,
+          Err(_) => {
+            log(
+              Channel::Error,
+              1,
+          "Exponent is out of range."
+            );
+            return original;
+          }
+        };
+        let result = result.pow(within_range);
+
+        apply_binary(
+          "Divide",
+          Atom::Integer(BigInteger::from(1)),
+          Atom::Integer(result)
+        )
+      } else if m == &0 {
+        if n == &0 {
+          Symbol::from_static_str("Indeterminate")
+        } else {
+          Atom::Integer(BigInteger::from(1))
+        }
+      } else {
+        let within_range: u32 = match m.try_into() {
+          Ok(v) => v,
+          Err(e) => {
+            log(
+              Channel::Error,
+              1,
+              format!("Exponent is out of range: {}", e).as_str(),
+            );
+            return original;
+          }
+        };
+        let result = result.pow(within_range);
+        Atom::Integer(result)
+      }
+    } // end branch if both are integers
+
+    (Atom::Real(r), Atom::Integer(m)) => {
+      let result: BigFloat = r.clone();
+      if m < &0i32 {
+        // We compute n^-m and then return the reciprocal: // r^-p = 1/(r^p)
+        let positive_exponent = m.clone().neg();
+        let within_range: u32 = match positive_exponent.try_into() {
+          Ok(v) => v,
+          Err(_) => {
+            log(
+              Channel::Error,
+              1,
+              "Exponent is out of range."
+            );
+            return original;
+          }
+        };
+        let result: BigFloat = result.pow(within_range);
+        // r^-m = 1/(r^m)
+        Atom::Real(result.recip())
+      } else if m == &0 {
+        if r.is_zero() {
+          Symbol::from_static_str("Indeterminate")
+        } else{
+          Atom::Real(BigFloat::with_val(DEFAULT_REAL_PRECISION, 1))
+        }
+      } else {
+        let within_range: u32 = match m.try_into() {
+          Ok(v) => v,
+          Err(_) => {
+            log(
+              Channel::Error,
+              1,
+              "Exponent is out of range."
+            );
+            return original;
+          }
+        };
+        let result = result.pow(within_range);
+        Atom::Real(result)
+      }
+    }
+
+    (Atom::Integer(n), Atom::Real(r)) => {
+      // todo: Complex numbers from fractional roots
+      if n < &0 && r < &1.0 && r > &-1.0 {
+        log(Channel::Error, 1, "Complex numbers haven't been invented yet.");
+        original
+      }
+      else if n == &0 && r.is_zero() {
+        Symbol::from_static_str("Indeterminate")
+      } else if n == &0 {
+        Atom::Integer(BigInteger::from(0))
+      } else if r.is_zero() {
+        Atom::Real(BigFloat::with_val(DEFAULT_REAL_PRECISION, 1))
+      } else {
+        let real_n = BigFloat::with_val(DEFAULT_REAL_PRECISION,n);
+        Atom::Real(real_n.pow(r))
+      }
+    }
+
+    _ => {
+      // We do not automatically expand things like (1+x)^2
+      original
+    }
+
+  }
+}
+
 
 /// Implements calls matching
 ///     `Series[f_, {x_, c_, n_}] := builtin[n,m]`
@@ -495,10 +626,7 @@ pub(crate) fn Series(arguments: SolutionSet, original: Atom, context: &mut Conte
   let mut new_children: Vec<Atom> = Vec::with_capacity(n as usize + 2); // Includes the head and the order
   new_children.push(Symbol::from_static_str("Plus")); // Head
   // The zeroth derivative: evaluate f[c]
-  let pushing = match replace_all_bound_variables(&f, &x_to_c, context) {
-    Some(u) => u,
-    None => f.clone()
-  };
+  let pushing = replace_all_bound_variables(&f, &x_to_c, context);
   new_children.push(pushing);
 
   // Derivatives 1 through n
@@ -509,10 +637,7 @@ pub(crate) fn Series(arguments: SolutionSet, original: Atom, context: &mut Conte
           apply_binary("D", derivative.clone(), x.clone()),
           context
         );
-    let applying = match replace_all_bound_variables(&derivative, &x_to_c, context) {
-      Some(u) => u,
-      None => derivative.clone(),
-    };
+    let applying = replace_all_bound_variables(&derivative, &x_to_c, context);
     let coeff: Atom = // f^{(m)}(c)/m!
         apply_binary(
           "Divide",

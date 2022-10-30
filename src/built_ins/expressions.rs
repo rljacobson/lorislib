@@ -7,7 +7,7 @@ Expression manipulation
 use std::{
   rc::Rc
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 
 
@@ -26,8 +26,7 @@ use crate::{
     Symbol,
     SExpression,
     Atom,
-    AtomKind,
-    SExpression::make_variable
+    AtomKind
   },
   attributes::{
     Attribute
@@ -42,6 +41,8 @@ use crate::{
   },
 };
 use crate::built_ins::{occurs_check, register_builtin};
+use crate::evaluate::replace_all_bound_variables;
+use crate::interner::InternedString;
 #[allow(unused_imports)]#[allow(unused_imports)]
 use crate::interner::resolve_str;
 #[allow(unused_imports)]
@@ -71,107 +72,158 @@ pub(crate) fn OccursQ(arguments: SolutionSet, _original: Atom, _: &mut Context) 
   }
 }
 
+/// Utility function to replace the pattern variables in the rule with fresh variables. This step is necessary any
+/// time there is the possibility that the variable names in a pattern could collide with the symbols in the subject.
+pub fn give_fresh_variables(substitutions: &SolutionSet, context: &mut Context) -> SolutionSet {
+  // The names of the fresh variables are not valid identifiers so that user code cannot conflict with them. Also,
+  // the names don't repeat until ~18.4 millions of trillions of names have been generated, sometime after the heat
+  // death of the universe. We give the global context the job of keeping track of fresh variables.
+  let mut new_substitutions = SolutionSet::new();
+  let mut fresh_variables = HashMap::new();
+
+  for (lhs, rhs) in substitutions{
+    // Pattern variables on the rhs are treated just like any other expression.
+    if let Some(variables) = get_all_variable_names(&lhs){
+      fresh_variables.clear(); // We'll reuse this.
+      for variable_name in variables{
+        let old_symbol = Atom::Symbol(variable_name);
+        let new_symbol = context.fresh_variable();
+        fresh_variables.insert(old_symbol, new_symbol);
+      }
+
+      new_substitutions.insert(
+        replace_all_ground_terms(lhs.clone(), &fresh_variables),
+        replace_all_ground_terms(rhs.clone(), &fresh_variables),
+      );
+    } else {
+      new_substitutions.insert(lhs.clone(), rhs.clone());
+    }
+  }
+
+  new_substitutions
+}
+
+/// Creates a set of names of all (pattern) variables appearing in `expression`.
+pub fn get_all_variable_names(expression: &Atom) -> Option<HashSet<InternedString>> {
+  let mut variables: HashSet<InternedString> = HashSet::new();
+
+  // This is an obnoxious pattern.
+  if let Some(name) = expression.is_variable() {
+    variables.insert(name);
+    return Some(variables);
+  } else if let Some(name) = expression.is_sequence_variable() {
+    variables.insert(name);
+    return Some(variables);
+  } else if let Some(name) = expression.is_null_sequence_variable() {
+    variables.insert(name);
+    return Some(variables);
+  }
+
+  if let Atom::SExpression(children) = expression {
+    for names in children.iter().filter_map(|c| get_all_variable_names(c)) {
+      variables.extend(names.iter());
+    }
+  }
+
+  if variables.is_empty() {
+    None
+  } else {
+    Some(variables)
+  }
+
+}
 
 /// Internal version of `ReplaceAll`
-/// Performs all substitutions in the given solution set on expression.
+/// Performs all substitutions in the given substitution set on expression.
+/// It is the caller's responsibility to ensure that the substitutions have fresh variables.
+/// Note: If you want to instantiate a set of _variable bindings_, which also have the type `SolutionSet`, use
+/// `crate::evaluate::replace_all_bound_variables`, which replaces variables by name instead of using the pattern
+/// matcher.
 pub(crate) fn replace_all(expression: Atom, substitutions: &SolutionSet, context: &mut Context) -> Atom {
-  // The first time this function is called, the substitutions might be a set of `Rule`s with nontrivial patterns on
-  // their lhs, patterns that may have several variables to bind--or no variables at all. Therefore, we cannot assume
-  // that `substitutions` is just a set of variables and the values they are bound to.
-  //
-  // However, once a complicated pattern has matched, the result _is_ just a (possibly empty) set of variables and
-  // their values.
-
   // Is expression a key in substitutions?
   if let Some(replacement) = substitutions.get(&expression){
+    // Great, we can skip the pattern matcher altogether.
+    log(
+      Channel::Debug,
+      4,
+      format!("Replacing {} with {}.", expression, replacement).as_str()
+    );
     return replacement.clone();
   }
 
+  // First, try to match expression itself.
+  for (pattern, substitution) in substitutions {
+    log(
+      Channel::Debug,
+      4,
+      format!("Replacing all occurrences of pattern {} with {} in {}.", pattern, substitution, expression).as_str()
+    );
+    let mut matcher = Matcher::new(pattern.clone(), expression.clone(), context);
+    match matcher.next(context) {
 
-  match &expression {
-    Atom::SExpression(children) => {
-      // If expression is an s-expression, two (remaining) possibilities:
-      //   1. There is a non-simple pattern that matches expression, creating a set of variable bindings.
-      //   2. or there isn't a top-level match and the process needs to recurse into the children.
-
-      for (pattern, substitution) in substitutions {
-        if pattern.is_any_variable_kind() {
-          // A variable will *match*, but it won't be the right replacement.
-          continue;
-        }
-
+      Some(matched_substitution) => {
+        // Match succeeded. Instantiate the variable bindings in the substitution.
         log(
           Channel::Debug,
           4,
-          format!("Replacing all occurrences of pattern {} with {} in {}.", pattern, substitution, expression).as_str()
+          format!(
+            "Pattern match gave substitutions {}, doing replacement in {}",
+            display_solutions(&matched_substitution),
+            &substitution
+          ).as_str()
         );
-        let mut matcher = Matcher::new(pattern.clone(), expression.clone(), context);
-        match matcher.next() {
-          Some(matched_substitution) => {
+        let result = replace_all_bound_variables(substitution, &matched_substitution, context);
+        log(
+          Channel::Debug,
+          4,
+          format!("...after replacement: {}.", result).as_str()
+        );
+        return result;
+      }
 
-            // On the other hand, matched_substitution might be a binding of several variables, or maybe a single
-            // variable that is a child  or  a grandchild of `expression`. In this case, we must continue replacing
-            // the bound variables in `substitution`
-            log(
-              Channel::Debug,
-              4,
-              format!(
-                "Pattern match gave substitutions {}, doing replacement in {}",
-                display_solutions(&matched_substitution),
-                &substitution
-              ).as_str()
-            );
-            // The pattern bound some variables.
-            let result = replace_all(substitution.clone(), &matched_substitution, context);
-            log(
-              Channel::Debug,
-              4,
-              format!("...after replacement: {}.", result).as_str()
-            );
-            return result;
-          }
-          None => {
-            continue;
-          }
-        }
-
-      } // end loop over patterns
-
-      // Recurse into children.
-      let new_children = children.iter().map(|c| replace_all(c.clone(), substitutions, context)).collect();
-
-      Atom::SExpression(Rc::new(new_children))
+      None => {
+        // This pattern did not match. Try the next one.
+        continue;
+      }
     }
 
-    Atom::Symbol(name) => {
-      // If expression is a symbol, it could be the name of a variable binding. This is a little annoying to check in
-      // constant time. Because the keys are pattern variables, not symbols, we need to make variable version of
-      // expresssion.
+  } // end loop over patterns
 
-      // Look for a variable with the same name is a key in `substitutions`.
-      let var = make_variable(expression.clone(), "Blank");
-      if let Some(replacement) = substitutions.get(&var) {
-        return replacement.clone();
-      }
-      let seq_var = make_variable(expression.clone(), "BlankSequence");
-      if let Some(replacement) = substitutions.get(&seq_var) {
-        return replacement.clone();
-      }
-      let null_seq_var = make_variable(expression.clone(), "BlankNullSequence");
-      if let Some(replacement) = substitutions.get(&null_seq_var) {
-        return replacement.clone();
-      }
-      expression
-    }
+  // Nothing matches `expression` itself. Now do the ReplaceAll on any children there may be, including the head.
+  if let Atom::SExpression(children) = expression {
+    let new_children = children.iter()
+                               .map(|c| replace_all(c.clone(), substitutions, context))
+                               .collect();
 
-    other => {
-      // Remaining cases are literals. We already checked that we are not a key at the top of this function.
-      expression
-    }
-
+    Atom::SExpression(Rc::new(new_children))
+  } else {
+    // Cannot recurse, so ReplaceAll left this expression unchanged.
+    expression.clone()
   }
+
 }
 
+/// A version of replace_all that assumes all substitutions are substitutions of ground terms and therefore do not
+/// require the pattern matcher. Useful for replacing subexpressions of pattern variables, for example.
+pub(crate) fn replace_all_ground_terms(expression: Atom, substitutions: &SolutionSet) -> Atom {
+  // Is expression a key in substitutions?
+  if let Some(replacement) = substitutions.get(&expression){
+    // Great, we can skip the pattern matcher altogether.
+    return replacement.clone();
+  }
+
+  // The `expression` is not a key. Do the replace on any children there may be, including the head.
+  if let Atom::SExpression(children) = expression {
+    let new_children = children.iter()
+                               .map(|c| replace_all_ground_terms(c.clone(), substitutions))
+                               .collect();
+
+    Atom::SExpression(Rc::new(new_children))
+  } else {
+    // Cannot recurse, so ReplaceAll left this expression unchanged.
+    expression
+  }
+}
 
 /// ReplaceAll[exp_, rules_]
 /// Given a list of rules, performs all substitutions defined by the rules at once.
@@ -237,9 +289,10 @@ pub(crate) fn ReplaceAll(arguments: SolutionSet, original: Atom, context: &mut C
 
       }; // end match on rule_expression
 
-  // Apply all rules at once.
-  replace_all(expression.clone(), &rules, context)
+  let fresh_rules = give_fresh_variables(&rules, context);
 
+  // Apply all rules at once.
+  replace_all(expression.clone(), &fresh_rules, context)
 }
 
 /// Replace[exp_, rules_]
@@ -255,7 +308,7 @@ pub(crate) fn Replace(arguments: SolutionSet, original: Atom, context: &mut Cont
     ).as_str()
   );
 
-  let expression = &arguments[&SExpression::variable_static_str("exp")];
+  let expression       = &arguments[&SExpression::variable_static_str("exp")];
   let rules_expression = &arguments[&SExpression::variable_static_str("rules")];
 
   let rules: Vec<SolutionSet> = // the following match
@@ -267,10 +320,9 @@ pub(crate) fn Replace(arguments: SolutionSet, original: Atom, context: &mut Cont
           if children[0] == Atom::Symbol(interned_static("List")) {
             // Now validate each element of the list.
             let rule_list = children[1..].iter().map_while(|r| r.is_rule()).collect::<Vec<_>>();
-
             if rule_list.len() != children.len() -1 {
               // Not all calls to `is_rule()` returned Some(…)
-              log(Channel::Error, 1, "Invalid input provided to Replace.");
+              log(Channel::Error, 1, "Invalid input provided to Replace. Nothing is a rule.");
               return original;
             }
 
@@ -279,13 +331,13 @@ pub(crate) fn Replace(arguments: SolutionSet, original: Atom, context: &mut Cont
           }
 
           // Single Rule
-          else if let Some((lhs, rhs)) = expression.is_rule() {
+          else if let Some((lhs, rhs)) = rules_expression.is_rule() {
             vec![HashMap::from([(lhs, rhs)])]
           }
 
           // Invalid input.
           else {
-            log(Channel::Error, 1, "Invalid input provided to Replace.");
+            log(Channel::Error, 1, "Invalid input provided to Replace. Second argument is not an s-expr.");
             return original;
           }
         }
@@ -300,9 +352,12 @@ pub(crate) fn Replace(arguments: SolutionSet, original: Atom, context: &mut Cont
 
   // Apply each rule one by one until one of them changes the expression.
   let expression_hash = expression.hashed();
+
   for rule in rules {
-    let new_expression = replace_all(expression.clone(), &rule, context);
-    if expression_hash == new_expression.hashed() {
+    let fresh_rule = give_fresh_variables(&rule, context);
+    let new_expression = replace_all(expression.clone(), &fresh_rule, context);
+
+    if expression_hash != new_expression.hashed() {
       // We have a winner!
       return new_expression;
     }
@@ -319,6 +374,7 @@ pub(crate) fn node_count(expression: &Atom) -> usize {
   match expression {
     Atom::SExpression(children) => {
       let mut accumulator = 0usize;
+
       for child in children.iter() {
         accumulator += node_count(child);
       }
@@ -468,4 +524,99 @@ pub(crate) fn register_builtins(context: &mut Context) {
     context.set_up_value(symbol, value);
     context.set_attribute(symbol, Attribute::Protected)
   };
+}
+
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn replace_ground_terms_test() {
+    let expression   = parse("f[a, c_, b__, g___]^b").unwrap();
+    let expected     = parse("f[a, c_, x__, g___]^x").unwrap();
+    let substitution = HashMap::from([(Atom::Symbol(interned_static("b")), Atom::Symbol(interned_static("x")))]);
+
+
+    let result = replace_all_ground_terms(expression.clone(), &substitution);
+    println!("Before  : {}\nAfter   : {}\nExpected: {}", expression, result, expected);
+    assert_eq!(result, expected);
+  }
+
+
+  #[test]
+  fn replace_test() {
+    let mut context = Context::without_built_ins(interned_static("Global"));
+    let original    = parse("Replace[f[a, c_, b__, g___]^b, b->x]").unwrap(); // For illustration, not used.
+    let expression  = parse("f[a, c_, b__, g___]^b").unwrap();
+    let rule        = parse("b->x").unwrap();
+    let expected    = parse("f[a, c_, x__, g___]^x").unwrap();
+    let arguments   = HashMap::from([
+      (SExpression::variable_static_str("exp"), expression.clone()),
+      (SExpression::variable_static_str("rules"), rule)
+    ]);
+    set_verbosity(4);
+
+    let result = Replace(arguments, original, &mut context);
+    println!("Before  : {}\nAfter   : {}\nExpected: {}", expression, result, expected);
+    assert_eq!(result, expected);
+  }
+
+
+  #[test]
+  fn replace_all_test() {
+    let mut context = Context::without_built_ins(interned_static("Global"));
+    let original    = parse("f[a, c_, b__, g___]^b /. {b->x, a->c/d}").unwrap(); // For illustration, not used.
+    let expression  = parse("f[a, c_, b__, g___]^b").unwrap();
+    let rules = parse("{b->x, a->c/d}").unwrap();
+    let expected    = parse("Power[f[Divide[c, d], c_, x__, g___], x]").unwrap();
+    let arguments   = HashMap::from([
+      (SExpression::variable_static_str("exp"), expression.clone()),
+      (SExpression::variable_static_str("rules"), rules)
+    ]);
+    set_verbosity(4);
+
+    let result = ReplaceAll(arguments, original, &mut context);
+    println!("Before  : {}\nAfter   : {}\nExpected: {}", expression, result, expected);
+    assert_eq!(result, expected);
+  }
+
+  #[test]
+  fn give_fresh_variables_test() {
+    let mut context  = Context::without_built_ins(interned_static("Global"));
+    let lhs          = parse("q_*x^p_").unwrap();
+    let rhs          = parse("q*f[p]").unwrap();
+    let expected     = "[ Times❨‹tmp$0›, Power❨x, ‹tmp$1›❩❩ = Times❨tmp$0, f❨tmp$1❩❩ ]";
+    let substitution = HashMap::from([
+      (lhs, rhs)
+    ]);
+    set_verbosity(4);
+
+    let result = give_fresh_variables(&substitution, &mut context);
+    println!(
+      "Before  : {}\nAfter   : {}\nExpected: {}",
+       display_solutions(&substitution),
+       display_solutions(&result),
+       expected
+    );
+    // assert_eq!(result, expected);
+  }
+
+  #[test]
+  fn complicated_replace_all_test() {
+    let mut context = Context::without_built_ins(interned_static("Global"));
+    let original    = parse("1 + 3*x^2 + 5*x^4 /. c_*x^p_ :> c*f[p]").unwrap(); // For illustration, not used.
+    let expression  = parse("1 + 3*x^2 + 5*x^4").unwrap();
+    let rules = parse("c_*x^p_ :> c*f[p]").unwrap();
+    let expected    = parse("1 + 3*f[2] + 5*f[4]").unwrap();
+    let arguments   = HashMap::from([
+      (SExpression::variable_static_str("exp"), expression.clone()),
+      (SExpression::variable_static_str("rules"), rules)
+    ]);
+    set_verbosity(4);
+
+    let result = ReplaceAll(arguments, original, &mut context);
+    println!("Before  : {}\nAfter   : {}\nExpected: {}", expression, result, expected);
+    assert_eq!(result, expected);
+  }
 }

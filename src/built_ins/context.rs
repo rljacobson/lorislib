@@ -7,11 +7,7 @@ Todo: Should a lot of these functions be factored out into methods on `Context`?
 */
 #![allow(non_snake_case)]
 
-use std::{
-  cmp::max,
-  rc::Rc,
-  str::FromStr
-};
+use std::{cmp::max, rc::Rc, str::FromStr};
 
 use strum::{IntoEnumIterator};
 
@@ -34,7 +30,7 @@ use crate::{atom::SExpression::extract_thing_or_list_of_things, matching::{
   Channel
 }, interner::{
   interned_static
-}, interner::InternedString, interner::resolve_str, register_builtin_mut};
+}, interner::InternedString, interner::resolve_str};
 #[allow(unused_imports)]
 use crate::logging::set_verbosity;
 
@@ -167,25 +163,29 @@ pub(crate) fn UpValues(arguments: SolutionSet, original: Atom, context: &mut Con
     let record = context.get_symbol(*name);
     let children: Vec<Atom> = // the following match
         match record {
-          Some(record) => record.up_values.iter().map(|sv| {
-            match sv{
-              SymbolValue::Definitions { def, .. } => hold(def.clone()),
-              // todo: Handle case that built-in has a condition.
-              | SymbolValue::BuiltIn { pattern, .. }
-              | SymbolValue::BuiltInMut { pattern, .. } => {
-                hold(
-                  Atom::SExpression(Rc::new(
-                    vec![
-                      Symbol::from_static_str("RuleDelayed"),
-                      pattern.clone(),
-                      Symbol::from_static_str("BuiltIn")
-                    ]
-                  ))
-                )
+          Some(record) => {
+            let up_values = (&*record.up_values).borrow();
+            up_values.iter().map(|sv| {
+              match sv {
+                SymbolValue::Definitions { def, .. } => hold(def.clone()),
+                // todo: Handle case that built-in has a condition.
+                | SymbolValue::BuiltIn { pattern, .. }
+                | SymbolValue::BuiltInMut { pattern, .. } => {
+                  hold(
+                    Atom::SExpression(Rc::new(
+                      vec![
+                        Symbol::from_static_str("RuleDelayed"),
+                        pattern.clone(),
+                        Symbol::from_static_str("BuiltIn"),
+                      ]
+                    ))
+                  )
+                }
               }
             }
-          }
-          ).collect(),
+            ).collect()
+          },
+
           None => vec![]
         };
     SExpression::new(
@@ -215,7 +215,8 @@ pub(crate) fn DownValues(arguments: SolutionSet, _original: Atom, context: &mut 
     let children: Vec<Atom> = // the following match
         match record {
           Some(record) => {
-            record.down_values.iter().map(|sv| {
+            let down_values = (&*record.down_values).borrow();
+            down_values.iter().map(|sv| {
               println!("{:?}", sv);
               match sv {
                 SymbolValue::Definitions { def, .. } => def.clone(),

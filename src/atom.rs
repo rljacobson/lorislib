@@ -7,6 +7,19 @@ Clones are cheap! An `Atom` is at most a couple of fat pointers. S-expressions s
 child, which admittedly happens a lot. Long-term goal is to reduce this, but not before benchmarking to see if it's a
 bottleneck. But most s-expressions only have one or two children, so even that is cheap the majority of the time.
 
+ToDo: Several flags would likely increase performance.
+      Stable - A subterm is stable if its root cannot change under instantiation.
+      InEagerContext - A subterm is in an eager context if the path to its root contains only eagerly evaluated
+                       positions. (For term sharing/hash consing.)
+      Normalized - In theory normal form.
+      Ground - Has no variables.
+      HasFreshVariables - The variables appearing in the expression are guaranteed not to appear in any other
+                          expression (aside from its own subexpressions).
+      HoldAll/Rest/First - or do what Maude does and have evaluation strategies, which explicitely specify evaluation
+                           order.
+      NHold*
+
+ Total: 9 bits.
 */
 
 use std::{
@@ -182,10 +195,12 @@ impl Atom {
     }
   }
 
-  pub(crate) fn is_any_variable_kind(&self) -> bool {
-    self.check_variable_pattern("Blank").is_some()
-        || self.check_variable_pattern("BlankSequence").is_some()
-        || self.check_variable_pattern("BlankNullSequence").is_some()
+  pub(crate) fn is_any_variable_kind(&self) -> Option<InternedString> {
+    self.check_variable_pattern("Blank").or_else(
+      | | self.check_variable_pattern("BlankSequence").or_else(
+        | | self.check_variable_pattern("BlankNullSequence")
+      )
+    )
   }
 
   /// Checks if `self` has the form `Pattern[□, Blank[□]]` (equiv. `□_□`).

@@ -185,7 +185,7 @@ mod tests {
     println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
 
     let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
-    let result : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let result : Vec<String> = matcher.into_iter(&mut context).map(|s| display_solutions(&s)).collect();
     let result = result.join(", ");
     println!("Expected: {}\nFound: {}", expected, result);
 
@@ -204,7 +204,7 @@ mod tests {
     println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
 
     let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
-    let result : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let result : Vec<String> = matcher.into_iter(&mut context).map(|s| display_solutions(&s)).collect();
     let result = result.join(", ");
     println!("Expected: {}\nFound: {}", expected, result);
 
@@ -225,7 +225,7 @@ mod tests {
     println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
 
     let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
-    let result : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let result : Vec<String> = matcher.into_iter(&mut context).map(|s| display_solutions(&s)).collect();
     let result = result.join(", ");
     println!("Expected: {}\nFound: {}", expected, result);
 
@@ -248,7 +248,7 @@ mod tests {
     println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
 
     let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
-    let result : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let result : Vec<String> = matcher.into_iter(&mut context).map(|s| display_solutions(&s)).collect();
 
     println!("SOLUTIONS: {}", result.join(", "));
 
@@ -266,7 +266,7 @@ mod tests {
     println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
 
     let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
-    let result     : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let result     : Vec<String> = matcher.into_iter(&mut context).map(|s| display_solutions(&s)).collect();
 
     println!("SOLUTIONS: {}", result.join(", "));
 
@@ -286,7 +286,7 @@ mod tests {
     println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
 
     let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
-    let result     : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let result     : Vec<String> = matcher.into_iter(&mut context).map(|s| display_solutions(&s)).collect();
 
     println!("SOLUTIONS: {}", result.join(", "));
 
@@ -305,7 +305,7 @@ mod tests {
     println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
 
     let matcher: Matcher     = Matcher::new(pattern, ground, &mut context);
-    let result     : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let result     : Vec<String> = matcher.into_iter(&mut context).map(|s| display_solutions(&s)).collect();
 
     println!("SOLUTIONS: {}", result.join(", "));
 
@@ -327,7 +327,7 @@ mod tests {
     };
 
     let matcher: Matcher     = Matcher::new(me.pattern.clone(), me.ground, &mut context);
-    let result     : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let result     : Vec<String> = matcher.into_iter(&mut context).map(|s| display_solutions(&s)).collect();
     assert_eq!("EMPTY", result.join(", "));
   }
 
@@ -377,7 +377,7 @@ mod tests {
     // );
 
     let matcher: Matcher      = Matcher::new(me.pattern.clone(), me.ground, &context);
-    let result     : Vec<String>  = matcher.map(|s| display_solutions(&s)).collect();
+    let result     : Vec<String>  = matcher.into_iter(&mut context).map(|s| display_solutions(&s)).collect();
 
     assert_eq!("{«x» = a, «x» = ƒ❨a❩}", format!("{{{}}}", result.join(", ")));
   }
@@ -437,7 +437,7 @@ mod tests {
       "‹x› = b, ‹y› = a"
     ];
 
-    let result: Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let result: Vec<String> = matcher.into_iter(&mut context).map(|s| display_solutions(&s)).collect();
     assert_eq!(expected, result.as_slice());
 
     // println!("{{{}}}", result.join(", "));
@@ -475,7 +475,7 @@ mod tests {
     };
 
     let matcher: Matcher     = Matcher::new(me.pattern.clone()                  , me.ground, &context);
-    let result     : Vec<String> = matcher.map(|s| display_solutions(&s)).collect();
+    let result     : Vec<String> = matcher.into_iter(&mut context).map(|s| display_solutions(&s)).collect();
 
     #[cfg(not(feature = "strict_associativity"))]
     assert_eq!("‹x› = ƒ❨❩", result.join(", "));

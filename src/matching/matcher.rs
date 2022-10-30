@@ -15,7 +15,7 @@ ToDo: Other state includes whether or not patterns are being held. A subexpressi
       as literal symbols, not as patterns. Also, `Longest` and `Shortest` affect the order in
       which sequence variables generate matches. None of this is implemented.
 
-*/
+ */
 
 
 
@@ -25,59 +25,59 @@ use std::{
 };
 
 use crate::{
-  logging::{
-    Channel,
-    log
+  atom::{
+    Atom,
+    AtomKind,
   },
   context::Context,
+  logging::{
+    Channel,
+    log,
+  },
+  attributes::Attributes,
+  format::{DisplayForm, Formattable}
 };
-use crate::atom::{
-  Atom,
-  AtomKind
-};
-use crate::attributes::Attributes;
-use crate::format::{DisplayForm, Formattable};
+
 
 use super::{
   associative::{
     RuleDecA,
     RuleFVEA,
     RuleIVEA,
-    RuleSVEA
+    RuleSVEA,
   },
   associative_commutative::{
     RuleDecAC,
     RuleFVEAC,
+    RuleIVEAC,
     RuleSVEAC,
-    RuleIVEAC
   },
   common::{
     RuleFVE,
     RuleIVE,
-    RuleT
+    RuleT,
   },
   commutative::{
     RuleDecC,
-    RuleSVEC
+    RuleSVEC,
   },
   free_functions::{
     RuleDecF,
-    RuleSVEF
+    RuleSVEF,
   },
   match_generator::{
     MatchGenerator,
     NextMatchResult,
-    NextMatchResultList
+    NextMatchResultList,
   },
   MatchEquation,
-  SolutionSet
+  SolutionSet,
 };
 
 pub type BoxedMatchGenerator = Box<dyn MatchGenerator<Item=NextMatchResultList>>;
 
 /// Items that can be pushed onto the match stack.
 pub(crate) enum MatchStack {
-
   /// The match generator responsible for the operations sitting immediately above it on
   /// the stack. Those operations are undone in order to get back to the
   /// match generator to call `next()`.
@@ -94,30 +94,26 @@ pub(crate) enum MatchStack {
 
 
 impl MatchStack {
-
   /// Wraps the given `MatchGenerator`.
   pub fn rule(generator: BoxedMatchGenerator) -> MatchStack {
     MatchStack::MatchGenerator(generator)
   }
-
 }
 
 
 /// Holds the state of the in-process pattern matching attempt.
-pub struct Matcher<'c> {
+pub struct Matcher {
   /// The match_stack is where operations that change the state are recorded.
   /// Operations are pushed when they are done and popped when they are undone.
   match_stack: Vec<MatchStack>,
   /// The match equations that still need to be solved.
   equation_stack: Vec<MatchEquation>,
-  /// The symbol table recording all veriable/sequence variable bindings.
+  /// The symbol table recording all variable/sequence variable bindings.
   substitutions: SolutionSet,
-  /// The matcher needs to be able to look up the attributes of functions from the context.
-  context: &'c Context
 }
 
 
-impl<'c> Display for Matcher<'c> {
+impl<'c> Display for Matcher {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let equations = self.equation_stack
                         .iter()
@@ -134,15 +130,13 @@ impl<'c> Display for Matcher<'c> {
 }
 
 
-impl<'c> Matcher<'c> {
-
+impl<'c> Matcher {
   /// Create a new `MatchGenerator` for the match equation `pattern`≪`subject`.
-  pub fn new(pattern: Atom, subject: Atom, context: &'c Context) -> Matcher {
+  pub fn new(pattern: Atom, subject: Atom, _context: &'c Context) -> Matcher {
     Matcher {
       match_stack: Vec::new(),
-      equation_stack: vec![MatchEquation{pattern, ground: subject}],
+      equation_stack: vec![MatchEquation { pattern, ground: subject }],
       substitutions: HashMap::new(),
-      context
     }
   }
 
@@ -160,25 +154,23 @@ impl<'c> Matcher<'c> {
   fn undo(&mut self) -> BoxedMatchGenerator {
     loop {
       match self.match_stack.pop().unwrap() {
-
         MatchStack::MatchGenerator(match_generator) => {
           // Leave the match generator on top of the match stack, and don't restore
           // its match equation.
           return match_generator;
-        },
+        }
 
         MatchStack::Substitution(expression) => {
           // Remove it.
           self.substitutions.remove(&expression);
-        },
+        }
 
         MatchStack::ProducedMatchEquations(added) => {
           // Remove it.
           log(Channel::Debug, 5, format!("Removing {} added equations from equation stack with len {}.", added, self.equation_stack.len()).as_str());
           let new_length = self.equation_stack.len() - added as usize;
           self.equation_stack.truncate(new_length);
-        },
-
+        }
       } // end match on top of the stack
     } // end loop
   }
@@ -193,7 +185,6 @@ impl<'c> Matcher<'c> {
     let match_generator = self.undo();
     // Restore the match equation corresponding to the match generator.
     self.equation_stack.push(match_generator.match_equation());
-
   }
 
 
@@ -205,7 +196,7 @@ impl<'c> Matcher<'c> {
   /// Check which rule applies to the active match equation, creates the match
   /// generator for that rule, and pushes the match generator onto the match
   /// stack.
-  fn select_rule(&mut self) -> Result<(), ()>{
+  fn select_rule(&mut self, context: &Context) -> Result<(), ()> {
     /*
 
       "The form and the conditions of the rules guarantee that no two rules apply to the same
@@ -236,12 +227,10 @@ impl<'c> Matcher<'c> {
       log(Channel::Debug, 5, format!("Creating Trivial rule for {}", me).as_str());
       self.push_rule(Box::new(rule));
       return Ok(());
-
     } else if let Some(rule) = RuleIVE::try_rule(&me) {
       log(Channel::Debug, 5, format!("Creating IVE for {}", me).as_str());
       self.push_rule(Box::new(rule));
       return Ok(());
-
     } else if let Some(rule) = RuleFVE::try_rule(&me) {
       log(Channel::Debug, 5, format!("Creating FVE for {}", me).as_str());
       self.push_rule(Box::new(rule));
@@ -258,6 +247,7 @@ impl<'c> Matcher<'c> {
     }
 
     // Another opportunity to bail early. This indicates program state that should be impossible.
+    // Note: The case of `x_ << ƒ[…]` should have been taken care of in IVE above.
     if me.pattern.head() != me.ground.head() {
       log(Channel::Debug, 5, "Both sides not functions.".to_string().as_str());
       // Return match equation.
@@ -265,7 +255,7 @@ impl<'c> Matcher<'c> {
       return Err(());
     }
 
-    let ground_attributes: Attributes = self.context.get_attributes(me.ground.name().unwrap());
+    let ground_attributes: Attributes = context.get_attributes(me.ground.name().unwrap());
 
     match (ground_attributes.commutative(), ground_attributes.associative()) {
 
@@ -308,7 +298,7 @@ impl<'c> Matcher<'c> {
           return Err(());
         }
         Ok(())
-      },
+      }
 
       // Rules for associative functions
       (false, true) => {
@@ -339,7 +329,7 @@ impl<'c> Matcher<'c> {
           return Err(());
         }
         Ok(())
-      },
+      }
 
       // Rules for associative-commutative symbols.
       (true, true) => {
@@ -372,43 +362,34 @@ impl<'c> Matcher<'c> {
         Ok(())
       }
     } // end match on (commutative, associative)
-
   } // end fetch_rule
 
 
   /// Step 2: Store the results of `next()` on the relevant stacks.
   fn process_next_match_list(&mut self, mut results: NextMatchResultList) {
-  let mut equation_count: u32 = 0;
+    let mut equation_count: u32 = 0;
 
-  for result in results.drain(..){
-    match result {
+    for result in results.drain(..) {
+      match result {
+        NextMatchResult::Substitution(substitution) => {
+          self.substitutions.insert(substitution.variable.clone(), substitution.ground.clone());
+          self.match_stack.push(MatchStack::Substitution(substitution.variable.clone()));
+        }
 
-      NextMatchResult::Substitution(substitution) => {
-        self.substitutions.insert(substitution.variable.clone(), substitution.ground.clone());
-        self.match_stack.push(MatchStack::Substitution(substitution.variable.clone()));
+        NextMatchResult::MatchEquation(match_equation) => {
+          log(Channel::Debug, 5, format!("Pushing match equation: {}", match_equation).as_str());
+          self.equation_stack.push(match_equation);
+          equation_count += 1;
+        }
       }
+    }
 
-      NextMatchResult::MatchEquation(match_equation) => {
-        log(Channel::Debug, 5, format!("Pushing match equation: {}", match_equation).as_str());
-        self.equation_stack.push(match_equation);
-        equation_count += 1;
-      }
-
+    if equation_count > 0 {
+      self.match_stack.push(MatchStack::ProducedMatchEquations(equation_count));
     }
   }
 
-  if equation_count > 0 {
-    self.match_stack.push(MatchStack::ProducedMatchEquations(equation_count));
-  }
-}
-
-}
-
-
-impl<'c> Iterator for Matcher<'c> {
-  type Item = SolutionSet;
-
-  fn next(&mut self) -> Option<Self::Item> {
+  pub(crate) fn next(&mut self, context: &Context) -> Option<SolutionSet> {
     // If the last match was successful, the equation stack will be empty. But
     // there could be more solutions possible, in which case backtracking
     // will put equations back on the stack.
@@ -421,7 +402,7 @@ impl<'c> Iterator for Matcher<'c> {
 
 
       // Step 1: Act on the active equation.
-      if self.select_rule().is_err() {
+      if self.select_rule(context).is_err() {
         // Step 1.a If no rule applies…
         if self.match_stack.is_empty() {
           // Step 1.a.i. If the match stack is empty, halt with failure.
@@ -447,22 +428,20 @@ impl<'c> Iterator for Matcher<'c> {
       'step2: loop {
         // Step 2. Request a new match.
         match self.match_stack.last_mut() {
-
           None => {
             // Step 2.a
             log(Channel::Debug, 5, "Nothing on Match Stack.".to_string().as_str());
-            return None
+            return None;
           }
 
           Some(MatchStack::MatchGenerator(match_generator)) => {
             // Step 2.b
             match match_generator.next() {
-
               Some(results) => {
                 log(Channel::Debug, 5, "Match generator returned Some".to_string().as_str());
                 self.process_next_match_list(results);
                 // Step 3.b
-                if self.equation_stack.is_empty(){
+                if self.equation_stack.is_empty() {
                   log(Channel::Debug, 4, "SUCCESS!".to_string().as_str());
                   return Some(self.substitutions.clone());
                 }
@@ -483,27 +462,30 @@ impl<'c> Iterator for Matcher<'c> {
                 }
                 continue 'step2;
               }
-
             }
-          },
+          }
 
           Some(MatchStack::ProducedMatchEquations(me)) => {
             log(Channel::Debug, 5, format!("Bad state in Step 2. Expected a match generator, found # produced match equations: {}", me).as_str());
-          },
+          }
 
           Some(MatchStack::Substitution(sub)) => {
             log(Channel::Debug, 5, format!("Bad state in Step 2. Expected a match generator, found substitution: {}", sub).as_str());
           }
-
         } // end match on self.match_stack.last_mut()
 
-        continue 'step1
+        continue 'step1;
       } // end step 2 loop
     }
 
     // None
   }
+
+  pub fn into_iter(self, context: &mut Context) -> MatchIterator {
+    MatchIterator::new(self, context)
+  }
 }
+
 
 pub fn display_solutions(solution_set: &SolutionSet) -> String {
   if solution_set.is_empty() {
@@ -511,18 +493,38 @@ pub fn display_solutions(solution_set: &SolutionSet) -> String {
     String::from("EMPTY")
   } else {
     let mut subs = solution_set.iter()
-        .map(|(k, v)|
-            format!(
-              "{} = {}",
-              k.format(&DisplayForm::Matcher.into()),
-              v.format(&DisplayForm::Matcher.into()),
-            )
-        )
-        .collect::<Vec<String>>();
+                               .map(|(k, v)|
+                                   format!(
+                                     "{} = {}",
+                                     k.format(&DisplayForm::Matcher.into()),
+                                     v.format(&DisplayForm::Matcher.into()),
+                                   )
+                               )
+                               .collect::<Vec<String>>();
     subs.sort();
     format!("[ {} ]", subs.join(", "))
   }
 }
+
+pub struct MatchIterator<'a> {
+  matcher: Matcher,
+  context: &'a mut Context
+}
+
+impl<'a> MatchIterator<'a> {
+  pub fn new(matcher: Matcher, context: &'a mut Context) -> MatchIterator<'a> {
+    MatchIterator { matcher: matcher, context: context }
+  }
+}
+
+impl<'a> Iterator for MatchIterator<'a> {
+  type Item = SolutionSet;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    self.matcher.next(self.context)
+  }
+}
+
 
 // tests
 // See mod.rs for the tests.

@@ -28,16 +28,15 @@ the "fully modified state" indicator. If `expr.evaluated_version < context.versi
 use std::{
   rc::Rc
 };
-use std::iter::Peekable;
-use std::ops::Deref;
+
+
 use regex::internal::Input;
 
 use crate::{
   matching::{
     SolutionSet,
     Matcher,
-    display_solutions,
-    self
+    display_solutions
   },
   context::{
     SymbolValue,
@@ -61,6 +60,8 @@ use crate::{
 };
 use crate::built_ins::{BuiltinFn, BuiltinFnMut};
 
+
+// todo: The reasons for having this enum are dwindling.
 enum UnevaluatedDefinitionMatch{
   None,
   /// To be passed to `replace_all_bound_variables(…)`
@@ -131,20 +132,14 @@ impl UnevaluatedDefinitionMatch{
     }
   }
 */
+  // Perform the evaluation that this UnevaluatedDefinitionMatch wraps.
   pub fn apply(self, expression: Atom, context: &mut Context) -> Atom {
     match self {
 
       UnevaluatedDefinitionMatch::None => { unreachable!("Called evaluate on a non-expression. This is a bug.") }
 
       UnevaluatedDefinitionMatch::Definition { rhs, substitutions } => {
-        match replace_all_bound_variables(&rhs, &substitutions, context) {
-          None => {
-            rhs
-          }
-          Some(e) => {
-            e
-          }
-        }
+        replace_all_bound_variables(&rhs, &substitutions, context)
       }
 
       UnevaluatedDefinitionMatch::BuiltIn { substitutions, built_in } => {
@@ -158,6 +153,7 @@ impl UnevaluatedDefinitionMatch{
     }
   }
 }
+
 /*
 // todo: factor out common  code with normal evaluate.
 /// Evaluates `expression` without mutating `context`.
@@ -605,18 +601,14 @@ fn evaluate_up_values(expression: &Atom, children: &[Atom], context: &mut Contex
 Evaluating rules with conditions is a bit meta, because evaluation is
 defined in terms of evaluation. That is, to evaluate a rule, one must first
 evaluate the condition. To break the infinite regress, most rules do not have
-conditions, and most conditions are either simple or do not themselves have
-conditions.
+conditions, and most conditions are either simple or do not side-effects or conditions.
 */
 fn check_condition(condition: Atom, substitutions: &SolutionSet, context: &mut Context)
     -> bool
 {
   log(Channel::Debug, 4, format!("Checking condition expression: {}\n  with substitutions: {}",
                                  condition, display_solutions(substitutions)).as_str());
-  let condition_expression = match replace_all_bound_variables(&condition, substitutions, context) {
-    Some(expression) => expression,
-    None => condition
-  };
+  let condition_expression = replace_all_bound_variables(&condition, substitutions, context);
   log(Channel::Debug, 4, format!("Evaluating condition expression: {}", condition_expression).as_str());
   let condition_result = evaluate(condition_expression, context);
   condition_result.is_true()
@@ -643,7 +635,7 @@ fn wrap_definition_match(symbol_value: &SymbolValue, substitutions: SolutionSet)
     }
 
 
-    SymbolValue::BuiltInMut {condition, built_in, .. } => {
+    SymbolValue::BuiltInMut { built_in, .. } => {
       log(
         Channel::Debug,
         4,
@@ -659,17 +651,19 @@ fn wrap_definition_match(symbol_value: &SymbolValue, substitutions: SolutionSet)
   }
 }
 
-/// If any of the patterns in the vector of ``SymbolValue``'s match, return the RHS and the substitutions for the match.
+/// If any of the patterns in the vector of ``SymbolValue``'s match and satisfy any condition the
+/// pattern may have, return the variable bindings and substitutions or built_in for the match. The value returned is
+/// wrapped in an `UnevaluatedDefinitionMatch` and is left unevaluated.
 fn find_matching_definition(ground: Atom, symbol: InternedString, value_store: ContextValueStore, context: &mut Context)
     -> UnevaluatedDefinitionMatch
 {
-  let definitions = {
+  let definitions = { // Scope of the immutable borrow of `context`.
     if let Some(record) = context.get_symbol(symbol) {
       match value_store {
-        ContextValueStore::OwnValues => &record.own_values,
-        ContextValueStore::UpValues => &record.up_values,
-        ContextValueStore::DownValues => &record.down_values,
-        ContextValueStore::SubValues => &record.sub_values,
+        ContextValueStore::OwnValues  => record.own_values.clone(),  // Cloning an Rc<RefCell<…>>
+        ContextValueStore::UpValues   => record.up_values.clone(),   // Cloning an Rc<RefCell<…>>
+        ContextValueStore::DownValues => record.down_values.clone(), // Cloning an Rc<RefCell<…>>
+        ContextValueStore::SubValues  => record.sub_values.clone(),  // Cloning an Rc<RefCell<…>>
         _ => unimplemented!()
         // ContextValueStore::NValues => {}
         // ContextValueStore::DisplayFunction => {}
@@ -680,7 +674,8 @@ fn find_matching_definition(ground: Atom, symbol: InternedString, value_store: C
     }
   };
 
-  if !definitions.is_empty() {
+  // If-block is only for logging.
+  if !(&*definitions).borrow().is_empty() {
     log(Channel::Debug, 4, format!("Found {:?}.", value_store).as_str());
   } else {
     log(
@@ -690,39 +685,39 @@ fn find_matching_definition(ground: Atom, symbol: InternedString, value_store: C
     );
   }
 
-  for symbol_value in definitions.iter() {
+  for symbol_value in (&*definitions).borrow().iter() {
     log(Channel::Debug, 4, "Value found: ");
     let (pattern, condition) =
         match symbol_value {
 
           SymbolValue::Definitions{lhs, condition,..}=> {
-            (lhs, condition)
+            (lhs, condition.clone())
           }
 
           | SymbolValue::BuiltIn {pattern, condition, ..}
           | SymbolValue::BuiltInMut {pattern, condition, ..} => {
-            (pattern, condition)
+            (pattern, condition.clone())
           }
 
         };
 
     log(Channel::Debug, 4, format!("pattern = {}", (pattern).to_string()).as_str());
 
-    let matches: Vec<SolutionSet> = Matcher::new(pattern.clone(), ground.clone(), context).collect();
+    let mut matcher: Matcher = Matcher::new(pattern.clone(), ground.clone(), context);
 
-    for substitutions in matches {
-      if let Some(c) = condition{
+    while let Some(substitutions) = matcher.next(context) {
+      if let Some(c) = &condition {
         if check_condition(c.clone(), &substitutions, context) {
-          // matched_set.push((&symbol_value, substitutions));
           log(Channel::Debug, 4, format!("Pattern matched! Condition satisfied!").as_str());
-          return wrap_definition_match(symbol_value, substitutions);
+          return wrap_definition_match(&symbol_value, substitutions);
         } else {
           log(Channel::Debug, 4, format!("Condition failed,").as_str());
         }
       } else {
         // No condition needs satisfying
-        return wrap_definition_match(symbol_value, substitutions);
+        return wrap_definition_match(&symbol_value, substitutions);
       }
+
     } // end iterate over substitutions
   } // end iterate over definitions
 
@@ -732,54 +727,37 @@ fn find_matching_definition(ground: Atom, symbol: InternedString, value_store: C
 }
 
 
-/// Performs all substitutions in the given solution set on expression.
-pub fn replace_all_bound_variables(expression: &Atom, substitutions: &SolutionSet, context: &Context)
-  -> Option<Atom>
-{
+/// Instantiates all variables with the values they are bound to. Determines identity by symbol name.
+/// Note: This function is not for general patterns as in the `ReplaceAll` function. For that, use
+/// `crate::built_ins::expressions::replace_all`.
+pub fn replace_all_bound_variables(expression: &Atom, bindings: &SolutionSet, context: &Context) -> Atom {
   match &expression {
 
     Atom::SExpression(children) => {
-
       // Do a `ReplaceAll` on the children
       let new_children =
           children.iter()
                   .map(|c| {
-                    match replace_all_bound_variables(c, substitutions, context) {
-                      Some(e) => e,
-                      None => c.clone()
-                    }
+                    replace_all_bound_variables(c, bindings, context)
                   })
                   .collect();
-
-      Some(Atom::SExpression(Rc::new(new_children)))
+      Atom::SExpression(Rc::new(new_children))
     }
 
     Atom::Symbol(name) => {
       // If `expression` itself matches a key in `substitutions`, replace it. This is the base case for the recursion.
-      for (pattern, substitution) in substitutions {
-        if let Some(pattern_name) = pattern.is_variable() {
+      for (pattern, substitution) in bindings {
+        if let Some(pattern_name) = pattern.is_any_variable_kind() {
           if pattern_name == *name {
-            return Some(substitution.clone());
+            return substitution.clone();
           }
         }
-        else if let Some(pattern_name) = pattern.is_null_sequence_variable() {
-          if pattern_name == *name {
-            return Some(substitution.clone());
-          }
-        }
-        else if let Some(pattern_name) = pattern.is_sequence_variable() {
-          if pattern_name == *name {
-            return Some(substitution.clone());
-          }
-        }
-
-        // unreachable!("Nonvariable pattern in a variable binding: {} -> {}", pattern_name, *name);
       }
       // None apply.
-      None
+      expression.clone()
     }
 
-    _ => None
+    _ => expression.clone()
   }
 }
 

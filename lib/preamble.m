@@ -22,7 +22,7 @@ SetAttributes[FreeQ, HoldAll];
 
 (*Ln[x_]:=Log[x];*)
 
-NumberQ[n_]:=If[Head[n]==Real, True, If[Head[n]==Integer, True, False]];
+NumberQ[n_]:=If[Head[n]===Real, True, If[Head[n]===Integer, True, False]];
 Subtract[x_, rest_]:=Plus[x, Minus[rest]];
 Sqrt[x_]:=Root[2, x]; (* Poorly named, perhaps.*)
 

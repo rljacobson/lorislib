@@ -27,7 +27,7 @@ use crate::{matching::{
   interned_static
 }, evaluate, register_builtin_mut};
 use crate::atom::Symbol;
-use super::register_builtin;
+
 #[allow(unused_imports)]#[allow(unused_imports)]
 use crate::interner::resolve_str;
 #[allow(unused_imports)]
