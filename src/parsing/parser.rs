@@ -447,7 +447,7 @@ fn left_denotation(root: &mut Atom, operator: &Operator, lexer: &mut Lexer) -> R
   // elsewhere, we use a match statement to emphasize that there could be several operators with this property.
   match operator {
     Operator::Indexing { o_token, .. }
-    | Operator::Ternary{ o_token, .. } => {
+    | Operator::TernaryInfix { o_token, .. } => {
       // Note the `previous_binding_power` is 0.
       match parse_expression(0, lexer) {
 
@@ -523,7 +523,7 @@ fn left_denotation(root: &mut Atom, operator: &Operator, lexer: &mut Lexer) -> R
         // (Note that both have rbp=-1, which we already returned on. But this is a technicality.)
         // We'll keep this as a match statement just to emphasize that there could be several operator kinds.
         | Operator::Indexing{ .. }
-        | Operator::Postfix{ .. } => {
+        | Operator::UnaryPostfix { .. } => {
           // There's nothing to push onto `expression`, so this is a no-op.
           /* pass */
         }
@@ -555,6 +555,7 @@ fn left_denotation(root: &mut Atom, operator: &Operator, lexer: &mut Lexer) -> R
       expect(*o_token, lexer)?
     }
 
+    /*
     // All *left* operators having an *optional* o-token indicating an additional expression needs to be parsed.
     Operator::OptionalTernary{ o_token, ..} => {
       // First we peek to check for the optional token, consuming it if it is present.
@@ -580,6 +581,7 @@ fn left_denotation(root: &mut Atom, operator: &Operator, lexer: &mut Lexer) -> R
         } // end match on parse_expression(..)
       } // end if optional o-token is present
     } // end OptionalTernary match branch
+    */
 
     _ => {
       // If this left operator has no o-token, this is a no-op.

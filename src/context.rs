@@ -14,12 +14,12 @@ Todo: Predefined and built-in symbols should live in the `Std` context. Contexts
 */
 #![allow(dead_code)]
 
-
-use std::borrow::{Borrow, BorrowMut};
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
-use std::rc::Rc;
+use std::{
+  fmt::{Debug, Formatter},
+  collections::HashMap,
+  cell::RefCell,
+  rc::Rc
+};
 
 use crate::{atom::{
   Atom

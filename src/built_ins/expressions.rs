@@ -506,12 +506,12 @@ pub(crate) fn Sequence(arguments: SolutionSet, original: Atom, _: &mut Context) 
 
 pub(crate) fn register_builtins(context: &mut Context) {
 
-  register_builtin!(Head      , "Head[exp_]"                               , Attribute::Protected.into(), context);
-  register_builtin!(Part      , "Part[exp_, n_]"                           , Attribute::Protected.into(), context);
-  register_builtin!(NodeCount , "NodeCount[exp_]"                          , Attribute::Protected.into(), context);
-  register_builtin!(Replace   , "Replace[exp_, rules_]"                    , Attribute::Protected.into(), context);
-  register_builtin!(ReplaceAll, "ReplaceAll[exp_, rules_]"                 , Attribute::Protected.into(), context);
-  register_builtin!(OccursQ   , "OccursQ[haystack_, needle_]"              , Attribute::Protected.into(), context);
+  register_builtin!(Head      , "Head[exp_]"                 , Attribute::Protected.into(), context);
+  register_builtin!(Part      , "Part[exp_, n_]"             , Attribute::Protected.into(), context);
+  register_builtin!(NodeCount , "NodeCount[exp_]"            , Attribute::Protected.into(), context);
+  register_builtin!(Replace   , "Replace[exp_, rules_]"      , Attribute::Protected.into(), context);
+  register_builtin!(ReplaceAll, "ReplaceAll[exp_, rules_]"   , Attribute::Protected.into(), context);
+  register_builtin!(OccursQ   , "OccursQ[haystack_, needle_]", Attribute::Protected.into(), context);
   // Sequence is a bit of an oddball in that we don't care how the variables bind, and it is really only useful as an
   // up-value.
   {
@@ -521,8 +521,8 @@ pub(crate) fn register_builtins(context: &mut Context) {
       condition: None,
       built_in : Sequence,
     };
-    context.set_up_value(symbol, value);
-    context.set_attribute(symbol, Attribute::Protected)
+    context.set_up_value(symbol, value).ok();
+    context.set_attribute(symbol, Attribute::Protected).ok();
   };
 }
 

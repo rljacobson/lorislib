@@ -4,15 +4,12 @@ interner library.
 
 */
 
-use string_interner::{
-  StringInterner,
-  symbol::SymbolU32
-};
+use string_interner::{StringInterner, symbol::SymbolU32, DefaultStringInterner};
 
 pub type InternedString = SymbolU32;
 
 // todo: Make interner thread safe with RwLock.
-static mut STRING_INTERNER: Option<Box<StringInterner>> = None;
+static mut STRING_INTERNER: Option<Box<DefaultStringInterner>> = None;
 
 
 pub fn interned(string: &str) -> InternedString {

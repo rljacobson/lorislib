@@ -7,6 +7,12 @@
       "function_template": "pub(crate) fn name(arguments: SolutionSet, original: Atom, context: &mut Context) -> Atom {{\n  log(\n    Channel::Debug,\n    4,\n    format!(\n      \"{name} called with arguments {{}}\",\n      display_solutions(&arguments)\n    ).as_str()\n  );\n\n  {argument_extraction}\n  match { arg_list[0] } {{\n\n    {body}\n\n    _other => {{\n      return original;\n    }}\n  }}\n}}",
       "items": [
         {
+          "name": "N",
+          "args": ["exp_"],
+          "attrs": ["Protected"],
+          "description":
+        },
+        {
           "name": "Plus",
           "args": [
             "exp___"
@@ -17,6 +23,7 @@
             "Listable",
             "NumericFunction",
             "OneIdentity",
+            "Idempotent",
             "Protected"
           ],
           "body": "",

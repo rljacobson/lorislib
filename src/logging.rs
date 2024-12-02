@@ -99,11 +99,6 @@ pub(crate) mod verbosity {
   }
 
   pub fn set_verbosity(new_value: i32) {
-    // This function is the closest thing to a setup function we have.
-    if cfg!(windows) && !Paint::enable_windows_ascii() {
-      Paint::disable();
-    }
-
     unsafe {
       VERBOSITY = new_value;
     }

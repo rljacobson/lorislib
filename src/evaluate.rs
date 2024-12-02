@@ -2,8 +2,40 @@
 
 Facilities for evaluating expressions within a context.
 
-Evaluating an instance of `Replace` or `ReplaceAll` is equivalent to evaluating with a Context that is empty except
-for the `OwnValues` the replacements represent.
+Mathematica's evaluation strategy is described here:
+https://reference.wolfram.com/language/tutorial/Evaluation.html
+Here is a summary:
+
+    * If the expression is a raw object (e.g., Integer, String, etc.), leave it unchanged.
+    * Evaluate the head h of the expression.
+    * Evaluate each element ei of the expression in turn. If h is a symbol with attributes HoldFirst, HoldRest,HoldAll, or HoldAllComplete, then skip evaluation of certain elements.
+    * Unless h has attributes SequenceHold or HoldAllComplete, flatten out all Sequence objects that appear among the ei.
+    * Unless h has attribute HoldAllComplete, strip the outermost of any Unevaluated wrappers that appear among the ei.
+    * If h has attribute Flat, then flatten out all nested expressions with head h.
+    * If h has attribute Listable, then thread through any ei that are lists.
+    * If h has attribute Orderless, then sort the ei into order.
+    * Unless h has attribute HoldAllComplete, use any applicable transformation rules associated with f that you have defined for objects of the form h[f[e1,…],…].
+    * Use any built‐in transformation rules associated with f for objects of the form h[f[e1,…],…].
+    * Use any applicable transformation rules that you have defined for h[f[e1,e2,…],…] or for h[…][…].
+    * Use any built‐in transformation rules for h[e1,e2,…] or for h[…][…].
+
+The strategy implemented below differs from Mathematica's above. The head is considered a child for the purposes of
+evalution. The strategy is as follows:
+
+    * Symbols that are Flat or Listable are flattened or listed. This is done recursively.
+    * If the expression is a raw object (e.g., Integer, String, etc.), leave it unchanged.
+    * If the expression is a symbol, look for OwnValues. If found, evaluate it and return the result. Otherwise, the
+      symbol evaluates to itself.
+    * If the expression is a function, determine its evaluation strategy (whether the head is a symbol with HoldAll,
+      HoldFirst, HoldRest, etc.)
+    * Look for up-values of any children being evaluated according to the evaluation strategy. Apply the first one
+      encountered and restart the evaluation process.
+    * If there are no up-values, evaluate each child according to the evaluation strategy. The head is considered a
+      child. If evaluation results in a change in the expression, restart the evaluation process.
+    * Look for down-values associated with the head and apply each down-value that matches in turn. If a down-value
+      changes the expression, restart the evaluation process.
+    * If the expression remains unchanged after all definitions have been applied, evaluation stops (for the current
+      expression) and the expression is returned unchanged.
 
 `*Set` evaluates its RHS at definition time, while `*SetDelayed` evaluates its RHS at substitution time. All are
 stored in the form `RuleDelayed[ HoldPattern[ lhs ], rhs ]`
@@ -29,8 +61,6 @@ use std::{
   rc::Rc
 };
 
-
-use regex::internal::Input;
 
 use crate::{
   matching::{

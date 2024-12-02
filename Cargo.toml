@@ -15,18 +15,19 @@ publish = false
 
 
 [dependencies]
-strum        = {version = "0.23", features = ["derive"]}
-strum_macros = "0.23"   # Generates variant-name-only enum.
+strum        = {version = "0.26.3", features = ["derive"]}
+strum_macros = "0.26.4"   # Generates variant-name-only enum.
 lazy_static  = "1.4.0"
 smallvec     = {version = "1.8.0", features = ["union"]} # Vecs on the stack in the matcher
 regex        = {version = "1.6.0", default-features = false, features = ["perf", "std"]} # Lexer
 
-aho-corasick    = "0.7.19"  # Lexer
-string-interner = "0.14.0"  # Used throughout
-yansi           = "0.5.1"   # ANSI color support
+aho-corasick    = "1.1.3"  # Lexer
+string-interner = "0.18.0"  # Used throughout
+yansi           = "1.0.1"   # ANSI color support
 fnv             = "1.0.7"   # FNV-1a hash, used internally for equality check of expressions.
 num-integer     = "^0.1.44" # For num_integer::binomial. Version is sync'ed to rug's dependency.
 bit-index       = "0.2.0"   # For permutation-generator
+csv             = "1.1.6"   # Read in operator table.
 
 # Arbitrary Precision Library
 # Uses:
@@ -34,7 +35,7 @@ bit-index       = "0.2.0"   # For permutation-generator
 #   MPFR for floating-point numbers, and
 #   MPC  for complex numbers.
 [dependencies.rug]
-version = "~1.17"
+version = "1.26.1"
 default-features = false
 features = [
     "integer",

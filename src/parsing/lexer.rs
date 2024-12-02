@@ -10,7 +10,14 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use aho_corasick::{AhoCorasickBuilder, AhoCorasick, MatchKind};
+use aho_corasick::{
+  AhoCorasickBuilder,
+  AhoCorasick,
+  MatchKind,
+  StartKind,
+  Input,
+  Anchored
+};
 use regex::{
   Regex,
   Match as RegexMatch
@@ -30,9 +37,9 @@ use crate::{
     interned,
     resolve_str,
     InternedString
-  }
+  },
+  logging::{Channel, log}
 };
-use crate::logging::{Channel, log};
 
 /*
 To have dynamic lexing of operators, the lexer needs facilities for adding and removing operators.
@@ -165,10 +172,11 @@ impl<'t> Lexer<'t> {
 
   pub fn new(text: &'t str) -> Self {
     let token_matcher = AhoCorasickBuilder::new()
-        .anchored(true)
-        .auto_configure(&TOKENS)
+        .start_kind(StartKind::Anchored)
+        // .auto_configure(&TOKENS)
         .match_kind(MatchKind::LeftmostLongest)
-        .build(TOKENS);
+        .build(TOKENS)
+        .unwrap();
 
     Lexer {
       token_matcher,
@@ -281,7 +289,10 @@ impl<'t> Lexer<'t> {
   // This method is a copy+paste, because `aho_corasick::Match` is a different type from `regex::Match`.
   // todo: Factor out this common code the right way: Make supertrait, implement it for both types.
   fn get_operator_match(&mut self) -> Result<InternedString, Token> {
-    match self.token_matcher.find(&self.text[self.start..]) {
+    // Warning: Automatic coercion of `&str` to `Input` is always unanchored.
+    // See https://github.com/BurntSushi/aho-corasick/issues/114 for details.
+    let haystack = Input::new(&self.text[self.start..]).anchored(Anchored::Yes);
+    match self.token_matcher.find(haystack) {
       Some(token) => {
 
         if token.start() != 0{
