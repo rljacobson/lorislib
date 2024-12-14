@@ -495,9 +495,9 @@ pub struct RuleSVE<T>
   */
   // Todo: Determine the "right" way to have different variants of associativity.
   // This is `None` if we have not yet produced the empty sequence.
-  #[cfg(not(feature = "strict_associativity"))]
+  #[cfg(not(feature = "strict-associativity"))]
   afa_generator: Option<Box<T>>,
-  #[cfg(feature = "strict_associativity")]
+  #[cfg(feature = "strict-associativity")]
   afa_generator: Box<T>
 }
 
@@ -517,7 +517,7 @@ impl<T> Iterator for RuleSVE<T>
   fn next(&mut self) -> MaybeNextMatchResult {
     // Have we produced the empty sequence?
 
-    #[cfg(not(feature = "strict_associativity"))]
+    #[cfg(not(feature = "strict-associativity"))]
     match &mut self.afa_generator {
       None => {
         self.afa_generator = Some(Box::new(T::new(SExpression::duplicate_with_head(&self.match_equation.ground))));
@@ -560,7 +560,7 @@ impl<T> Iterator for RuleSVE<T>
       }
     }
 
-    #[cfg(feature = "strict_associativity")]
+    #[cfg(feature = "strict-associativity")]
     {
     let ordered_sequence = // The result of this match
       match self.afa_generator.next() {
@@ -603,21 +603,21 @@ impl<T> RuleSVE<T>
 {
   pub fn new(me: MatchEquation) -> RuleSVE<T> {
 
-    #[cfg(feature = "strict_associativity")]
+    #[cfg(feature = "strict-associativity")]
     let afa_generator = Box::new(T::new(SExpression::duplicate_with_head(&me.ground)));
 
 
-    #[cfg(not(feature = "strict_associativity"))]
+    #[cfg(not(feature = "strict-associativity"))]
     log(Channel::Debug, 4, "Using NONSTRICT-ASSOCIATIVITY matching.");
-    #[cfg(feature = "strict_associativity")]
+    #[cfg(feature = "strict-associativity")]
     log(Channel::Debug, 4, "Using STRICT-ASSOCIATIVITY matching.");
 
     RuleSVE{
       match_equation: me,
       ground_sequence: Sequence::default(),
-      #[cfg(not(feature = "strict_associativity"))]
+      #[cfg(not(feature = "strict-associativity"))]
       afa_generator  : None,
-      #[cfg(feature = "strict_associativity")]
+      #[cfg(feature = "strict-associativity")]
       afa_generator,
     }
   } // end new RuleSVE<T

@@ -58,7 +58,7 @@ pub struct RuleSVEF {
   */
   // Todo: Determine the "right" way to have different variants of associativity.
 
-  // #[cfg(not(feature = "strict_associativity"))]
+  #[cfg(not(feature = "strict_associativity"))]
   /// Have we produced the empty sequence as the first result yet?
   empty_produced: bool,
   /// A `Sequence`, holds the terms of the ground that we have attempted to match
@@ -79,7 +79,7 @@ impl Iterator for RuleSVEF {
   fn next(&mut self) -> MaybeNextMatchResult {
 
     // If we haven't produced the empty sequence, do that.
-    // #[cfg(not(feature = "strict_associativity"))]
+    #[cfg(not(feature = "strict_associativity"))]
     if !self.empty_produced {
       self.empty_produced = true;
       return Some(self.make_next());

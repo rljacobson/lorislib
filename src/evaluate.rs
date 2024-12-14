@@ -6,36 +6,36 @@ Mathematica's evaluation strategy is described here:
 https://reference.wolfram.com/language/tutorial/Evaluation.html
 Here is a summary:
 
-    * If the expression is a raw object (e.g., Integer, String, etc.), leave it unchanged.
-    * Evaluate the head h of the expression.
-    * Evaluate each element ei of the expression in turn. If h is a symbol with attributes HoldFirst, HoldRest,HoldAll, or HoldAllComplete, then skip evaluation of certain elements.
-    * Unless h has attributes SequenceHold or HoldAllComplete, flatten out all Sequence objects that appear among the ei.
-    * Unless h has attribute HoldAllComplete, strip the outermost of any Unevaluated wrappers that appear among the ei.
-    * If h has attribute Flat, then flatten out all nested expressions with head h.
-    * If h has attribute Listable, then thread through any ei that are lists.
-    * If h has attribute Orderless, then sort the ei into order.
-    * Unless h has attribute HoldAllComplete, use any applicable transformation rules associated with f that you have defined for objects of the form h[f[e1,…],…].
-    * Use any built‐in transformation rules associated with f for objects of the form h[f[e1,…],…].
-    * Use any applicable transformation rules that you have defined for h[f[e1,e2,…],…] or for h[…][…].
-    * Use any built‐in transformation rules for h[e1,e2,…] or for h[…][…].
+  * If the expression is a raw object (e.g., Integer, String, etc.), leave it unchanged.
+  * Evaluate the head h of the expression.
+  * Evaluate each element ei of the expression in turn. If h is a symbol with attributes HoldFirst, HoldRest,HoldAll, or HoldAllComplete, then skip evaluation of certain elements.
+  * Unless h has attributes SequenceHold or HoldAllComplete, flatten out all Sequence objects that appear among the ei.
+  * Unless h has attribute HoldAllComplete, strip the outermost of any Unevaluated wrappers that appear among the ei.
+  * If h has attribute Flat, then flatten out all nested expressions with head h.
+  * If h has attribute Listable, then thread through any ei that are lists.
+  * If h has attribute Orderless, then sort the ei into order.
+  * Unless h has attribute HoldAllComplete, use any applicable transformation rules associated with f that you have defined for objects of the form h[f[e1,…],…].
+  * Use any built‐in transformation rules associated with f for objects of the form h[f[e1,…],…].
+  * Use any applicable transformation rules that you have defined for h[f[e1,e2,…],…] or for h[…][…].
+  * Use any built‐in transformation rules for h[e1,e2,…] or for h[…][…].
 
 The strategy implemented below differs from Mathematica's above. The head is considered a child for the purposes of
 evalution. The strategy is as follows:
 
-    * Symbols that are Flat or Listable are flattened or listed. This is done recursively.
-    * If the expression is a raw object (e.g., Integer, String, etc.), leave it unchanged.
-    * If the expression is a symbol, look for OwnValues. If found, evaluate it and return the result. Otherwise, the
-      symbol evaluates to itself.
-    * If the expression is a function, determine its evaluation strategy (whether the head is a symbol with HoldAll,
-      HoldFirst, HoldRest, etc.)
-    * Look for up-values of any children being evaluated according to the evaluation strategy. Apply the first one
-      encountered and restart the evaluation process.
-    * If there are no up-values, evaluate each child according to the evaluation strategy. The head is considered a
-      child. If evaluation results in a change in the expression, restart the evaluation process.
-    * Look for down-values associated with the head and apply each down-value that matches in turn. If a down-value
-      changes the expression, restart the evaluation process.
-    * If the expression remains unchanged after all definitions have been applied, evaluation stops (for the current
-      expression) and the expression is returned unchanged.
+  * Symbols that are Flat or Listable are flattened or listed. This is done recursively.
+  * If the expression is a raw object (e.g., Integer, String, etc.), leave it unchanged.
+  * If the expression is a symbol, look for OwnValues. If found, evaluate it and return the result. Otherwise, the
+    symbol evaluates to itself.
+  * If the expression is a function, determine its evaluation strategy (whether the head is a symbol with HoldAll,
+    HoldFirst, HoldRest, etc.)
+  * Look for up-values of any children being evaluated according to the evaluation strategy. Apply the first one
+    encountered and restart the evaluation process.
+  * If there are no up-values, evaluate each child according to the evaluation strategy. The head is considered a
+    child. If evaluation results in a change in the expression, restart the evaluation process.
+  * Look for down-values associated with the head and apply each down-value that matches in turn. If a down-value
+    changes the expression, restart the evaluation process.
+  * If the expression remains unchanged after all definitions have been applied, evaluation stops (for the current
+    expression) and the expression is returned unchanged.
 
 `*Set` evaluates its RHS at definition time, while `*SetDelayed` evaluates its RHS at substitution time. All are
 stored in the form `RuleDelayed[ HoldPattern[ lhs ], rhs ]`
@@ -82,12 +82,9 @@ use crate::{
     log,
     Channel
   },
-  attributes::Attribute,
-  interner::{
-    InternedString,
-    resolve_str
-  }
+  attributes::Attribute
 };
+use crate::abstractions::IString;
 use crate::built_ins::{BuiltinFn, BuiltinFnMut};
 
 
@@ -234,7 +231,7 @@ pub fn safe_evaluate(expression: Atom, context: &Context) -> Atom {
 
       // If the head is a name with `Hold*` attributes, we are not allowed to evaluate some or all of the children.
       // In order to have attributes, the head needs to have a name in the first place. We do this in a single step.
-      let name_and_hold_attribute: Option<(InternedString, Attribute)> =
+      let name_and_hold_attribute: Option<(IString, Attribute)> =
           match &expression.name() {
             Some(name) => {
               let attributes = context.get_attributes(*name);
@@ -426,7 +423,7 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
 
       let unevaluated = find_matching_definition(
         expression.clone(),
-        *symbol,
+        symbol.clone(),
         ContextValueStore::OwnValues,
         context
       ) ;
@@ -452,10 +449,10 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
 
       // If the head is a name with `Hold*` attributes, we are not allowed to evaluate some or all of the children.
       // In order to have attributes, the head needs to have a name in the first place. We do this in a single step.
-      let name_and_hold_attribute: Option<(InternedString, Attribute)> =
+      let name_and_hold_attribute: Option<(IString, Attribute)> =
           match &expression.name() {
             Some(name) => {
-              let attributes = context.get_attributes(*name);
+              let attributes = context.get_attributes(name.clone());
               // It is convenient to have attributes be a statically matchable value.
               // The following are precisely the conditions needed in the match arms below.
               let attribute =
@@ -476,7 +473,7 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
                     Attribute::Stub
                   };
 
-              Some((*name, attribute))
+              Some((name.clone(), attribute))
             } // end if name branch
 
             _ => {
@@ -484,11 +481,11 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
             }
           }; // end match on expression.name()
 
-      // In each match branch for `name_and_hold_attribute`, we do two this:
+      // In each match branch for `name_and_hold_attribute`, we do two things:
       //    1. Look for `UpValues` for each unheld child.
       //    2. Evaluate each unheld child.
       let new_expression =
-        match name_and_hold_attribute {
+        match name_and_hold_attribute.clone() {
 
           Some((_name, Attribute::HoldFirst)) => {
             // Step 1: Look for `UpValues` for each unheld child.
@@ -575,7 +572,7 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
         log(Channel::Debug, 4, "Looking for down values.");
         let unevaluated = find_matching_definition(
           new_expression.clone(),
-          name,
+          name.clone(),
           ContextValueStore::DownValues,
           context
         );
@@ -684,11 +681,11 @@ fn wrap_definition_match(symbol_value: &SymbolValue, substitutions: SolutionSet)
 /// If any of the patterns in the vector of ``SymbolValue``'s match and satisfy any condition the
 /// pattern may have, return the variable bindings and substitutions or built_in for the match. The value returned is
 /// wrapped in an `UnevaluatedDefinitionMatch` and is left unevaluated.
-fn find_matching_definition(ground: Atom, symbol: InternedString, value_store: ContextValueStore, context: &mut Context)
+fn find_matching_definition(ground: Atom, symbol: IString, value_store: ContextValueStore, context: &mut Context)
     -> UnevaluatedDefinitionMatch
 {
   let definitions = { // Scope of the immutable borrow of `context`.
-    if let Some(record) = context.get_symbol(symbol) {
+    if let Some(record) = context.get_symbol(symbol.clone()) {
       match value_store {
         ContextValueStore::OwnValues  => record.own_values.clone(),  // Cloning an Rc<RefCell<…>>
         ContextValueStore::UpValues   => record.up_values.clone(),   // Cloning an Rc<RefCell<…>>
@@ -711,7 +708,7 @@ fn find_matching_definition(ground: Atom, symbol: InternedString, value_store: C
     log(
       Channel::Debug,
       4,
-      format!("No {:?} for symbol {}.", value_store, resolve_str(symbol)).as_str(),
+      format!("No {:?} for symbol {}.", value_store, symbol).as_str(),
     );
   }
 
@@ -803,10 +800,10 @@ pub fn propagate_N(expression: Atom, context: &mut Context) -> Atom {
     }
   };
 
-  match grandchildren[0] {
+  match &grandchildren[0] {
     Atom::Symbol(name) => {
       // Fetch attributes and check for NHold*.
-      let attributes = context.get_attributes(name);
+      let attributes = context.get_attributes(name.clone());
 
       let new_children = // the result of this if
         if attributes[Attribute::NHoldAll] {

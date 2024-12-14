@@ -5,35 +5,30 @@ Program Control Flow Built-ins
 */
 #![allow(non_snake_case)]
 
-
-
-
-
-
- // For num_integer::binomial
-
-use crate::{matching::{
-  display_solutions,
-  SolutionSet
-}, parse, atom::{
-  SExpression,
-  Atom
-}, attributes::{
-  Attribute
-}, context::*, logging::{
-  log,
-  Channel
-}, interner::{
-  interned_static
-}, evaluate, register_builtin_mut};
-use crate::atom::Symbol;
-
-#[allow(unused_imports)]#[allow(unused_imports)]
-use crate::interner::resolve_str;
-#[allow(unused_imports)]
-use crate::logging::set_verbosity;
-
-
+use crate::{
+  matching::{
+    display_solutions,
+    SolutionSet
+  },
+  parse,
+  atom::{
+    SExpression,
+    Atom
+  },
+  attributes::{
+    Attribute
+  },
+  context::*,
+  logging::{
+    log,
+    Channel
+  },
+  evaluate,
+  register_builtin_mut,
+  atom::Symbol,
+  logging::set_verbosity
+};
+use crate::abstractions::IString;
 
 /// Implements calls matching
 ///     `If[cond_, truepath_, falsepath_] := built-in[cond_, truepath_, falsepath_]`
@@ -55,10 +50,10 @@ pub(crate) fn If(arguments: SolutionSet, original: Atom, context: &mut Context) 
   // The condition has already been evaluated. We need only check its value.
   match cond {
 
-    Atom::Symbol(name) if *name == interned_static("True") => {
+    Atom::Symbol(name) if *name == IString::from("True") => {
       evaluate(truepath.clone(), context)
     }
-    Atom::Symbol(name) if *name == interned_static("False") => {
+    Atom::Symbol(name) if *name == IString::from("False") => {
       evaluate(falsepath.clone(), context)
     }
 

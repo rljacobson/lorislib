@@ -33,14 +33,9 @@ use strum_macros::AsRefStr;
 use crate::{
   built_ins::DEFAULT_REAL_PRECISION,
   atom::Atom,
-  interner::{
-    interned,
-    resolve_str,
-    InternedString
-  },
   logging::{Channel, log}
 };
-
+use crate::abstractions::IString;
 /*
 To have dynamic lexing of operators, the lexer needs facilities for adding and removing operators.
 */
@@ -111,10 +106,10 @@ static TOKENS: [&'static str; 32] = [
 #[derive(Clone, Debug, PartialEq, AsRefStr)]
 pub enum Token {
   Integer(BigInteger),
-  Operator(InternedString),
+  Operator(IString),
   Real(BigFloat),
-  String(InternedString),
-  Symbol(InternedString),
+  String(IString),
+  Symbol(IString),
   Error(String),
 }
 
@@ -125,16 +120,16 @@ impl Display for Token {
         write!(f, "{}({})", self.as_ref(), v)
       }
       Token::Operator(v) => {
-        write!(f, "{}({})", self.as_ref(), resolve_str(*v))
+        write!(f, "{}({})", self.as_ref(), *v)
       }
       Token::Real(v) => {
         write!(f, "{}({})", self.as_ref(), v)
       }
       Token::String(v) => {
-        write!(f, "{}(\"{}\")", self.as_ref(), resolve_str(*v))
+        write!(f, "{}(\"{}\")", self.as_ref(), *v)
       }
       Token::Symbol(v) => {
-        write!(f, "{}({})", self.as_ref(), resolve_str(*v))
+        write!(f, "{}({})", self.as_ref(), *v)
       }
       Token::Error(v) => {
         write!(f, "{}({})", self.as_ref(), v)
@@ -288,14 +283,14 @@ impl<'t> Lexer<'t> {
 
   // This method is a copy+paste, because `aho_corasick::Match` is a different type from `regex::Match`.
   // todo: Factor out this common code the right way: Make supertrait, implement it for both types.
-  fn get_operator_match(&mut self) -> Result<InternedString, Token> {
+  fn get_operator_match(&mut self) -> Result<IString, Token> {
     // Warning: Automatic coercion of `&str` to `Input` is always unanchored.
     // See https://github.com/BurntSushi/aho-corasick/issues/114 for details.
     let haystack = Input::new(&self.text[self.start..]).anchored(Anchored::Yes);
     match self.token_matcher.find(haystack) {
       Some(token) => {
 
-        if token.start() != 0{
+        if token.start() != 0 {
           eprintln!("OPERATOR MATCHER FAILED");
           // Token must start at beginning of the string.
           let error_start: usize = self.start;
@@ -308,7 +303,7 @@ impl<'t> Lexer<'t> {
           let start = self.start;
           let end = self.start + token.end();
           self.start = end;
-          Ok(interned(
+          Ok(IString::from(
             &self.text[start..end]
           ))
         }
@@ -318,7 +313,7 @@ impl<'t> Lexer<'t> {
   }
 
   /// Processes matches resulting from `regex.find(&self.text[self.start..])`, updating `self.start` appropriately.
-  fn get_match(&mut self, found: Option<RegexMatch>) -> Result<InternedString, Token> {
+  fn get_match(&mut self, found: Option<RegexMatch>) -> Result<IString, Token> {
 
     match found {
 
@@ -335,7 +330,7 @@ impl<'t> Lexer<'t> {
           let start = self.start;
           let end = self.start + token.end();
           self.start = end;
-          Ok(interned(
+          Ok(IString::from(
             &self.text[start..end]
           ))
         }
@@ -352,17 +347,15 @@ impl<'t> Lexer<'t> {
 
   /// Looks for the given token before falling back to the normal leftmost longest strategy. Assumes `expected` is an
   /// OpToken. Consumes the token.
-  pub fn expect(&mut self, expected: InternedString) -> Option<Token> {
+  pub fn expect(&mut self, expected: IString) -> Option<Token> {
 
     if self.eat_ignorables().is_err() {
       // Unterminated comment.
       return None;
     }
 
-    let expected_str = resolve_str(expected);
-
-    if self.text[self.start..].starts_with(expected_str){
-      self.start += expected_str.len();
+    if self.text[self.start..].starts_with(IString::as_ref(&expected)){
+      self.start += expected.len();
       Some(
         Token::Operator(expected)
       )
@@ -388,11 +381,14 @@ impl<'t> Iterator for Lexer<'t> {
   type Item = Token;
 
   // todo: Decide if we want to automatically convert leaves to Atoms, in which case we only need three `Token`
-  //       variants: Error(String), Operator(InternedString), Leaf(Atom). Leaving as a token allows parsing based on
+  //       variants: Error(String), Operator(IString), Leaf(Atom). Leaving as a token allows parsing based on
   //       leaf type, which is required for the hypothetical future.
   fn next(&mut self) -> Option<Self::Item> {
 
     if self.eat_ignorables().is_err() {
+      // ToDo: Return a `Result<Self::Item, LexerError>` that distinguishes unterminated comments from EOF. Right now
+      //       the error is reported deeper in `eat_comments`. Eventually we should have richer diagnostic information,
+      //       like line number, etc.
       // Unterminated comment.
       return None;
     }
@@ -424,15 +420,13 @@ impl<'t> Iterator for Lexer<'t> {
         match
           self.get_match(REGEXES[REAL_IDX].find(&self.text[self.start..])) {
           Ok(token) => {
-            Some(Token::Real(BigFloat::parse(resolve_str(token)).unwrap().complete(DEFAULT_REAL_PRECISION)))
+            Some(Token::Real(BigFloat::parse(IString::as_ref(&token)).unwrap().complete(DEFAULT_REAL_PRECISION)))
           },
           Err(_) => {
             Some(
               Token::Integer(
                 BigInteger::parse(
-                  resolve_str(
-                    self.get_match(REGEXES[INTEGER_IDX].find(&self.text[self.start..])).unwrap()
-                  )
+                    IString::as_ref( &self.get_match( REGEXES[INTEGER_IDX].find(&self.text[self.start..]) ).unwrap() )
                 ).unwrap().complete()
               )
             )

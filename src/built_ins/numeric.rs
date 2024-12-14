@@ -29,9 +29,6 @@ use crate::{
     evaluate,
     replace_all_bound_variables
   },
-  interner::{
-    interned_static
-  },
   logging::{
     log,
     Channel
@@ -56,7 +53,8 @@ use crate::{
   built_ins::{
     DEFAULT_REAL_PRECISION,
     register_builtin
-  }
+  },
+  abstractions::IString
 };
 
 

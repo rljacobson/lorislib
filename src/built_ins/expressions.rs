@@ -36,15 +36,10 @@ use crate::{
     log,
     Channel
   },
-  interner::{
-    interned_static
-  },
 };
+use crate::abstractions::IString;
 use crate::built_ins::{occurs_check, register_builtin};
 use crate::evaluate::replace_all_bound_variables;
-use crate::interner::InternedString;
-#[allow(unused_imports)]#[allow(unused_imports)]
-use crate::interner::resolve_str;
 #[allow(unused_imports)]
 use crate::logging::set_verbosity;
 
@@ -104,8 +99,8 @@ pub fn give_fresh_variables(substitutions: &SolutionSet, context: &mut Context) 
 }
 
 /// Creates a set of names of all (pattern) variables appearing in `expression`.
-pub fn get_all_variable_names(expression: &Atom) -> Option<HashSet<InternedString>> {
-  let mut variables: HashSet<InternedString> = HashSet::new();
+pub fn get_all_variable_names(expression: &Atom) -> Option<HashSet<IString>> {
+  let mut variables: HashSet<IString> = HashSet::new();
 
   // This is an obnoxious pattern.
   if let Some(name) = expression.is_variable() {
@@ -121,7 +116,7 @@ pub fn get_all_variable_names(expression: &Atom) -> Option<HashSet<InternedStrin
 
   if let Atom::SExpression(children) = expression {
     for names in children.iter().filter_map(|c| get_all_variable_names(c)) {
-      variables.extend(names.iter());
+      variables.extend(names.iter().cloned());
     }
   }
 
@@ -246,7 +241,7 @@ pub(crate) fn ReplaceAll(arguments: SolutionSet, original: Atom, context: &mut C
         // Three cases: A list of rules, or a single rule, or invalid input.
         Atom::SExpression(children) => {
           // List of rules
-          if children[0] == Atom::Symbol(interned_static("List")) {
+          if children[0] == Atom::Symbol(IString::from("List")) {
             // Now validate each element of the list.
             let rule_list: Vec<(Atom, Atom)> = children[1..].iter().map_while(|r| r.is_rule()).collect::<Vec<_>>();
 
@@ -317,7 +312,7 @@ pub(crate) fn Replace(arguments: SolutionSet, original: Atom, context: &mut Cont
         // Three cases: A list of rules, or a single rule, or invalid input.
         Atom::SExpression(children) => {
           // List of rules
-          if children[0] == Atom::Symbol(interned_static("List")) {
+          if children[0] == Atom::Symbol(IString::from("List")) {
             // Now validate each element of the list.
             let rule_list = children[1..].iter().map_while(|r| r.is_rule()).collect::<Vec<_>>();
             if rule_list.len() != children.len() -1 {
@@ -515,13 +510,13 @@ pub(crate) fn register_builtins(context: &mut Context) {
   // Sequence is a bit of an oddball in that we don't care how the variables bind, and it is really only useful as an
   // up-value.
   {
-    let symbol = interned_static("Sequence");
+    let symbol = IString::from("Sequence");
     let value  = SymbolValue::BuiltIn {
       pattern  : parse("exp___").unwrap(),
       condition: None,
       built_in : Sequence,
     };
-    context.set_up_value(symbol, value).ok();
+    context.set_up_value(symbol.clone(), value).ok();
     context.set_attribute(symbol, Attribute::Protected).ok();
   };
 }
@@ -535,7 +530,7 @@ mod tests {
   fn replace_ground_terms_test() {
     let expression   = parse("f[a, c_, b__, g___]^b").unwrap();
     let expected     = parse("f[a, c_, x__, g___]^x").unwrap();
-    let substitution = HashMap::from([(Atom::Symbol(interned_static("b")), Atom::Symbol(interned_static("x")))]);
+    let substitution = HashMap::from([(Atom::Symbol(IString::from("b")), Atom::Symbol(IString::from("x")))]);
 
 
     let result = replace_all_ground_terms(expression.clone(), &substitution);
@@ -546,7 +541,7 @@ mod tests {
 
   #[test]
   fn replace_test() {
-    let mut context = Context::without_built_ins(interned_static("Global"));
+    let mut context = Context::without_built_ins(IString::from("Global"));
     let original    = parse("Replace[f[a, c_, b__, g___]^b, b->x]").unwrap(); // For illustration, not used.
     let expression  = parse("f[a, c_, b__, g___]^b").unwrap();
     let rule        = parse("b->x").unwrap();
@@ -565,7 +560,7 @@ mod tests {
 
   #[test]
   fn replace_all_test() {
-    let mut context = Context::without_built_ins(interned_static("Global"));
+    let mut context = Context::without_built_ins(IString::from("Global"));
     let original    = parse("f[a, c_, b__, g___]^b /. {b->x, a->c/d}").unwrap(); // For illustration, not used.
     let expression  = parse("f[a, c_, b__, g___]^b").unwrap();
     let rules = parse("{b->x, a->c/d}").unwrap();
@@ -583,7 +578,7 @@ mod tests {
 
   #[test]
   fn give_fresh_variables_test() {
-    let mut context  = Context::without_built_ins(interned_static("Global"));
+    let mut context  = Context::without_built_ins(IString::from("Global"));
     let lhs          = parse("q_*x^p_").unwrap();
     let rhs          = parse("q*f[p]").unwrap();
     let expected     = "[ Times❨‹tmp$0›, Power❨x, ‹tmp$1›❩❩ = Times❨tmp$0, f❨tmp$1❩❩ ]";
@@ -604,7 +599,7 @@ mod tests {
 
   #[test]
   fn complicated_replace_all_test() {
-    let mut context = Context::without_built_ins(interned_static("Global"));
+    let mut context = Context::without_built_ins(IString::from("Global"));
     let original    = parse("1 + 3*x^2 + 5*x^4 /. c_*x^p_ :> c*f[p]").unwrap(); // For illustration, not used.
     let expression  = parse("1 + 3*x^2 + 5*x^4").unwrap();
     let rules = parse("c_*x^p_ :> c*f[p]").unwrap();

@@ -30,16 +30,16 @@ use crate::{atom::{
   BuiltinFn,
   register_builtins
 }};
+use crate::abstractions::IString;
 use crate::built_ins::BuiltinFnMut;
-use crate::interner::{interned_static, InternedString, resolve_str, interned};
 use crate::logging::set_verbosity;
 // use crate::parsing::{Lexer, parse};
 
 
 pub struct Context{
   // todo: Should there be a context path object?
-  name          : InternedString,
-  symbols       : HashMap<InternedString, SymbolRecord>,
+  name          : IString,
+  symbols       : HashMap<IString, SymbolRecord>,
   /// Incremented every time this context is modified. It is accessed publicly by `state_version` and used during
   /// evaluation to determine if an expression is completely evaluated.
   state         : u64,
@@ -50,7 +50,7 @@ impl Context {
 
   pub fn new_global_context() -> Context {
     let mut context = Context{
-      name          : interned_static("Global"),
+      name          : IString::from("Global"),
       symbols       : HashMap::new(),
       state         : 0,
       next_fresh_var: 0,
@@ -62,7 +62,7 @@ impl Context {
   }
 
   /// Used for testing and debugging to avoid calling `register_builtins`.
-  pub(crate) fn without_built_ins(name: InternedString) -> Context {
+  pub(crate) fn without_built_ins(name: IString) -> Context {
     Context{
       name,
       next_fresh_var: 0,
@@ -80,7 +80,7 @@ impl Context {
   pub fn fresh_variable(&mut self) -> Atom {
     let name = format!("tmp${}", self.next_fresh_var);
     self.next_fresh_var += 1;
-    Atom::Symbol(interned(name.as_str()))
+    Atom::Symbol(IString::from(name.as_str()))
   }
 
   /// Sets the logging verbosity, the level at which messages are reported to the user.
@@ -89,7 +89,7 @@ impl Context {
     set_verbosity(verbosity)
   }
 
-  pub fn get_attributes(&self, symbol: InternedString) -> Attributes {
+  pub fn get_attributes(&self, symbol: IString) -> Attributes {
     match self.symbols.get(&symbol) {
       None => Attributes::default(),
 
@@ -97,12 +97,12 @@ impl Context {
     }
   }
 
-  pub fn get_symbol(&self, symbol: InternedString) ->  Option<&SymbolRecord> {
+  pub fn get_symbol(&self, symbol: IString) ->  Option<&SymbolRecord> {
     self.symbols.get(&symbol)
   }
 
-  pub fn get_symbol_mut(&mut self, symbol: InternedString) ->  &mut SymbolRecord {
-    self.symbols.entry(symbol).or_insert_with(
+  pub fn get_symbol_mut(&mut self, symbol: IString) ->  &mut SymbolRecord {
+    self.symbols.entry(symbol.clone()).or_insert_with(
       | | {
         SymbolRecord::new(symbol)
       }
@@ -110,7 +110,7 @@ impl Context {
   }
 
   /// This method does not check for read-only! Only use for registering built-ins.
-  pub(crate) fn set_down_value_attribute(&mut self, symbol: InternedString, value: SymbolValue, attributes: Attributes) {
+  pub(crate) fn set_down_value_attribute(&mut self, symbol: IString, value: SymbolValue, attributes: Attributes) {
     let record = self.get_symbol_mut(symbol);
 
     if !(&*record.down_values).borrow().contains(&value) {
@@ -120,13 +120,13 @@ impl Context {
   }
 
 
-  pub fn set_attributes(&mut self, symbol: InternedString, attributes: Attributes) -> Result<(), String> {
+  pub fn set_attributes(&mut self, symbol: IString, attributes: Attributes) -> Result<(), String> {
     {
       let record = self.get_symbol_mut(symbol);
 
       // Todo: Fix enforcement of read/write-protection.
       // if record.attributes.attributes_read_only() {
-      //   Err(format!("Symbol {} has read-only attributes", resolve_str(symbol)))
+      //   Err(format!("Symbol {} has read-only attributes", symbol))
       // } else {
       record.attributes.update(attributes);
       Ok(())
@@ -135,18 +135,18 @@ impl Context {
   }
 
   // todo: We should only have `set_attributes(…)` since `Attribute` implements `Into<Attributes>`.
-  pub fn set_attribute(&mut self, symbol: InternedString, attribute: Attribute) -> Result<(), String> {
+  pub fn set_attribute(&mut self, symbol: IString, attribute: Attribute) -> Result<(), String> {
     self.set_attributes(symbol, attribute.into())
   }
 
-  pub fn set_down_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
+  pub fn set_down_value(&mut self, symbol: IString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
     if (&*record.down_values).borrow().contains(&value) {
       return Ok(());
     }
 
     // if record.attributes.read_only() {
-    //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
+    //   Err(format!("Symbol {} is read-only", symbol))
     // } else {
       (&*record.down_values).borrow_mut().push(value);
       self.state += 1;
@@ -155,11 +155,11 @@ impl Context {
   }
 
 
-  pub fn set_display_function(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
+  pub fn set_display_function(&mut self, symbol: IString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
 
     // if record.attributes.read_only() {
-    //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
+    //   Err(format!("Symbol {} is read-only", symbol))
     // } else {
       (&*record.down_values).borrow_mut().push(value);
       self.state += 1;
@@ -167,14 +167,14 @@ impl Context {
     // }
   }
 
-  pub fn set_up_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
+  pub fn set_up_value(&mut self, symbol: IString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
     if (&*record.up_values).borrow().contains(&value) {
       return Ok(());
     }
 
     // if record.attributes.read_only() {
-    //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
+    //   Err(format!("Symbol {} is read-only", symbol))
     // } else {
       (&*record.up_values).borrow_mut().push(value);
       self.state += 1;
@@ -182,14 +182,14 @@ impl Context {
     // }
   }
 
-  pub fn set_own_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
+  pub fn set_own_value(&mut self, symbol: IString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
     if (&*record.own_values).borrow().contains(&value) {
       return Ok(());
     }
 
     // if record.attributes.read_only() {
-    //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
+    //   Err(format!("Symbol {} is read-only", symbol))
     // } else {
       (&*record.own_values).borrow_mut().push(value);
       self.state += 1;
@@ -197,14 +197,14 @@ impl Context {
     // }
   }
 
-  pub fn set_sub_value(&mut self, symbol: InternedString, value: SymbolValue) -> Result<(), String> {
+  pub fn set_sub_value(&mut self, symbol: IString, value: SymbolValue) -> Result<(), String> {
     let record = self.get_symbol_mut(symbol);
     if (&*record.sub_values).borrow().contains(&value) {
       return Ok(());
     }
 
     // if record.attributes.read_only() {
-    //   Err(format!("Symbol {} is read-only", resolve_str(symbol)))
+    //   Err(format!("Symbol {} is read-only", symbol))
     // } else {
       (&*record.sub_values).borrow_mut().push(value);
       self.state += 1;
@@ -214,18 +214,18 @@ impl Context {
 
   // todo: Not especially efficient if the symbol was never defined.
   // todo: Should clearing a symbol increment the state version? No for now.
-  pub fn clear_symbol(&mut self, symbol: InternedString) -> Result<(), String> {
+  pub fn clear_symbol(&mut self, symbol: IString) -> Result<(), String> {
     { // Scope for record
-      let record = self.get_symbol_mut(symbol);
+      let record = self.get_symbol_mut(symbol.clone());
       if record.attributes.read_only() || record.attributes.protected() {
-        return Err(format!("Symbol {} is read-only", resolve_str(symbol)))
+        return Err(format!("Symbol {} is read-only", symbol))
       }
     }
     self.symbols.remove(&symbol);
     Ok(())
   }
 /*
-  pub fn get_up_values(&self, symbol: InternedString) -> Option<Vec<SymbolValue>> {
+  pub fn get_up_values(&self, symbol: IString) -> Option<Vec<SymbolValue>> {
     match self.symbols[symbol] {
       None => None,
       Some(record) => {
@@ -236,7 +236,7 @@ impl Context {
   }
   */
 /*
-  pub fn get_own_values(&self, symbol: InternedString) -> Option<Vec<SymbolValue>> {
+  pub fn get_own_values(&self, symbol: IString) -> Option<Vec<SymbolValue>> {
     match self.symbols[symbol] {
       None => None,
       Some(record) => {
@@ -265,7 +265,7 @@ pub enum ContextValueStore {
 // todo: Should `SymbolRecord` store `Rc<SymbolValue>`s? These are all basicly read-only, because the vector is
 //       usually wiped for re-definitions.
 pub struct SymbolRecord {
-  pub symbol: InternedString,
+  pub symbol: IString,
   pub attributes: Attributes,
 
   /// OwnValues define how the symbol appearing alone should be evaluated. They have the form `x :> expr` or `x=expr`.
@@ -285,7 +285,7 @@ pub struct SymbolRecord {
 }
 
 impl SymbolRecord {
-  pub fn new(name: InternedString) -> SymbolRecord{
+  pub fn new(name: IString) -> SymbolRecord{
     SymbolRecord {
       symbol: name,
       // Todo: Store attributes separately. They need to be accessed very frequently, very often for symbols that do

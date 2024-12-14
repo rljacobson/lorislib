@@ -40,11 +40,6 @@ use rug::{
 
 
 use crate::{
-  interner::{
-    InternedString,
-    resolve_str,
-    interned_static
-  },
   format::{
     Formattable,
     ExpressionFormatter,
@@ -53,14 +48,15 @@ use crate::{
   },
   normal_form::NormalFormOrder,
 };
+use crate::abstractions::IString;
 
 #[derive(Clone, PartialEq, Debug, IntoStaticStr, EnumDiscriminants)]
 #[strum_discriminants(name(AtomKind))]
 pub enum Atom {
-  String(InternedString),
+  String(IString),
   Integer(BigInteger),
   Real(BigFloat),
-  Symbol(InternedString),
+  Symbol(IString),
   SExpression(Rc<Vec<Atom>>)
 }
 
@@ -100,9 +96,9 @@ impl Atom {
     }
   }
 
-  /// Gives the symbol (as an `InternedString`) under which the properties of this
+  /// Gives the symbol (as an `IString`) under which the properties of this
   /// expression would be stored in the symbol table.
-  pub fn name(&self) -> Option<InternedString> {
+  pub fn name(&self) -> Option<IString> {
     match self {
       Atom::SExpression(_) => {
         match self.head() {
@@ -110,7 +106,7 @@ impl Atom {
           _                  => None
         }
       },
-      Atom::Symbol(name) => Some(*name),
+      Atom::Symbol(name) => Some(name.clone()),
       _                  => None
     }
   }
@@ -148,7 +144,7 @@ impl Atom {
 
   /// Is `atom` the symbol `True`
   pub fn is_true(&self) -> bool {
-    *self == Atom::Symbol(interned_static("True"))
+    *self == Atom::Symbol(IString::from("True"))
   }
 
   /// If `self` has the form `Sequence[a, b, …]`, returns a vector of only the children `a, b, …`.
@@ -186,7 +182,7 @@ impl Atom {
     None
   }
 
-  pub(crate) fn is_function_variable(&self) -> Option<InternedString> {
+  pub(crate) fn is_function_variable(&self) -> Option<IString> {
     match self {
       Atom::SExpression(children) => {
         children[0].is_variable()
@@ -195,7 +191,7 @@ impl Atom {
     }
   }
 
-  pub(crate) fn is_any_variable_kind(&self) -> Option<InternedString> {
+  pub(crate) fn is_any_variable_kind(&self) -> Option<IString> {
     self.check_variable_pattern("Blank").or_else(
       | | self.check_variable_pattern("BlankSequence").or_else(
         | | self.check_variable_pattern("BlankNullSequence")
@@ -205,25 +201,25 @@ impl Atom {
 
   /// Checks if `self` has the form `Pattern[□, Blank[□]]` (equiv. `□_□`).
   /// Returns the name if `self` is a `Blank`.
-  pub fn is_variable(&self) -> Option<InternedString> {
+  pub fn is_variable(&self) -> Option<IString> {
     self.check_variable_pattern("Blank")
   }
 
   /// Checks if `self` has the form `Pattern[□, BlankSequence[□]]` (equiv. `□__□`).
   /// Returns the name if `self` is a `BlankSequence`.
-  pub fn is_sequence_variable(&self) -> Option<InternedString> {
+  pub fn is_sequence_variable(&self) -> Option<IString> {
     self.is_null_sequence_variable().or_else(| | self.check_variable_pattern("BlankSequence"))
     // self.check_variable_pattern("BlankSequence")
   }
 
   /// Checks if `self` has the form `Pattern[□, BlankNullSequence[□]]` (equiv. `□___□`).
   /// Returns the name if `self` is a `BlankNullSequence`.
-  pub fn is_null_sequence_variable(&self) -> Option<InternedString> {
+  pub fn is_null_sequence_variable(&self) -> Option<IString> {
     self.check_variable_pattern("BlankNullSequence")
   }
 
   /// Auxiliary function for `is_*_variable` functions. (Do not use for validation.)
-  fn check_variable_pattern(&self, symbol: &'static str) -> Option<InternedString> {
+  fn check_variable_pattern(&self, symbol: &'static str) -> Option<IString> {
     if let Atom::SExpression(children) = self {
       if children.len() > 2
           && children[0] == Symbol::from_static_str("Pattern")
@@ -313,7 +309,7 @@ impl Formattable for Atom {
   fn format(&self, formatter: &ExpressionFormatter) -> String {
     match self {
       Atom::String(v) => {
-        format!("\"{}\"", resolve_str(*v))
+        format!("\"{}\"", *v)
       }
       Atom::Integer(v) => {
         format!("{}", v)
@@ -322,7 +318,7 @@ impl Formattable for Atom {
         format!("{}", v)
       }
       Atom::Symbol(v) => {
-        format!("{}", resolve_str(*v))
+        format!("{}", *v)
       }
       Atom::SExpression(v) => {
         if formatter.form == DisplayForm::Full{
@@ -343,10 +339,10 @@ impl Formattable for Atom {
         if let Some(name) = self.is_variable() {
           match formatter.form {
             DisplayForm::Matcher => {
-              format!("‹{}›", resolve_str(name))
+              format!("‹{}›", name)
             }
             _ => {
-              format!("{}_", resolve_str(name))
+              format!("{}_", name)
             }
           }
         }
@@ -355,10 +351,10 @@ impl Formattable for Atom {
         else if let Some(name) = self.is_null_sequence_variable() {
           match formatter.form {
             DisplayForm::Matcher => {
-              format!("«{}»", resolve_str(name))
+              format!("«{}»", name)
             }
             _ => {
-              format!("{}___", resolve_str(name))
+              format!("{}___", name)
             }
           }
         }
@@ -366,10 +362,10 @@ impl Formattable for Atom {
           // todo: distinguish sequence variables from null sequence variables
           match formatter.form {
             DisplayForm::Matcher => {
-              format!("«{}»", resolve_str(name))
+              format!("«{}»", name)
             }
             _ => {
-              format!("{}__", resolve_str(name))
+              format!("{}__", name)
             }
           }
         }
@@ -443,10 +439,10 @@ impl NormalFormOrder for Atom {
       // Same expression type //
 
       (Atom::Symbol(s), Atom::Symbol(t))
-      => std::cmp::Ord::cmp(resolve_str(*s), resolve_str(*t)),
+      => std::cmp::Ord::cmp(s, t),
 
       (Atom::String(s), Atom::String(t))
-      => std::cmp::Ord::cmp(resolve_str(*s), resolve_str(*t)),
+      => std::cmp::Ord::cmp(s, t),
 
       (Atom::SExpression(f), Atom::SExpression(g))
       => {
@@ -512,31 +508,30 @@ fn headless_s_expression() -> ! {
 /// in `Atom`'s impl are those that could reasonably be called on any `Atom` variant.
 #[allow(non_snake_case)]
 pub(crate) mod Symbol {
+  use crate::abstractions::IString;
   use crate::atom::Atom;
-  use crate::interner::{
-    interned,
-    interned_static
-  };
 
   /// We often have a need to create an expression for some standard built-in or stdlib symbol.
   pub(crate) fn from_static_str(name: &'static str) -> Atom {
-    Atom::Symbol(interned_static(name))
+    Atom::Symbol(IString::from(name))
   }
 
   /// Create a symbol from a `&str`.
   pub(crate) fn from_str(name: &str) -> Atom {
-    Atom::Symbol(interned(name))
+    Atom::Symbol(IString::from(name))
   }
 
+  /// Create a symbol from an `IString`.
+  pub(crate) fn new(name: IString) -> Atom {
+    Atom::Symbol(name)
+  }
 }
 
 #[allow(non_snake_case)]
 pub(crate) mod SExpression {
   use std::rc::Rc;
+  use crate::abstractions::IString;
   use super::*;
-  use crate::interner::{
-    InternedString
-  };
   // Todo: Housekeeping - remove unused, refactor to make use of better primitives.
 
   // region Convenience construction functions
@@ -556,7 +551,7 @@ pub(crate) mod SExpression {
   }
 
   /// We often have a need to create an expression for some standard built-in or stdlib symbol.
-  pub(crate) fn with_symbolic_head(head: InternedString) -> Atom {
+  pub(crate) fn with_symbolic_head(head: IString) -> Atom {
     Atom::SExpression(Rc::new(vec![Atom::Symbol(head)]))
   }
 
@@ -616,29 +611,29 @@ pub(crate) mod SExpression {
   /// Creates a sequence variable, i.e. an expression of the form `Pattern[name, BlankSequence[]]`. The provided
   /// `name` is turned into a symbol.
   pub(crate) fn null_sequence_variable_static_str(name: &'static str) -> Atom {
-    make_variable(Symbol::from_static_str(name), "BlankNullSequence")
+    make_variable(Symbol::from_static_str(name), IString::from("BlankNullSequence"))
   }
 
   /// Creates a sequence variable, i.e. an expression of the form `Pattern[name, BlankSequence[]]`. The provided
   /// `name` is turned into a symbol.
   pub(crate) fn sequence_variable_static_str(name: &'static str) -> Atom {
-    make_variable(Symbol::from_static_str(name), "BlankSequence")
+    make_variable(Symbol::from_static_str(name), IString::from("BlankSequence"))
   }
 
   /// Creates a sequence variable, i.e. an expression of the form `Pattern[name, BlankSequence[]]`. The provided
   /// `name` is turned into a symbol.
   pub(crate) fn variable_static_str(name: &'static str) -> Atom {
-    make_variable(Symbol::from_static_str(name), "Blank")
+    make_variable(Symbol::from_static_str(name), IString::from("Blank"))
   }
 
   /// Creates a sequence variable, i.e. an expression of the form `Pattern[name, BlankSequence[]]`.
-  pub(crate) fn make_variable(name: Atom, var_kind: &'static str) -> Atom {
+  pub(crate) fn make_variable(name: Atom, var_kind: IString) -> Atom {
     Atom::SExpression(
       Rc::new(
         vec![
           Symbol::from_static_str("Pattern"),
           name,
-          with_str_head(var_kind)
+          with_symbolic_head(var_kind)
         ]
       )
     )
@@ -705,7 +700,7 @@ pub(crate) mod SExpression {
   }
 
   /// If the head is a variable, returns the name of the variable.
-  pub(crate) fn is_head_variable(expression: &Atom) -> Option<InternedString> {
+  pub(crate) fn is_head_variable(expression: &Atom) -> Option<IString> {
     match expression {
 
       Atom::SExpression(children) => {

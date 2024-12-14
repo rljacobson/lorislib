@@ -104,6 +104,12 @@ pub(crate) mod verbosity {
     }
   }
 
+  pub fn get_verbosity() -> i32 {
+    unsafe {
+      VERBOSITY
+    }
+  }
+
   pub(crate) fn emit_log(msg: &str) {
     let mut stream = LOGGING_STREAM.lock().unwrap();
     // #[allow(unused_must_use)]

@@ -22,7 +22,8 @@ smallvec     = {version = "1.8.0", features = ["union"]} # Vecs on the stack in 
 regex        = {version = "1.6.0", default-features = false, features = ["perf", "std"]} # Lexer
 
 aho-corasick    = "1.1.3"  # Lexer
-string-interner = "0.18.0"  # Used throughout
+string_cache    = "0.8"
+#string-interner = "0.18.0"  # Used throughout
 yansi           = "1.0.1"   # ANSI color support
 fnv             = "1.0.7"   # FNV-1a hash, used internally for equality check of expressions.
 num-integer     = "^0.1.44" # For num_integer::binomial. Version is sync'ed to rug's dependency.
@@ -48,11 +49,11 @@ features = [
 
 
 [features]
-default = ["strict-associativity"]
+default = ["strict_associativity"]
 #default = []
 
 # For matching in associative theories, associativity is "strict".
-strict-associativity     = []
+strict_associativity     = []
 # Matching rules emulate the behavior of Mathematica, which does not give all matches. This feature is unimplemented.
-mathematica-compatibiity = []
+mathematica_compatibiity = []
 

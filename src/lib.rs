@@ -14,12 +14,12 @@ mod context;
 mod evaluate;
 #[macro_use]
 mod format;
-mod interner;
 mod matching;
 mod normal_form;
 mod parsing;
 pub mod logging;
 mod built_ins;
+mod abstractions;
 
 pub use context::Context;
 pub use evaluate::evaluate;

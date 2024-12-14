@@ -5,35 +5,31 @@
  */
 #![allow(non_snake_case)]
 
-
-
-
-
-
- // For num_integer::binomial
-
-use crate::{matching::{
-  display_solutions,
-  SolutionSet
-}, parse, atom::{
-  Symbol,
-  SExpression,
-  Atom
-}, attributes::{
-  Attributes,
-  Attribute
-}, context::*, logging::{
-  log,
-  Channel
-}, interner::{
-  interned_static
-}, evaluate};
-use crate::built_ins::register_builtin;
-#[allow(unused_imports)]#[allow(unused_imports)]
-use crate::interner::resolve_str;
-#[allow(unused_imports)]
-use crate::logging::set_verbosity;
-
+use crate::{
+  matching::{
+    display_solutions,
+    SolutionSet
+  },
+  parse,
+  atom::{
+    Symbol,
+    SExpression,
+    Atom
+  },
+  attributes::{
+    Attributes,
+    Attribute
+  },
+  context::*,
+  logging::{
+    log,
+    Channel
+  },
+  evaluate,
+  built_ins::register_builtin,
+  logging::set_verbosity
+};
+use crate::abstractions::IString;
 
 /// Because And is short-circuiting, it has attribute HoldAll.
 /// Implements calls matching
@@ -59,12 +55,12 @@ pub(crate) fn And(arguments: SolutionSet, _original: Atom, context: &mut Context
   for child in SExpression::children(rhs)[1..].iter(){
     match child {
 
-      Atom::Symbol(name) if *name == interned_static("True") => {
+      Atom::Symbol(name) if *name == IString::from("True") => {
         // Don't add it to children.
         continue;
       }
 
-      Atom::Symbol(name) if *name == interned_static("False")  => {
+      Atom::Symbol(name) if *name == IString::from("False")  => {
         // short circuiting
         return child.clone();
       }
@@ -169,12 +165,12 @@ pub(crate) fn Or(arguments: SolutionSet, _original: Atom, _: &mut Context) -> At
   for child in SExpression::children(rhs)[1..].iter(){
     match child {
 
-      Atom::Symbol(name) if *name == interned_static("True") => {
+      Atom::Symbol(name) if *name == IString::from("True") => {
         // short circuiting
         return child.clone();
       }
 
-      Atom::Symbol(name) if *name == interned_static("False") => {
+      Atom::Symbol(name) if *name == IString::from("False") => {
         // Don't add it to children.
         continue;
       }
@@ -223,11 +219,11 @@ pub(crate) fn Not(arguments: SolutionSet, original: Atom, _: &mut Context) -> At
       children[1].clone()
     }
 
-    Atom::Symbol(name) if *name == interned_static("True") => {
+    Atom::Symbol(name) if *name == IString::from("True") => {
       Symbol::from_static_str("False")
     }
 
-    Atom::Symbol(name) if *name == interned_static("False") => {
+    Atom::Symbol(name) if *name == IString::from("False") => {
       Symbol::from_static_str("True")
     }
 

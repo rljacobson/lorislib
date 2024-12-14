@@ -38,8 +38,8 @@ use crate::{
     Channel
   },
   interner::{
-    interned_static,
-    InternedString
+    IString::from,
+    IString
   },
   evaluate,
   matching::Matcher
@@ -88,7 +88,7 @@ macro_rules! register_builtin {
         condition: None,
         built_in: $name,
       };
-      $context.set_down_value_attribute(interned_static(stringify!($name)), value, $attributes);
+      $context.set_down_value_attribute(IString::from(stringify!($name)), value, $attributes);
     };
   }
 }
@@ -98,12 +98,12 @@ pub(crate) fn register_builtins(context: &mut Context) {
 
   // region Attributes for functions without definition
 
-  context.set_attribute(interned_static("RuleDelayed"), Attribute::Protected).ok();
-  context.set_attribute(interned_static("RuleDelayed"), Attribute::HoldRest).ok();
+  context.set_attribute(IString::from("RuleDelayed"), Attribute::Protected).ok();
+  context.set_attribute(IString::from("RuleDelayed"), Attribute::HoldRest).ok();
 
-  context.set_attribute(interned_static("List"), Attribute::Protected).ok();
-  context.set_attribute(interned_static("Hold"), Attribute::Protected).ok();
-  context.set_attribute(interned_static("Hold"), Attribute::HoldAll).ok();
+  context.set_attribute(IString::from("List"), Attribute::Protected).ok();
+  context.set_attribute(IString::from("Hold"), Attribute::Protected).ok();
+  context.set_attribute(IString::from("Hold"), Attribute::HoldAll).ok();
 
   // endregion
 
@@ -127,7 +127,7 @@ pub(crate) fn register_builtins(context: &mut Context) {
     };
 
     evaluate(f, context);
-    context.set_attribute(interned_static("Pi"), Attribute::Protected).unwrap();
+    context.set_attribute(IString::from("Pi"), Attribute::Protected).unwrap();
   }
 */
 
@@ -163,7 +163,7 @@ fn extract_condition(atom: Atom) -> (Atom, Option<Atom>) {
 
 /// The `pattern_function` must be a function. Finds all symbols or symbols that are heads of functions that are
 /// arguments to the given function.
-fn collect_symbol_or_head_symbol(pattern_function: Atom) -> Vec<InternedString>{
+fn collect_symbol_or_head_symbol(pattern_function: Atom) -> Vec<IString>{
   let f = SExpression::children(&pattern_function);
   let mut child_iter = f.iter();
   child_iter.next(); // skip head
@@ -187,7 +187,7 @@ mod tests {
   use crate::attributes::{Attribute, Attributes};
   use crate::builtins::{extract_condition, occurs_check, Set};
   use crate::context::SymbolValue;
-  use crate::interner::interned_static;
+  use crate::interner::IString::from;
   use crate::{Context, parse};
   #[allow(unused_imports)]
   use crate::logging::set_verbosity;
@@ -212,7 +212,7 @@ mod tests {
   #[test]
   fn set_down_value_attribute_test(){
     // To avoid calling `register_builtins()`, which would make this test moot, we specially construct the context.
-    let mut context             : Context    = Context::without_built_ins(interned_static("Global"));
+    let mut context             : Context    = Context::without_built_ins(IString::from("Global"));
     let mut read_only_attributes: Attributes = Attributes::default();
     // todo: when is something read-only vs protected?
     read_only_attributes.set(Attribute::ReadOnly);
@@ -225,10 +225,10 @@ mod tests {
       condition: None,
       built_in : Set
     };
-    context.set_down_value_attribute(interned_static("Set"), value.clone(), read_only_attributes);
+    context.set_down_value_attribute(IString::from("Set"), value.clone(), read_only_attributes);
 
     // Check.
-    let record = context.get_symbol(interned_static("Set")).unwrap();
+    let record = context.get_symbol(IString::from("Set")).unwrap();
     assert_eq!(record.down_values[0], value);
   }
 

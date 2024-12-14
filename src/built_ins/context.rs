@@ -14,23 +14,30 @@ use strum::{IntoEnumIterator};
 
 // For num_integer::binomial
 
-use crate::{atom::SExpression::extract_thing_or_list_of_things, matching::{
-  display_solutions,
-  SolutionSet
-}, parse, atom::{
-  Symbol,
-  SExpression,
-  SExpression::hold,
-  Atom
-}, attributes::{
-  Attribute,
-  Attributes as SymbolAttributes, // Name collision with the built-in "Attributes"
-}, context::*, logging::{
-  log,
-  Channel
-}, interner::{
-  interned_static
-}, interner::InternedString, interner::resolve_str};
+use crate::{
+  atom::{
+    SExpression::extract_thing_or_list_of_things,
+    Symbol,
+    SExpression,
+    SExpression::hold,
+    Atom
+  },
+  matching::{
+    display_solutions,
+    SolutionSet,
+  },
+  parse,
+  attributes::{
+    Attribute,
+    Attributes as SymbolAttributes, // Name collision with the built-in "Attributes"
+  },
+  context::*,
+  logging::{
+    log,
+    Channel,
+  },
+};
+use crate::abstractions::IString;
 #[allow(unused_imports)]
 use crate::logging::set_verbosity;
 
@@ -133,17 +140,17 @@ pub(crate) fn UpSet(arguments: SolutionSet, original: Atom, context: &mut Contex
     log(
       Channel::Debug,
       4,
-      format!("Setting up-value {} for symbol {}", &original, resolve_str(symbol)).as_str(),
+      format!("Setting up-value {} for symbol {}", &original, symbol).as_str(),
     );
     // Make an up-value for symbol
-    match context.set_up_value(symbol, value.clone()) {
+    match context.set_up_value(symbol.clone(), value.clone()) {
       Ok(()) => {}
       Err(msg) => {
         // todo: Make a distinction between program and system errors.
         log(
           Channel::Error,
           1,
-          format!("Could not set up-value for {}: {}", resolve_str(symbol), msg).as_str()
+          format!("Could not set up-value for {}: {}", symbol, msg).as_str()
         );
       }
     }
@@ -160,7 +167,7 @@ pub(crate) fn UpValues(arguments: SolutionSet, original: Atom, context: &mut Con
   let symbol = &arguments[&SExpression::variable_static_str("sym")];
 
   if let Atom::Symbol(name) = symbol {
-    let record = context.get_symbol(*name);
+    let record = context.get_symbol(name.clone());
     let children: Vec<Atom> = // the following match
         match record {
           Some(record) => {
@@ -211,7 +218,7 @@ pub(crate) fn DownValues(arguments: SolutionSet, _original: Atom, context: &mut 
   let symbol = &arguments[&SExpression::variable_static_str("sym")];
 
   if let Atom::Symbol(name) = symbol {
-    let record = context.get_symbol(*name);
+    let record = context.get_symbol(name.clone());
     let children: Vec<Atom> = // the following match
         match record {
           Some(record) => {
@@ -262,8 +269,8 @@ pub(crate) fn SetAttributes(arguments: SolutionSet, original: Atom, context: &mu
   let symb: &Atom = &arguments[&SExpression::variable_static_str("sym")];
   let attr = &arguments[&SExpression::variable_static_str("attr")];
 
-  // symb is either a symbol or a list of symbols. Normalize to a `Vec<InternedString>`
-  let symbols: Vec<InternedString> =
+  // symb is either a symbol or a list of symbols. Normalize to a `Vec<IString>`
+  let symbols: Vec<IString> =
       extract_thing_or_list_of_things(symb, |e| e.name());
   // Error check: Was every child a thing that has a name?
   if symbols.len() != max(symb.len(), 1) {
@@ -281,9 +288,9 @@ pub(crate) fn SetAttributes(arguments: SolutionSet, original: Atom, context: &mu
   // attr is either an `Attribute` or a list of attributes.
   let attributes_list: Vec<SymbolAttributes> = {
     // Good grief.
-    let a_strs: Vec<InternedString> = extract_thing_or_list_of_things(attr, |e| e.name());
+    let a_strs: Vec<IString> = extract_thing_or_list_of_things(attr, |e| e.name());
     a_strs.iter()
-        .filter_map(|s| Attribute::from_str(resolve_str(*s)).ok())
+        .filter_map(|s| Attribute::from_str(s).ok())
         .map(|a| a.into()).collect()
   };
 
@@ -301,11 +308,11 @@ pub(crate) fn SetAttributes(arguments: SolutionSet, original: Atom, context: &mu
 
   // For each symbol, set all attributes.
   for name in symbols {
-    if let Err(reason) = context.set_attributes(name, attributes){
+    if let Err(reason) = context.set_attributes(name.clone(), attributes){
       log(
         Channel::Error,
         1,
-        format!("Failed to set attributes for symbol {}: {}", resolve_str(name), reason).as_str()
+        format!("Failed to set attributes for symbol {}: {}", IString::from(name), reason).as_str()
       );
     };
   }
@@ -322,7 +329,7 @@ pub(crate) fn Attributes(arguments: SolutionSet, original: Atom, context: &mut C
   let symbol = &arguments[&SExpression::variable_static_str("sym")];
 
   if let Atom::Symbol(name) = symbol {
-    let found_attributes = context.get_attributes(*name);
+    let found_attributes = context.get_attributes(name.clone());
     let mut children = vec![Symbol::from_static_str("List")];
     children.extend(
       Attribute::iter()
@@ -359,18 +366,18 @@ pub(crate) fn register_builtins(context: &mut Context) {
 
 
   context.set_attributes(
-    interned_static("RuleDelayed"),
+    IString::from("RuleDelayed"),
     Attribute::HoldRest  // Why not HoldAll?
         + Attribute::SequenceHold
         + Attribute::Protected
   ).ok();
   context.set_attributes(
-    interned_static("Rule"),
+    IString::from("Rule"),
         Attribute::SequenceHold
         + Attribute::Protected
   ).ok();
-  context.set_attributes(interned_static("Hold"), holdall_protected).ok();
-  context.set_attributes(interned_static("OwnValues"), holdall_protected).ok();
+  context.set_attributes(IString::from("Hold"), holdall_protected).ok();
+  context.set_attributes(IString::from("OwnValues"), holdall_protected).ok();
 
   register_builtin!(Set, "Set[lhs_, rhs_]", set_functions, context);
   register_builtin!(SetDelayed, "SetDelayed[lhs_, rhs_]", delayed_functions, context);

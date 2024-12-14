@@ -26,14 +26,9 @@ use crate::{
     Attribute
   },
   context::*,
-  interner::{
-    interned_static,
-    InternedString
-  },
-  evaluate
+  evaluate,
+  abstractions::IString
 };
-#[allow(unused_imports)]#[allow(unused_imports)]
-use crate::interner::resolve_str;
 #[allow(unused_imports)]
 use crate::logging::set_verbosity;
 
@@ -69,7 +64,7 @@ macro_rules! register_builtin {
         condition: None,
         built_in: $name,
       };
-      $context.set_down_value_attribute(interned_static(stringify!($name)), value, $attributes);
+      $context.set_down_value_attribute(IString::from(stringify!($name)), value, $attributes);
     };
   }
 }
@@ -84,7 +79,7 @@ macro_rules! register_builtin_mut {
         condition: None,
         built_in: $name,
       };
-      $context.set_down_value_attribute(interned_static(stringify!($name)), value, $attributes);
+      $context.set_down_value_attribute(IString::from(stringify!($name)), value, $attributes);
     };
   }
 }
@@ -147,7 +142,7 @@ pub(crate) fn register_builtins(context: &mut Context) {
 
   // region Attributes for functions without definition
 
-  context.set_attribute(interned_static("List"), Attribute::Protected).ok();
+  context.set_attribute(IString::from("List"), Attribute::Protected).ok();
 
   // endregion
 
@@ -206,14 +201,14 @@ pub fn extract_condition(atom: Atom) -> (Atom, Option<Atom>) {
 
 /// The `pattern_function` must be a function. Finds all symbols or symbols that are heads of functions that are
 /// arguments to the given function.
-pub fn collect_symbol_or_head_symbol(pattern_function: Atom) -> Vec<InternedString>{
+pub fn collect_symbol_or_head_symbol(pattern_function: Atom) -> Vec<IString>{
   let f = SExpression::children(&pattern_function);
   let mut child_iter = f.iter();
   child_iter.next(); // skip head
 
   child_iter.filter_map(|c| {
     match c {
-      Atom::Symbol(name) => Some(*name),
+      Atom::Symbol(name) => Some(name.clone()),
       Atom::SExpression(f)=> {
         if c.is_any_variable_kind().is_some() {
           None
@@ -257,7 +252,6 @@ mod tests {
     context::SymbolValue,
     attributes::{Attribute, Attributes},
     atom::{Atom, Symbol},
-    interner::interned_static,
     Context,
     parse
   };
@@ -285,7 +279,7 @@ mod tests {
   #[test]
   fn set_down_value_attribute_test(){
     // To avoid calling `register_builtins()`, which would make this test moot, we specially construct the context.
-    let mut context             : Context    = Context::without_built_ins(interned_static("Global"));
+    let mut context             : Context    = Context::without_built_ins(IString::from("Global"));
     let mut read_only_attributes: Attributes = Attributes::default();
     // todo: when is something read-only vs protected?
     read_only_attributes.set(Attribute::ReadOnly);
@@ -298,10 +292,10 @@ mod tests {
       condition: None,
       built_in : Set
     };
-    context.set_down_value_attribute(interned_static("Set"), value.clone(), read_only_attributes);
+    context.set_down_value_attribute(IString::from("Set"), value.clone(), read_only_attributes);
 
     // Check.
-    let record = context.get_symbol(interned_static("Set")).unwrap();
+    let record = context.get_symbol(IString::from("Set")).unwrap();
     assert_eq!((&*record.down_values).borrow()[0], value);
   }
 

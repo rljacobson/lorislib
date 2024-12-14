@@ -159,17 +159,21 @@ impl Display for Substitution {
 #[cfg(test)]
 mod tests {
   use std::rc::Rc;
-  use crate::{atom::{
-    Atom,
-    SExpression,
-    Symbol,
-  }, attributes::{
-    Attribute,
-  }, Context, matching::matcher::display_solutions, interner::interned_static, parse};
-
-
-  #[allow(unused_imports)]
-  use crate::logging::set_verbosity;
+  use crate::{
+    abstractions::IString,
+    atom::{
+      Atom,
+      SExpression,
+      Symbol,
+    },
+    attributes::{
+      Attribute,
+    },
+    Context,
+    logging::set_verbosity,
+    matching::matcher::display_solutions,
+    parse,
+  };
 
   use super::*;
 
@@ -280,8 +284,8 @@ mod tests {
     let ground  = parse("Plus[2, 3]").unwrap();
     set_verbosity(5);
 
-    context.set_attribute(interned_static("Plus"), Attribute::Commutative).unwrap();
-    context.set_attribute(interned_static("Plus"), Attribute::Associative).unwrap();
+    context.set_attribute(IString::from("Plus"), Attribute::Commutative).unwrap();
+    context.set_attribute(IString::from("Plus"), Attribute::Associative).unwrap();
 
     println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
 
@@ -299,8 +303,8 @@ mod tests {
     let ground  = parse("Plus[2, 3]").unwrap();
     set_verbosity(5);
 
-    context.set_attribute(interned_static("Plus"), Attribute::Commutative).unwrap();
-    context.set_attribute(interned_static("Plus"), Attribute::Associative).unwrap();
+    context.set_attribute(IString::from("Plus"), Attribute::Commutative).unwrap();
+    context.set_attribute(IString::from("Plus"), Attribute::Associative).unwrap();
 
     println!("pattern: {}, ground: {}", &pattern.format(&DisplayForm::Matcher.into()), &ground.format(&DisplayForm::Matcher.into()));
 
@@ -315,10 +319,10 @@ mod tests {
   /// Solve ƒ()≪ᴱƒ(), ƒ is A or AC
   fn match_empty_functions(){
     // To avoid calling `register_builtins()`, which would make this test moot, we specially construct the context.
-    let mut context: Context = Context::without_built_ins(interned_static("Global"));
+    let mut context: Context = Context::without_built_ins(IString::from("Global"));
 
     let f: Atom = SExpression::with_str_head("ƒ");
-    context.set_attribute(interned_static("ƒ"), Attribute::Associative).unwrap();
+    context.set_attribute(IString::from("ƒ"), Attribute::Associative).unwrap();
     let g: Atom = f.clone();
 
     let me = MatchEquation{
@@ -349,7 +353,7 @@ mod tests {
           )
         );
 
-    context.set_attribute(interned_static("ƒ"), Attribute::Associative).unwrap();
+    context.set_attribute(IString::from("ƒ"), Attribute::Associative).unwrap();
 
     let g: Atom = Atom::SExpression(
       Rc::new(
@@ -399,8 +403,8 @@ mod tests {
           )
         );
 
-    context.set_attribute(interned_static("ƒ"), Attribute::Associative).unwrap();
-    context.set_attribute(interned_static("ƒ"), Attribute::Commutative).unwrap();
+    context.set_attribute(IString::from("ƒ"), Attribute::Associative).unwrap();
+    context.set_attribute(IString::from("ƒ"), Attribute::Commutative).unwrap();
 
     let g =
         Atom::SExpression(
@@ -462,9 +466,9 @@ mod tests {
 
     let mut context: Context = Context::new_global_context();
 
-    context.set_attribute(interned_static("ƒ"), Attribute::Associative)
+    context.set_attribute(IString::from("ƒ"), Attribute::Associative)
            .expect("Symbol is read_only");
-    context.set_attribute(interned_static("ƒ"), Attribute::Commutative)
+    context.set_attribute(IString::from("ƒ"), Attribute::Commutative)
            .expect("Symbol is read_only");
 
     let g = SExpression::duplicate_with_head(&f);
