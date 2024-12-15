@@ -67,9 +67,9 @@ lazy_static! {
 }
 
 static TOKENS: [&'static str; 32] = [
-  "___", //  IntoBlankNullSequence
-  "__",  //  IntoBlankSequence
-  "_",   //  IntoBlank
+  "___", //  BlankNullSequence
+  "__",  //  BlankSequence
+  "_",   //  Blank
   "[[",  //  Part
   "]]",  //  Part
   "[",   //  Construct

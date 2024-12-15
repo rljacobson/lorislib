@@ -1,3 +1,20 @@
+# Unimplemented / Partially Implemented
+
+## SequenceHold
+
+If a grandparent has attribute `SequenceHold`, for example, that affects how the expression is evaluated. This
+problem also exists for evaluating `N` (with NHold), but we solved that by giving it its own evaluation
+function. Instead, we need an Evaluator that holds state across calls to evaluate, just like we do with
+`Formattable`/`ExpressionFormatter`. So far it would just hold `Attributes`, but...maybe it holds the
+context.
+
+As a cheat, we flatten all occurrences of `Sequence` at parse time. This is problematic for at least two reasons:
+ - If a `Sequence` expression is created during evaluation, it is never spliced.
+ - `SequenceHold` is never respected.
+
+
+What about `Splice`? https://reference.wolfram.com/language/ref/Splice.html
+
 # Wrapping Atom in an Expression Enum
 
 An `Expression` is a syntactically correct "thing", a symbol, function, sequence, non-sequence variable,

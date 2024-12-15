@@ -116,7 +116,7 @@ pub(crate) fn Plus(arguments: SolutionSet, _original: Atom, _: &mut Context) -> 
   // `new_children` is headless.
   let mut new_children: Vec<Atom> = Vec::new();
 
-  if let Some(sequence_children) = rhs.is_sequence() {
+  if let Some(sequence_children) = rhs.try_as_sequence() {
     for expression in sequence_children {
       match expression {
 
@@ -219,7 +219,7 @@ pub(crate) fn Times(arguments: SolutionSet, _: Atom, _: &mut Context) -> Atom {
   let mut new_children: Vec<Atom> = Vec::new();
   let rhs = &arguments[&SExpression::null_sequence_variable_static_str("exp")];
 
-  if let Some(sequence_children) = rhs.is_sequence() {
+  if let Some(sequence_children) = rhs.try_as_sequence() {
     for expression in &sequence_children {
       match expression {
         Atom::Integer(n) => {

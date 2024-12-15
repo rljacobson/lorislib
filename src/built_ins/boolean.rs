@@ -27,7 +27,6 @@ use crate::{
   },
   evaluate,
   built_ins::register_builtin,
-  logging::set_verbosity
 };
 use crate::abstractions::IString;
 

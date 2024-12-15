@@ -89,7 +89,7 @@ impl RuleFVEA {
 
   pub fn try_rule(me: &MatchEquation) -> Option<Self> {
     if me.pattern.len() > 0
-        && SExpression::part(&me.pattern, 1).is_function_variable().is_some()
+        && SExpression::part(&me.pattern, 1).try_as_function_variable().is_some()
     {
       Some(
         RuleFVEA::new(me.clone())
@@ -230,7 +230,7 @@ impl RuleIVEA {
     // Pattern: f[‹x›,…]
 
     if me.pattern.len() > 0
-        && SExpression::part(&me.pattern, 1).is_variable().is_some()
+        && SExpression::part(&me.pattern, 1).try_as_variable().is_some()
     {
       Some(
         RuleIVEA::new(me.clone())
@@ -285,9 +285,9 @@ mod tests {
 
     let result = rule_svea.flatten().map(|r| r.to_string()).collect::<Vec<String>>();
     let expected = [
-      #[cfg(not(feature = "strict_associativity"))]
+      #[cfg(not(feature = "strict-associativity"))]
       "ƒ❨u, v, w❩ ≪ ƒ❨a, b, c❩",
-      #[cfg(not(feature = "strict_associativity"))]
+      #[cfg(not(feature = "strict-associativity"))]
       "«x»→()",
       "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩",
       "«x»→a",
@@ -421,9 +421,9 @@ mod tests {
     // }
 
     let expected = [
-      #[cfg(not(feature = "strict_associativity"))]
+      #[cfg(not(feature = "strict-associativity"))]
       "ƒ❨u, v, w❩ ≪ ƒ❨a, b, c❩",
-      #[cfg(not(feature = "strict_associativity"))]
+      #[cfg(not(feature = "strict-associativity"))]
       "‹x›→ƒ❨❩",
       "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩",
       "‹x›→ƒ❨a❩",

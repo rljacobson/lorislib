@@ -75,7 +75,6 @@ use crate::{
     }
   },
   abstractions::IString,
-  logging::verbosity::get_verbosity,
 };
 
 // The operator tables are populated lazily.
@@ -637,11 +636,13 @@ fn push_child(parent: &mut Atom, child: Atom) -> Result<(), ()> {
 }
 
 #[allow(unused_parens)]
-/// Push `child` onto `parent`, applying fix-ups for "Construct", "Sequence", "Parentheses", and "Into*Sequence".
+/// Push `child` onto `parent`, applying fix-ups for "Construct", "Sequence", "Parentheses", "Sequence",
+/// and pattern variables.
+
 // Todo: The problem with using `Sequence` in this way is that it gets "evaluated" in the parser, which means the users
 //       of the language cannot use it in its held form. Same for `Construct`. The others have no user-land usage. The
 //       solution is to either use a temporary or else use a private symbol in the `Std\`Private\`` context
-//       (namespace).
+//       (namespace). (See nodes.md.)
 //       EDIT: What about `Splice`? https://reference.wolfram.com/language/ref/Splice.html
 fn fix_up(parent: &mut Atom, mut child: Atom) -> Result<(), ()> {
   // Destructure parent…
@@ -659,9 +660,9 @@ fn fix_up(parent: &mut Atom, mut child: Atom) -> Result<(), ()> {
         return Ok(());
       }
 
-      Atom::Symbol(name) if IString::as_ref(name).starts_with("IntoBlank")
+      Atom::Symbol(name) if IString::as_ref(name).starts_with("Blank")
       => {
-        let name_str = IString::from(&name[4..]);
+        let name_str = IString::from(&name);
 
         *parent = make_variable(child, name_str);
         return Ok(());
@@ -679,6 +680,7 @@ fn fix_up(parent: &mut Atom, mut child: Atom) -> Result<(), ()> {
       // Collapse "Sequence" and "Parentheses"
       Atom::SExpression(ref mut grand_children)
       if Symbol::from_static_str("IntoSequence") == grand_children[0]
+          || Symbol::from_static_str("Sequence") == grand_children[0]
           // || Symbol::from_static_str("Parentheses") == grand_children[0]
       => {
         // Splice in the sequence's children, skipping the head.

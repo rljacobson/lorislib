@@ -26,7 +26,6 @@ use crate::{
   evaluate,
   register_builtin_mut,
   atom::Symbol,
-  logging::set_verbosity
 };
 use crate::abstractions::IString;
 

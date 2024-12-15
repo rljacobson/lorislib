@@ -62,7 +62,7 @@ impl RuleDecNonCommutative<NonAssociative> {
 
     if me.pattern.len() > 0
         && me.ground.len() > 0
-        && SExpression::part(&me.pattern, 1).is_sequence_variable().is_none()
+        && SExpression::part(&me.pattern, 1).try_as_sequence_variable().is_none()
     {
       Some(
         RuleDecNonCommutative::<NonAssociative>::new(me.clone())
@@ -82,7 +82,7 @@ impl RuleDecNonCommutative<Associative> {
 
     if me.pattern.len() > 0
         && me.ground.len() > 0
-        && SExpression::part(&me.pattern, 1).is_sequence_variable().is_none()
+        && SExpression::part(&me.pattern, 1).try_as_sequence_variable().is_none()
     {
       Some(
         RuleDecNonCommutative::new(me.clone())
@@ -203,7 +203,7 @@ impl RuleDecCommutative<NonAssociative> {
 
     if me.pattern.len() > 0
         && me.ground.len() > 0
-        && SExpression::part(&me.pattern, 1).is_sequence_variable().is_none()
+        && SExpression::part(&me.pattern, 1).try_as_sequence_variable().is_none()
     {
       Some(
         RuleDecCommutative::new(me.clone())
@@ -224,7 +224,7 @@ impl RuleDecCommutative<Associative> {
 
     if me.pattern.len() > 0
         && me.ground.len() > 0
-        && SExpression::part(&me.pattern, 1).is_sequence_variable().is_none()
+        && SExpression::part(&me.pattern, 1).try_as_sequence_variable().is_none()
     {
       Some(
         RuleDecCommutative::new(me.clone())

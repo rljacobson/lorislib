@@ -427,13 +427,13 @@ mod tests {
     let matcher = Matcher::new(me.pattern.clone(), me.ground, &mut context);
 
     let expected = [ // ƒ❨a❩
-      #[cfg(not(feature = "strict_associativity"))]
+      #[cfg(not(feature = "strict-associativity"))]
           "‹x› = ƒ❨❩, ‹y› = ƒ❨a, b❩", // Not allowed by strict-associativity.
       "‹x› = ƒ❨a❩, ‹y› = ƒ❨b❩",
       "‹x› = ƒ❨a❩, ‹y› = b",
       "‹x› = ƒ❨b❩, ‹y› = ƒ❨a❩",
       "‹x› = ƒ❨b❩, ‹y› = a",
-      #[cfg(not(feature = "strict_associativity"))]
+      #[cfg(not(feature = "strict-associativity"))]
           "‹x› = ƒ❨a, b❩, ‹y› = ƒ❨❩", // Not allowed by strict-associativity.
       "‹x› = a, ‹y› = ƒ❨b❩",
       "‹x› = a, ‹y› = b",
@@ -481,9 +481,9 @@ mod tests {
     let matcher: Matcher     = Matcher::new(me.pattern.clone()                  , me.ground, &context);
     let result     : Vec<String> = matcher.into_iter(&mut context).map(|s| display_solutions(&s)).collect();
 
-    #[cfg(not(feature = "strict_associativity"))]
+    #[cfg(not(feature = "strict-associativity"))]
     assert_eq!("‹x› = ƒ❨❩", result.join(", "));
-    #[cfg(feature = "strict_associativity")]
+    #[cfg(feature = "strict-associativity")]
     assert_eq!("", result.join(", ")); // Empty
   }
 }

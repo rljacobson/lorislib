@@ -83,6 +83,7 @@ macro_rules! register_builtin_mut {
     };
   }
 }
+#[allow(unused_imports)]
 pub use register_builtin_mut;
 
 
@@ -210,7 +211,7 @@ pub fn collect_symbol_or_head_symbol(pattern_function: Atom) -> Vec<IString>{
     match c {
       Atom::Symbol(name) => Some(name.clone()),
       Atom::SExpression(f)=> {
-        if c.is_any_variable_kind().is_some() {
+        if c.try_as_any_variable_kind().is_some() {
           None
         } else {
           Some(f[0].name().unwrap())

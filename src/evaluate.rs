@@ -536,7 +536,7 @@ pub fn evaluate(expression: Atom, context: &mut Context) -> Atom {
             // No restrictions – evaluate everything
             // Step 1: Look for `UpValues` for each unheld child.
             // For UpValues, we match on the parent instead of the child expression that is associated with the up-value.
-            // log(Channel::Debug, 4, "Evaluating function. Checking for up-values.");
+            log(Channel::Debug, 4, "Evaluating function. Checking for up-values.");
             let unevaluated = evaluate_up_values(&expression, &children[1..], context);
             if unevaluated.is_some() {
               unevaluated.apply(expression, context)
@@ -774,7 +774,7 @@ pub fn replace_all_bound_variables(expression: &Atom, bindings: &SolutionSet, co
     Atom::Symbol(name) => {
       // If `expression` itself matches a key in `substitutions`, replace it. This is the base case for the recursion.
       for (pattern, substitution) in bindings {
-        if let Some(pattern_name) = pattern.is_any_variable_kind() {
+        if let Some(pattern_name) = pattern.try_as_any_variable_kind() {
           if pattern_name == *name {
             return substitution.clone();
           }
@@ -793,7 +793,7 @@ pub fn replace_all_bound_variables(expression: &Atom, bindings: &SolutionSet, co
 pub fn propagate_N(expression: Atom, context: &mut Context) -> Atom {
   let child = &SExpression::children(&expression)[1];
   // If child isn't an SExpression, it doesn't have an `NHold*` attribute.
-  let grandchildren = match child.is_function() {
+  let grandchildren = match child.try_as_function() {
     Some(c) => c,
     None => {
       return expression;
@@ -867,6 +867,7 @@ pub fn propagate_attributes(expression: &Atom, context: &mut Context) -> Atom {
       let outer_head = children[0].clone();
       // N is a special case because its child can have NHoldAll, NHoldRest, or NHoldFirst
       if outer_head == Symbol::from_static_str("N"){
+        // ToDo: Should the result not also be processed by the remaining code in this function?
         return propagate_N(expression.clone(), context);
       }
       let attributes = context.get_attributes(outer_head.name().unwrap());
@@ -905,7 +906,7 @@ pub fn propagate_attributes(expression: &Atom, context: &mut Context) -> Atom {
         let mut new_children = vec![children[0].clone()];
         for child in &children[1..] {
           let new_child = propagate_attributes(&child, context);
-          if let Some(grandchildren) = new_child.is_function() {
+          if let Some(grandchildren) = new_child.try_as_function() {
             // if (head of child) == (head of expression) …
             if grandchildren[0] == children[0]{
               // splice

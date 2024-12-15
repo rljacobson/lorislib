@@ -49,11 +49,11 @@ features = [
 
 
 [features]
-default = ["strict_associativity"]
+default = ["strict-associativity"]
 #default = []
 
 # For matching in associative theories, associativity is "strict".
-strict_associativity     = []
+strict-associativity     = []
 # Matching rules emulate the behavior of Mathematica, which does not give all matches. This feature is unimplemented.
 mathematica_compatibiity = []
 

@@ -11,10 +11,8 @@ use std::{cmp::max, rc::Rc, str::FromStr};
 
 use strum::{IntoEnumIterator};
 
-
-// For num_integer::binomial
-
 use crate::{
+  abstractions::IString,
   atom::{
     SExpression::extract_thing_or_list_of_things,
     Symbol,
@@ -37,9 +35,6 @@ use crate::{
     Channel,
   },
 };
-use crate::abstractions::IString;
-#[allow(unused_imports)]
-use crate::logging::set_verbosity;
 
 use super::{
   collect_symbol_or_head_symbol,

@@ -148,7 +148,7 @@ impl Atom {
   }
 
   /// If `self` has the form `Sequence[a, b, …]`, returns a vector of only the children `a, b, …`.
-  pub fn is_sequence(&self) -> Option<Vec<Atom>> {
+  pub fn try_as_sequence(&self) -> Option<Vec<Atom>> {
     if let Atom::SExpression(children) = self {
       if children[0] == Symbol::from_static_str("Sequence"){
         return Some(children[1..].to_vec());
@@ -159,7 +159,7 @@ impl Atom {
 
 
   /// This is a checked version of `SExpression::children()`.
-  pub fn is_function(&self) -> Option<Rc<Vec<Atom>>> {
+  pub fn try_as_function(&self) -> Option<Rc<Vec<Atom>>> {
     if let Atom::SExpression(children) = self {
       Some(children.clone())
     } else {
@@ -170,7 +170,7 @@ impl Atom {
 
 
   /// If `self` has the form `Rule[lhs, rhs]`, returns a tuple (lhs, rhs)
-  pub fn is_rule(&self) -> Option<(Atom, Atom)> {
+  pub fn try_as_rule(&self) -> Option<(Atom, Atom)> {
     if let Atom::SExpression(children) = self {
       if (children[0] == Symbol::from_static_str("Rule")
         || children[0] == Symbol::from_static_str("RuleDelayed"))
@@ -182,16 +182,16 @@ impl Atom {
     None
   }
 
-  pub(crate) fn is_function_variable(&self) -> Option<IString> {
+  pub(crate) fn try_as_function_variable(&self) -> Option<IString> {
     match self {
       Atom::SExpression(children) => {
-        children[0].is_variable()
+        children[0].try_as_variable()
       }
       _ => None
     }
   }
 
-  pub(crate) fn is_any_variable_kind(&self) -> Option<IString> {
+  pub(crate) fn try_as_any_variable_kind(&self) -> Option<IString> {
     self.check_variable_pattern("Blank").or_else(
       | | self.check_variable_pattern("BlankSequence").or_else(
         | | self.check_variable_pattern("BlankNullSequence")
@@ -201,20 +201,20 @@ impl Atom {
 
   /// Checks if `self` has the form `Pattern[□, Blank[□]]` (equiv. `□_□`).
   /// Returns the name if `self` is a `Blank`.
-  pub fn is_variable(&self) -> Option<IString> {
+  pub fn try_as_variable(&self) -> Option<IString> {
     self.check_variable_pattern("Blank")
   }
 
   /// Checks if `self` has the form `Pattern[□, BlankSequence[□]]` (equiv. `□__□`).
   /// Returns the name if `self` is a `BlankSequence`.
-  pub fn is_sequence_variable(&self) -> Option<IString> {
-    self.is_null_sequence_variable().or_else(| | self.check_variable_pattern("BlankSequence"))
+  pub fn try_as_sequence_variable(&self) -> Option<IString> {
+    self.try_as_null_sequence_variable().or_else(| | self.check_variable_pattern("BlankSequence"))
     // self.check_variable_pattern("BlankSequence")
   }
 
   /// Checks if `self` has the form `Pattern[□, BlankNullSequence[□]]` (equiv. `□___□`).
   /// Returns the name if `self` is a `BlankNullSequence`.
-  pub fn is_null_sequence_variable(&self) -> Option<IString> {
+  pub fn try_as_null_sequence_variable(&self) -> Option<IString> {
     self.check_variable_pattern("BlankNullSequence")
   }
 
@@ -336,7 +336,7 @@ impl Formattable for Atom {
           );
         }
 
-        if let Some(name) = self.is_variable() {
+        if let Some(name) = self.try_as_variable() {
           match formatter.form {
             DisplayForm::Matcher => {
               format!("‹{}›", name)
@@ -348,7 +348,7 @@ impl Formattable for Atom {
         }
         // The `is_null_sequence_variable` case must come first because right now self.is_sequence_variable() is true
         // for both `BlankNullSequence` and `BlankSequence`.
-        else if let Some(name) = self.is_null_sequence_variable() {
+        else if let Some(name) = self.try_as_null_sequence_variable() {
           match formatter.form {
             DisplayForm::Matcher => {
               format!("«{}»", name)
@@ -358,7 +358,7 @@ impl Formattable for Atom {
             }
           }
         }
-        else if let Some(name) = self.is_sequence_variable() {
+        else if let Some(name) = self.try_as_sequence_variable() {
           // todo: distinguish sequence variables from null sequence variables
           match formatter.form {
             DisplayForm::Matcher => {
@@ -369,7 +369,7 @@ impl Formattable for Atom {
             }
           }
         }
-        else if let Some(children) = self.is_sequence() {
+        else if let Some(children) = self.try_as_sequence() {
           match formatter.form {
             DisplayForm::Matcher => {
               format!(
@@ -704,7 +704,7 @@ pub(crate) mod SExpression {
     match expression {
 
       Atom::SExpression(children) => {
-        children[0].is_variable()
+        children[0].try_as_variable()
       }
 
       _ => None

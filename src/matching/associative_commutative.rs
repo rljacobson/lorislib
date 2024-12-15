@@ -96,9 +96,9 @@ impl RuleIVEAC {
   pub fn new(me: MatchEquation) -> Self {
     RuleIVEAC {
       match_equation: me.clone(),
-      #[cfg(not(feature = "strict_associativity"))]
+      #[cfg(not(feature = "strict-associativity"))]
       subset: 0,
-      #[cfg(feature = "strict_associativity")]
+      #[cfg(feature = "strict-associativity")]
       subset: 1, // Cannot match the empty set under strict associativity.
       rule_decac: RuleDecAC::new(me)
     }
@@ -107,10 +107,10 @@ impl RuleIVEAC {
   pub fn try_rule(me: &MatchEquation) -> Option<RuleIVEAC> {
 
     if me.pattern.len() > 0
-        && SExpression::part(&me.pattern, 1).is_variable().is_some()
+        && SExpression::part(&me.pattern, 1).try_as_variable().is_some()
     {
       // Additional condition for strict associativity
-      #[cfg(feature = "strict_associativity")]
+      #[cfg(feature = "strict-associativity")]
       if me.ground.len() == 0 {
         return None;
       }
@@ -233,9 +233,9 @@ mod tests {
 
     // All (single-step) solutions to ƒ❨‹x›, u, v, w❩ ≪ ƒ❨a, b, c❩
     let expected = [
-      #[cfg(not(feature = "strict_associativity"))]
+      #[cfg(not(feature = "strict-associativity"))]
       "ƒ❨u, v, w❩ ≪ ƒ❨a, b, c❩",
-      #[cfg(not(feature = "strict_associativity"))]
+      #[cfg(not(feature = "strict-associativity"))]
       "‹x›→ƒ❨❩",
       "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩",
       "‹x›→ƒ❨a❩",

@@ -124,9 +124,9 @@ impl RuleIVE {
   pub fn try_rule(match_equation: &MatchEquation) -> Option<Self> {
     // Pattern:  x_
     // Ground: Not a sequence or sequence variable.
-    if match_equation.pattern.is_any_variable_kind().is_some()
-        && match_equation.ground.is_sequence().is_none()
-        && match_equation.ground.is_sequence_variable().is_none()
+    if match_equation.pattern.try_as_any_variable_kind().is_some()
+        && match_equation.ground.try_as_sequence().is_none()
+        && match_equation.ground.try_as_sequence_variable().is_none()
     {
       Some(
             RuleIVE::new(match_equation.clone())

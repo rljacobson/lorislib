@@ -53,9 +53,9 @@ impl RuleSVEC {
   pub fn new(me: MatchEquation) -> RuleSVEC {
     RuleSVEC{
       match_equation: me,
-      // #[cfg(feature = "strict_associativity")]      // Skip the empty subset
+      // #[cfg(feature = "strict-associativity")]      // Skip the empty subset
       // subset      : 1,
-      // #[cfg(not(feature = "strict_associativity"))] // Include the empty subset
+      // #[cfg(not(feature = "strict-associativity"))] // Include the empty subset
       subset      : 0,
       permutations: Permutations::new(1).unwrap()
     }
@@ -65,7 +65,7 @@ impl RuleSVEC {
     // Patter: f[«x»]
     // Ground: g[a,…]
     if me.pattern.len() > 0
-        && SExpression::part(&me.pattern, 1).is_sequence_variable().is_some()
+        && SExpression::part(&me.pattern, 1).try_as_sequence_variable().is_some()
         // && me.ground.len() > 0
     {
       Some(
@@ -100,7 +100,7 @@ impl Iterator for RuleSVEC {
     */
     // Todo: Determine the "right" way to have different variants of associativity.
     // Have we sent the empty subset yet?
-    // #[cfg(not(feature = "strict_associativity"))]
+    // #[cfg(not(feature = "strict-associativity"))]
     if self.subset == 0 {
       self.subset += 1;
       if self.match_equation.ground.len()==0{
@@ -243,9 +243,9 @@ mod tests {
     // }
     let result = rule_svec.flatten().map(|r| r.to_string()).collect::<Vec<String>>();
     let expected = [
-      #[cfg(not(feature = "strict_associativity"))]
+      #[cfg(not(feature = "strict-associativity"))]
       "ƒ❨u, v, w❩ ≪ ƒ❨a, b, c❩",
-      #[cfg(not(feature = "strict_associativity"))]
+      #[cfg(not(feature = "strict-associativity"))]
       "«x»→()", // Not allowed by strict-associativity.
       "ƒ❨u, v, w❩ ≪ ƒ❨b, c❩",
       "«x»→a",

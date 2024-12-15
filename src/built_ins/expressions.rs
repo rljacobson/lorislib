@@ -103,13 +103,13 @@ pub fn get_all_variable_names(expression: &Atom) -> Option<HashSet<IString>> {
   let mut variables: HashSet<IString> = HashSet::new();
 
   // This is an obnoxious pattern.
-  if let Some(name) = expression.is_variable() {
+  if let Some(name) = expression.try_as_variable() {
     variables.insert(name);
     return Some(variables);
-  } else if let Some(name) = expression.is_sequence_variable() {
+  } else if let Some(name) = expression.try_as_sequence_variable() {
     variables.insert(name);
     return Some(variables);
-  } else if let Some(name) = expression.is_null_sequence_variable() {
+  } else if let Some(name) = expression.try_as_null_sequence_variable() {
     variables.insert(name);
     return Some(variables);
   }
@@ -243,7 +243,7 @@ pub(crate) fn ReplaceAll(arguments: SolutionSet, original: Atom, context: &mut C
           // List of rules
           if children[0] == Atom::Symbol(IString::from("List")) {
             // Now validate each element of the list.
-            let rule_list: Vec<(Atom, Atom)> = children[1..].iter().map_while(|r| r.is_rule()).collect::<Vec<_>>();
+            let rule_list: Vec<(Atom, Atom)> = children[1..].iter().map_while(|r| r.try_as_rule()).collect::<Vec<_>>();
 
             if rule_list.len() != children.len() -1 {
               // Not all calls to `is_rule()` returned Some(…)
@@ -264,7 +264,7 @@ pub(crate) fn ReplaceAll(arguments: SolutionSet, original: Atom, context: &mut C
           }
 
           // Single Rule
-          else if let Some((lhs, rhs)) = rules_expression.is_rule() {
+          else if let Some((lhs, rhs)) = rules_expression.try_as_rule() {
             // Internally a rule is a hashmap entry.
             HashMap::from([(lhs, rhs)])
           }
@@ -314,7 +314,7 @@ pub(crate) fn Replace(arguments: SolutionSet, original: Atom, context: &mut Cont
           // List of rules
           if children[0] == Atom::Symbol(IString::from("List")) {
             // Now validate each element of the list.
-            let rule_list = children[1..].iter().map_while(|r| r.is_rule()).collect::<Vec<_>>();
+            let rule_list = children[1..].iter().map_while(|r| r.try_as_rule()).collect::<Vec<_>>();
             if rule_list.len() != children.len() -1 {
               // Not all calls to `is_rule()` returned Some(…)
               log(Channel::Error, 1, "Invalid input provided to Replace. Nothing is a rule.");
@@ -326,7 +326,7 @@ pub(crate) fn Replace(arguments: SolutionSet, original: Atom, context: &mut Cont
           }
 
           // Single Rule
-          else if let Some((lhs, rhs)) = rules_expression.is_rule() {
+          else if let Some((lhs, rhs)) = rules_expression.try_as_rule() {
             vec![HashMap::from([(lhs, rhs)])]
           }
 

@@ -655,7 +655,7 @@ impl<T> RuleSVE<T>
 
     // The only requirement is that pattern's first child is a sequence variable.
     if me.pattern.len() > 0
-      && SExpression::part(&me.pattern, 1).is_sequence_variable().is_some() {
+      && SExpression::part(&me.pattern, 1).try_as_sequence_variable().is_some() {
 
       Some(
         Self::new(me.clone())
