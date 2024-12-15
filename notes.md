@@ -1,5 +1,9 @@
 # Unimplemented / Partially Implemented
 
+## `Blank*` pattern variables
+
+The current scheme for fix-ups is not adequate to correctly parse named `Blank*` expressions. We can parse them to an intermediate, `NamedBlankSequence` say, and then transform that expression, but fix-ups are applied before the expression is completely parsed. The fix is probably to do the fix-ups by walking the tree.
+
 ## SequenceHold
 
 If a grandparent has attribute `SequenceHold`, for example, that affects how the expression is evaluated. This

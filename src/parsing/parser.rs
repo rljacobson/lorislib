@@ -660,9 +660,20 @@ fn fix_up(parent: &mut Atom, mut child: Atom) -> Result<(), ()> {
         return Ok(());
       }
 
-      Atom::Symbol(name) if IString::as_ref(name).starts_with("Blank")
+      // Atom::Symbol(name) if name.starts_with("Blank")
+      // => {
+      //   let name_str = IString::from(&name);
+      //
+      //   *parent = make_variable(child, name_str);
+      //   return Ok(());
+      // }
+
+      // Infix variants
+      Atom::Symbol(name) if name.starts_with("NamedBlank")
       => {
-        let name_str = IString::from(&name);
+        // ToDo: This does not handle the binary case, `x_head`, as it is transformed into `Pattern[Blank*]`,
+        //       which takes no RHS. We could do the fix-up in the parent, but what if there is no parent?
+        let name_str = IString::from(&name[5..]);
 
         *parent = make_variable(child, name_str);
         return Ok(());
@@ -685,7 +696,7 @@ fn fix_up(parent: &mut Atom, mut child: Atom) -> Result<(), ()> {
       => {
         // Splice in the sequence's children, skipping the head.
         Rc::get_mut(children).unwrap().extend(grand_children[1..].iter().cloned());
-        return Ok(());
+        Ok(())
       }
 
       _ => {
@@ -693,6 +704,7 @@ fn fix_up(parent: &mut Atom, mut child: Atom) -> Result<(), ()> {
         Rc::get_mut(children).unwrap().push(child.clone());
         Ok(())
       }
+
     }
 
   } // end if parent is Atom::SExpression

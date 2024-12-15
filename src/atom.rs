@@ -226,6 +226,9 @@ impl Atom {
           && children[2].head() == Symbol::from_static_str(symbol)
       {
         return children[1].name();
+      } else if children[0].name().unwrap_or_default().as_ref() == symbol {
+        // An anonymous variable
+        return Some(IString::default());
       }
     }
     None
